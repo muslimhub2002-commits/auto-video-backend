@@ -36,7 +36,11 @@ import { RenderJob } from './modules/render-videos/entities/render-job.entity';
       database: process.env.DB_NAME,
       autoLoadEntities: true,
       synchronize: false,
-      ssl: { rejectUnauthorized: false },
+      // Enable SSL only when explicitly requested (e.g. for cloud DBs)
+      ssl:
+        process.env.DB_SSL === 'true'
+          ? { rejectUnauthorized: false }
+          : false,
       extra: {
         max: 5,
       },
