@@ -207,6 +207,19 @@ export class RenderVideosService {
   }
 
   private getStorageRoot() {
+    const isServerless =
+      !!process.env.VERCEL ||
+      !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      !!process.env.LAMBDA_TASK_ROOT ||
+      (process.env.AWS_EXECUTION_ENV ?? '').toLowerCase().includes('lambda');
+
+    // Vercel/Lambda file system is read-only except for os.tmpdir().
+    // We only need a scratch space for Remotion rendering because the final
+    // output is uploaded to Cloudinary.
+    if (isServerless) {
+      return join(os.tmpdir(), 'auto-video-generator');
+    }
+
     return join(process.cwd(), 'storage');
   }
 
