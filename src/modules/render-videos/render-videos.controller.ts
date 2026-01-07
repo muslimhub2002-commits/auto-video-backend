@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  ServiceUnavailableException,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
@@ -23,6 +24,12 @@ export class RenderVideosController {
 
   @Post('url')
   async createFromUrls(@Body() body: CreateRenderVideoUrlDto) {
+    if (this.renderVideosService.isServerlessRuntime()) {
+      throw new ServiceUnavailableException(
+        'Video rendering jobs cannot run reliably on Vercel Serverless. Deploy the backend to a long-running server (Render/Railway/Fly) or run a dedicated worker for Remotion rendering.',
+      );
+    }
+
     if (!body?.audioUrl) {
       throw new BadRequestException('Missing `audioUrl`');
     }
@@ -154,12 +161,14 @@ export class RenderVideosController {
   @Get(':id')
   async get(@Param('id') id: string) {
     const job = await this.renderVideosService.getJob(id);
+    await this.renderVideosService.failIfStale(job);
+    const updated = await this.renderVideosService.getJob(id);
     return {
-      id: job.id,
-      status: job.status,
-      error: job.error,
-      videoUrl: job.videoPath ? job.videoPath : null,
-      timeline: job.timeline,
+      id: updated.id,
+      status: updated.status,
+      error: updated.error,
+      videoUrl: updated.videoPath ? updated.videoPath : null,
+      timeline: updated.timeline,
     };
   }
 }

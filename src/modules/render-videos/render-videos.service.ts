@@ -207,11 +207,7 @@ export class RenderVideosService {
   }
 
   private getStorageRoot() {
-    const isServerless =
-      !!process.env.VERCEL ||
-      !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
-      !!process.env.LAMBDA_TASK_ROOT ||
-      (process.env.AWS_EXECUTION_ENV ?? '').toLowerCase().includes('lambda');
+    const isServerless = this.isServerlessRuntime();
 
     // Vercel/Lambda file system is read-only except for os.tmpdir().
     // We only need a scratch space for Remotion rendering because the final
@@ -221,6 +217,36 @@ export class RenderVideosService {
     }
 
     return join(process.cwd(), 'storage');
+  }
+
+  isServerlessRuntime() {
+    return (
+      !!process.env.VERCEL ||
+      !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      !!process.env.LAMBDA_TASK_ROOT ||
+      (process.env.AWS_EXECUTION_ENV ?? '').toLowerCase().includes('lambda')
+    );
+  }
+
+  async failIfStale(job: RenderJob) {
+    if (!job) return;
+    if (job.status !== 'processing' && job.status !== 'rendering') return;
+
+    const updatedAt = job.updatedAt instanceof Date ? job.updatedAt : null;
+    if (!updatedAt) return;
+
+    // If the platform kills the function mid-render, the job can be stuck forever.
+    // Mark it failed after a reasonable timeout so the UI doesn't spin indefinitely.
+    const STALE_MS = 10 * 60_000;
+    const ageMs = Date.now() - updatedAt.getTime();
+    if (ageMs < STALE_MS) return;
+
+    await this.jobsRepo.save({
+      id: job.id,
+      status: 'failed',
+      error:
+        'Render job became stale (likely killed by serverless runtime). Deploy the renderer on a long-running server or dedicated worker.',
+    });
   }
 
   private ensureDir(dir: string) {
