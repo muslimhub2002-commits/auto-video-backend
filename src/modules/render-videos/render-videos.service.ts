@@ -16,6 +16,10 @@ type UploadedAsset = {
   mimeType?: string;
 };
 
+type UrlAsset = {
+  url: string;
+};
+
 type SentenceTiming = {
   index: number;
   text: string;
@@ -40,8 +44,10 @@ export class RenderVideosService {
 
   async createJob(params: {
     audioFile: UploadedAsset | null;
+    audioUrl?: string | null;
     sentences: SentenceInput[];
     imageFiles: Array<UploadedAsset | null>;
+    imageUrls?: Array<string | null> | null;
     scriptLength: string;
     audioDurationSeconds?: number;
     useLowerFps?: boolean;
@@ -71,6 +77,50 @@ export class RenderVideosService {
 
   private isShort(scriptLength: string) {
     return scriptLength.trim().toLowerCase().startsWith('30');
+  }
+
+  private async downloadUrlToBuffer(params: {
+    url: string;
+    maxBytes: number;
+    label: string;
+  }): Promise<{ buffer: Buffer; mimeType?: string }> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60_000);
+    try {
+      const res = await fetch(params.url, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(
+          `Failed to download ${params.label} (${res.status}): ${res.statusText}`,
+        );
+      }
+
+      const contentLength = res.headers.get('content-length');
+      if (contentLength) {
+        const bytes = Number(contentLength);
+        if (Number.isFinite(bytes) && bytes > params.maxBytes) {
+          throw new Error(
+            `Downloaded ${params.label} is too large (${bytes} bytes)`,
+          );
+        }
+      }
+
+      const arrayBuffer = await res.arrayBuffer();
+      if (arrayBuffer.byteLength > params.maxBytes) {
+        throw new Error(
+          `Downloaded ${params.label} is too large (${arrayBuffer.byteLength} bytes)`,
+        );
+      }
+
+      const mimeType = res.headers.get('content-type') ?? undefined;
+      return { buffer: Buffer.from(arrayBuffer), mimeType };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private buildTimeline(params: {
@@ -400,8 +450,10 @@ export class RenderVideosService {
     jobId: string,
     params: {
       audioFile: UploadedAsset | null;
+      audioUrl?: string | null;
       sentences: SentenceInput[];
       imageFiles: Array<UploadedAsset | null>;
+      imageUrls?: Array<string | null> | null;
       scriptLength: string;
       audioDurationSeconds?: number;
       useLowerFps?: boolean;
@@ -416,27 +468,67 @@ export class RenderVideosService {
       job.status = 'processing';
       await this.jobsRepo.save(job);
 
-      if (!params.audioFile?.buffer) {
+      const hasAudioBuffer = !!params.audioFile?.buffer?.length;
+      const hasAudioUrl = !!params.audioUrl;
+      if (!hasAudioBuffer && !hasAudioUrl) {
         throw new Error('Missing voiceOver audio file');
       }
 
-      // Upload audio to Cloudinary and use the URL inside Remotion.
-      const uploadedAudio = await this.uploadBufferToCloudinary({
-        buffer: params.audioFile.buffer,
-        folder: 'auto-video-generator/render-inputs/audio',
-        resource_type: 'video',
-      });
-      job.audioPath = uploadedAudio.secure_url;
-      await this.jobsRepo.save(job);
+      let audioBuffer: Buffer;
+      let audioName: string;
+      let audioMimeType: string | undefined;
 
-      // Upload per-sentence images to Cloudinary (no local persistence).
-      // Keep sentence alignment; subscribe sentence gets no image.
+      if (hasAudioBuffer && params.audioFile) {
+        // Upload audio to Cloudinary and use the URL inside Remotion.
+        const uploadedAudio = await this.uploadBufferToCloudinary({
+          buffer: params.audioFile.buffer,
+          folder: 'auto-video-generator/render-inputs/audio',
+          resource_type: 'video',
+        });
+        job.audioPath = uploadedAudio.secure_url;
+        await this.jobsRepo.save(job);
+
+        audioBuffer = params.audioFile.buffer;
+        audioName = params.audioFile.originalName || 'audio.mp3';
+        audioMimeType = params.audioFile.mimeType;
+      } else {
+        // audioUrl should already point to a public URL (ideally Cloudinary).
+        job.audioPath = String(params.audioUrl);
+        await this.jobsRepo.save(job);
+
+        const downloaded = await this.downloadUrlToBuffer({
+          url: String(params.audioUrl),
+          maxBytes: 30 * 1024 * 1024,
+          label: 'voiceOver audioUrl',
+        });
+        audioBuffer = downloaded.buffer;
+        audioMimeType = downloaded.mimeType;
+        audioName = 'audio.mp3';
+      }
+
+      // Build per-sentence image sources.
+      // If imageUrls are provided (frontend already uploaded), use them.
+      // Otherwise, upload provided buffers to Cloudinary.
       const imageSrcs: string[] = [];
+      const providedUrls = Array.isArray(params.imageUrls)
+        ? params.imageUrls
+        : null;
+
+      if (providedUrls && providedUrls.length !== params.sentences.length) {
+        throw new Error('imageUrls length must match sentences length');
+      }
+
       for (let i = 0; i < params.sentences.length; i += 1) {
         const sentenceText = (params.sentences[i]?.text || '').trim();
         const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
         if (isSubscribe) {
           imageSrcs.push('');
+          continue;
+        }
+
+        const url = providedUrls ? providedUrls[i] : null;
+        if (url) {
+          imageSrcs.push(String(url));
           continue;
         }
 
@@ -457,9 +549,9 @@ export class RenderVideosService {
 
       // Create a temporary local audio file for alignment and audio analysis.
       // This is not persisted in project storage.
-      const audioExt = extname(params.audioFile.originalName || '') || '.mp3';
+      const audioExt = extname(audioName || '') || '.mp3';
       const tempAudioPath = join(tempDir, `audio${audioExt}`);
-      fs.writeFileSync(tempAudioPath, params.audioFile.buffer);
+      fs.writeFileSync(tempAudioPath, audioBuffer);
 
       const durationSeconds =
         params.audioDurationSeconds && params.audioDurationSeconds > 0
@@ -473,7 +565,7 @@ export class RenderVideosService {
       // Place audio into the Remotion publicDir so rendering does not rely on
       // remote audio URLs (prevents CORS/network stalls in Chromium).
       const publicAudioName = `audio${audioExt}`;
-      fs.writeFileSync(join(publicDir, publicAudioName), params.audioFile.buffer);
+      fs.writeFileSync(join(publicDir, publicAudioName), audioBuffer);
 
       // Align audio with sentences to get per-sentence timings.
       // Currently uses a word-based proportional approach and is structured

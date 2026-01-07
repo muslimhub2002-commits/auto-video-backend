@@ -11,6 +11,7 @@ import {
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import type { Multer } from 'multer';
 import { CreateRenderVideoDto } from './dto/create-render-video.dto';
+import { CreateRenderVideoUrlDto } from './dto/create-render-video-url.dto';
 import { RenderVideosService } from './render-videos.service';
 
 const SUBSCRIBE_SENTENCE =
@@ -19,6 +20,40 @@ const SUBSCRIBE_SENTENCE =
 @Controller('videos')
 export class RenderVideosController {
   constructor(private readonly renderVideosService: RenderVideosService) {}
+
+  @Post('url')
+  async createFromUrls(@Body() body: CreateRenderVideoUrlDto) {
+    if (!body?.audioUrl) {
+      throw new BadRequestException('Missing `audioUrl`');
+    }
+
+    const sentences = body.sentences;
+    if (!Array.isArray(sentences) || sentences.length === 0) {
+      throw new BadRequestException('`sentences` must be a non-empty array');
+    }
+
+    const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls : [];
+    if (imageUrls.length !== sentences.length) {
+      throw new BadRequestException(
+        '`imageUrls` must have the same length as `sentences`',
+      );
+    }
+
+    const job = await this.renderVideosService.createJob({
+      audioFile: null,
+      audioUrl: body.audioUrl,
+      sentences,
+      imageFiles: new Array(sentences.length).fill(null),
+      imageUrls,
+      scriptLength: body.scriptLength,
+      audioDurationSeconds: body.audioDurationSeconds,
+      useLowerFps: !!body.useLowerFps,
+      useLowerResolution: !!body.useLowerResolution,
+      enableGlitchTransitions: !!body.enableGlitchTransitions,
+    });
+
+    return { id: job.id, status: job.status };
+  }
 
   @Post()
   @UseInterceptors(
