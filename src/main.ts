@@ -37,5 +37,6 @@ async function bootstrap() {
   console.log(
     `🚀 Backend server is running on: http://localhost:${process.env.PORT ?? 3000}`,
   );
+  console.log('YouTube module enabled');
 }
 bootstrap();
