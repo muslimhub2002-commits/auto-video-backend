@@ -61,6 +61,7 @@ export class RenderVideosService {
       audioPath: '',
       videoPath: null,
       timeline: null,
+      lastProgressAt: new Date(),
     });
     await this.jobsRepo.save(job);
 
@@ -228,24 +229,51 @@ export class RenderVideosService {
     );
   }
 
+  private startHeartbeat(jobId: string, intervalMs = 30_000) {
+    const timer = setInterval(() => {
+      void this.jobsRepo
+        .save({
+          id: jobId,
+          lastProgressAt: new Date(),
+        } as any)
+        .catch(() => undefined);
+    }, intervalMs);
+
+    (timer as any).unref?.();
+    return () => clearInterval(timer);
+  }
+
   async failIfStale(job: RenderJob) {
     if (!job) return;
     if (job.status !== 'processing' && job.status !== 'rendering') return;
 
-    const updatedAt = job.updatedAt instanceof Date ? job.updatedAt : null;
-    if (!updatedAt) return;
+    const progressAt =
+      job.lastProgressAt instanceof Date
+        ? job.lastProgressAt
+        : job.updatedAt instanceof Date
+          ? job.updatedAt
+          : null;
+    if (!progressAt) return;
 
     // If the platform kills the function mid-render, the job can be stuck forever.
     // Mark it failed after a reasonable timeout so the UI doesn't spin indefinitely.
-    const STALE_MS = 10 * 60_000;
-    const ageMs = Date.now() - updatedAt.getTime();
+    const staleMinutesRaw = Number(process.env.RENDER_JOB_STALE_MINUTES ?? '45');
+    const staleMinutes = Number.isFinite(staleMinutesRaw)
+      ? Math.max(15, staleMinutesRaw)
+      : 45;
+    const STALE_MS = staleMinutes * 60_000;
+
+    const ageMs = Date.now() - progressAt.getTime();
     if (ageMs < STALE_MS) return;
+
+    const hint = this.isServerlessRuntime()
+      ? 'likely killed by serverless runtime'
+      : 'likely crashed, ran out of memory, or got stuck';
 
     await this.jobsRepo.save({
       id: job.id,
       status: 'failed',
-      error:
-        'Render job became stale (likely killed by serverless runtime). Deploy the renderer on a long-running server or dedicated worker.',
+      error: `Render job became stale (${hint}). Check backend logs and consider lowering resolution/FPS or increasing Node memory.`,
     });
   }
 
@@ -523,10 +551,14 @@ export class RenderVideosService {
   ) {
     const tempDir = this.createTempDir('auto-video-generator-');
     let publicDirToClean: string | null = null;
+    let stopHeartbeat: (() => void) | null = null;
     try {
       const job = await this.getJob(jobId);
       job.status = 'processing';
+      job.lastProgressAt = new Date();
       await this.jobsRepo.save(job);
+
+      stopHeartbeat = this.startHeartbeat(jobId);
 
       const hasAudioBuffer = !!params.audioFile?.buffer?.length;
       const hasAudioUrl = !!params.audioUrl;
@@ -651,6 +683,7 @@ export class RenderVideosService {
 
       job.timeline = timeline;
       job.status = 'rendering';
+      job.lastProgressAt = new Date();
       await this.jobsRepo.save(job);
 
       const outputFsPath = this.getVideoFsPath(jobId);
@@ -693,6 +726,7 @@ export class RenderVideosService {
         error: err?.message || 'Failed to process render job',
       });
     } finally {
+      if (stopHeartbeat) stopHeartbeat();
       this.safeRmDir(tempDir);
       if (publicDirToClean) {
         this.safeRmDir(publicDirToClean);

@@ -13,6 +13,7 @@ import { SplitScriptDto } from './dto/split-script.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
 import { GenerateVoiceDto } from './dto/generate-voice.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
+import { YoutubeSeoDto } from './dto/youtube-seo.dto';
 
 @Controller('ai')
 export class AiController {
@@ -127,5 +128,12 @@ export class AiController {
       'inline; filename="voice-over-elevenlabs.mp3"',
     );
     res.send(audioBuffer);
+  }
+
+  @Post('youtube-seo')
+  @HttpCode(HttpStatus.OK)
+  async youtubeSeo(@Body() body: YoutubeSeoDto) {
+    const result = await this.aiService.generateYoutubeSeo(body.script);
+    return result;
   }
 }

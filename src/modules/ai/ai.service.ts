@@ -66,7 +66,7 @@ export class AiService {
               `Approximate length: ${length}.\n` +
               `Subject: ${subject}.\n` +
               (subjectContent
-                ? `Specific focus within the subject: ${subjectContent}.\n`
+                ? `Specific focus on a single story/subject within the subject: ${subjectContent}.\n`
                 : '') +
               `Style/tone: ${style}.\n` +
               `For religious (Islam) scripts, keep it respectful, authentic, and avoid controversial topics.\n` +
@@ -149,7 +149,7 @@ export class AiService {
     const length = dto.length?.trim() || '1 minute';
     const style = dto.style?.trim() || 'Conversational';
     const model = dto.model?.trim() || this.model;
-
+    
     try {
       const stream = await this.client.chat.completions.create({
         model,
@@ -223,6 +223,74 @@ export class AiService {
     } catch (error) {
       return 'Untitled Script';
     }
+  }
+
+  async generateYoutubeSeo(script: string): Promise<{
+    title: string;
+    description: string;
+    tags: string[];
+  }> {
+    const trimmed = script?.trim();
+    if (!trimmed) {
+      throw new BadRequestException('Script is required');
+    }
+
+    const completion = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are an expert YouTube SEO copywriter. ' +
+            'Given a video narration script, you produce metadata optimized for search and click-through. ' +
+            'Return ONLY valid JSON as: {"title": string, "description": string, "tags": string[]}. ' +
+            'Rules: title <= 100 chars, description <= 5000 chars, tags: 10-20 items, each tag <= 30 chars, no hashtags, no emojis.',
+        },
+        {
+          role: 'user',
+          content:
+            'Generate YouTube SEO metadata for this video script. ' +
+            'The title should be compelling and keyword-rich. ' +
+            'The description should include a strong first 2 lines, a short summary, and relevant keywords naturally. ' +
+            'Tags should be relevant and specific (mix broad + long-tail).\n\n' +
+            trimmed,
+        },
+      ],
+      response_format: { type: 'json_object' },
+    });
+
+    const raw = completion.choices[0]?.message?.content;
+    if (!raw) {
+      throw new InternalServerErrorException('Empty response from OpenAI');
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new InternalServerErrorException('Invalid JSON from OpenAI');
+    }
+
+    const title = String(parsed.title ?? '').trim().slice(0, 100);
+    const description = String(parsed.description ?? '').trim().slice(0, 5000);
+    const tags = Array.isArray(parsed.tags)
+      ? parsed.tags
+          .map((t: any) => String(t).trim())
+          .filter(Boolean)
+          .map((t: string) => t.replace(/^#/, ''))
+          .map((t: string) => t.slice(0, 30))
+          .slice(0, 25)
+      : [];
+
+    if (!title) {
+      throw new InternalServerErrorException('OpenAI returned empty title');
+    }
+
+    return {
+      title,
+      description,
+      tags,
+    };
   }
 
   /**

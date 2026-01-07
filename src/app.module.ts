@@ -20,6 +20,7 @@ import { ScriptsModule } from './modules/scripts/scripts.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { ChatsModule } from './modules/chats/chats.module';
 import { RenderJob } from './modules/render-videos/entities/render-job.entity';
+import { YoutubeModule } from './modules/youtube/youtube.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { RenderJob } from './modules/render-videos/entities/render-job.entity';
     ScriptsModule,
     MessagesModule,
     ChatsModule,
+    YoutubeModule,
   ],
 })
 export class AppModule {}

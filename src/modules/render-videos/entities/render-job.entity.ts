@@ -33,6 +33,9 @@ export class RenderJob {
   @Column({ type: 'jsonb', nullable: true })
   timeline: any | null;
 
+  @Column({ type: 'timestamp', nullable: true })
+  lastProgressAt: Date | null;
+
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
 

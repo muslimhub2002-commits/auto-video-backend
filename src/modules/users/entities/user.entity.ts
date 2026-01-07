@@ -35,6 +35,18 @@ export class User {
   @Column({ type: 'simple-array', nullable: true })
   roles: string[];
 
+  @Column({ type: 'text', nullable: true })
+  youtube_access_token: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  youtube_refresh_token: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  youtube_token_expiry: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  youtube_connected_at: Date | null;
+
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
 
