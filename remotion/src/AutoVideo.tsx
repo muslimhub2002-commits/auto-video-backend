@@ -13,6 +13,13 @@ import {
 } from 'remotion';
 import type { Timeline, TimelineScene } from './types';
 
+const resolveMediaSrc = (src: string) => {
+  if (!src) return src;
+  // If we already have an absolute URL (e.g. Cloudinary), use it as-is.
+  if (/^https?:\/\//i.test(src)) return src;
+  return staticFile(src);
+};
+
 const Scene: React.FC<{ scene: TimelineScene; fontScale: number; prevSceneImage?: string; isLastScene: boolean; nextSceneHasGlitch: boolean }> = ({ scene, fontScale, prevSceneImage, isLastScene, nextSceneHasGlitch }) => {
   const frame = useCurrentFrame();
   const totalFrames = scene.durationFrames;
@@ -116,7 +123,7 @@ const Scene: React.FC<{ scene: TimelineScene; fontScale: number; prevSceneImage?
       {scene.videoSrc ? (
         <AbsoluteFill style={backgroundStyle}>
           <OffthreadVideo
-            src={staticFile(scene.videoSrc)}
+            src={resolveMediaSrc(scene.videoSrc)}
             muted
             pauseWhenBuffering
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -128,7 +135,7 @@ const Scene: React.FC<{ scene: TimelineScene; fontScale: number; prevSceneImage?
             {/* Show previous or current image based on glitch cut point */}
             <AbsoluteFill style={backgroundStyle}>
               <Img
-                src={staticFile(showPrevImage ? prevSceneImage : scene.imageSrc)}
+                src={resolveMediaSrc(showPrevImage ? prevSceneImage : scene.imageSrc)}
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             </AbsoluteFill>
@@ -144,7 +151,7 @@ const Scene: React.FC<{ scene: TimelineScene; fontScale: number; prevSceneImage?
                   }}
                 >
                   <Img
-                    src={staticFile(showPrevImage ? prevSceneImage : scene.imageSrc)}
+                    src={resolveMediaSrc(showPrevImage ? prevSceneImage : scene.imageSrc)}
                     style={{
                       width: '100%',
                       height: '100%',
@@ -162,7 +169,7 @@ const Scene: React.FC<{ scene: TimelineScene; fontScale: number; prevSceneImage?
                   }}
                 >
                   <Img
-                    src={staticFile(showPrevImage ? prevSceneImage : scene.imageSrc)}
+                    src={resolveMediaSrc(showPrevImage ? prevSceneImage : scene.imageSrc)}
                     style={{
                       width: '100%',
                       height: '100%',
@@ -216,7 +223,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   return (
     <AbsoluteFill>
       {timeline.audioSrc && (
-        <Html5Audio src={staticFile(timeline.audioSrc)} />
+        <Html5Audio src={resolveMediaSrc(timeline.audioSrc)} />
       )}
       {/* Global background music from remotion/public, trimmed to video length by the composition */}
       <Html5Audio src={staticFile('background.mp3')}/>

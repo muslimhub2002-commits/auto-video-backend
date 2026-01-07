@@ -5,4 +5,3 @@ export class CreateChatDto {
   @IsUUID()
   user_id?: string;
 }
-

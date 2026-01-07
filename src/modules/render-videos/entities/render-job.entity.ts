@@ -39,5 +39,3 @@ export class RenderJob {
   @UpdateDateColumn({ type: 'timestamp' })
   updatedAt: Date;
 }
-
-

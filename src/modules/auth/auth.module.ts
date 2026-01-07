@@ -32,4 +32,3 @@ import { User } from '../users/entities/user.entity';
   exports: [AuthService, JwtStrategy, PassportModule],
 })
 export class AuthModule {}
-

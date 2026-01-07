@@ -35,12 +35,9 @@ import { RenderJob } from './modules/render-videos/entities/render-job.entity';
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,
       autoLoadEntities: true,
-      synchronize: false,
+      synchronize: true,
       // Enable SSL only when explicitly requested (e.g. for cloud DBs)
-      ssl:
-        process.env.DB_SSL === 'true'
-          ? { rejectUnauthorized: false }
-          : false,
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : true,
       extra: {
         max: 5,
       },
@@ -70,4 +67,4 @@ import { RenderJob } from './modules/render-videos/entities/render-job.entity';
     ChatsModule,
   ],
 })
-export class AppModule { }
+export class AppModule {}

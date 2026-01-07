@@ -36,7 +36,10 @@ export class VoiceOversService {
     private readonly voiceOverRepository: Repository<VoiceOver>,
   ) {}
 
-  async syncAllFromElevenLabs(): Promise<{ imported: number; updated: number }> {
+  async syncAllFromElevenLabs(): Promise<{
+    imported: number;
+    updated: number;
+  }> {
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) {
       this.logger.error('ELEVENLABS_API_KEY is not set');
@@ -49,63 +52,60 @@ export class VoiceOversService {
 
     // Loop through all pages if pagination is present
     // ElevenLabs currently returns a list; this is future-proof if they add pagination.
-      const url = new URL('https://api.elevenlabs.io/v1/voices');
-      if (pageToken) {
-        url.searchParams.set('page_token', pageToken);
-      }
+    const url = new URL('https://api.elevenlabs.io/v1/voices');
+    if (pageToken) {
+      url.searchParams.set('page_token', pageToken);
+    }
 
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'xi-api-key': apiKey,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      this.logger.error(
+        `Failed to fetch ElevenLabs voices: ${response.status} ${response.statusText} - ${text}`,
+      );
+      throw new Error('Failed to fetch ElevenLabs voices');
+    }
+
+    const data = (await response.json()) as ElevenLabsVoicesResponse;
+    const voices = data.voices || [];
+    for (const voice of voices) {
+      const existing = await this.voiceOverRepository.findOne({
+        where: { voice_id: voice.voice_id },
       });
-      if (!response.ok) {
-        const text = await response.text();
-        this.logger.error(
-          `Failed to fetch ElevenLabs voices: ${response.status} ${response.statusText} - ${text}`,
+
+      const labels = voice.labels || {};
+
+      const payload: Partial<VoiceOver> = {
+        voice_id: voice.voice_id,
+        name: voice.name,
+        preview_url: voice.preview_url ?? null,
+        description: voice.description ?? null,
+        category: voice.category ?? null,
+        gender: voice.gender ?? labels.gender ?? null,
+        accent: voice.accent ?? labels.accent ?? null,
+        descriptive: labels.descriptive ?? null,
+        use_case: labels.use_case ?? null,
+      };
+
+      if (existing) {
+        await this.voiceOverRepository.update({ id: existing.id }, payload);
+        updated += 1;
+      } else {
+        await this.voiceOverRepository.save(
+          this.voiceOverRepository.create(payload),
         );
-        throw new Error('Failed to fetch ElevenLabs voices');
+        imported += 1;
       }
+    }
 
-      const data = (await response.json()) as ElevenLabsVoicesResponse;
-      const voices = data.voices || [];
-      for (const voice of voices) {
-        const existing = await this.voiceOverRepository.findOne({
-          where: { voice_id: voice.voice_id },
-        });
-
-        const labels = voice.labels || {};
-
-        const payload: Partial<VoiceOver> = {
-          voice_id: voice.voice_id,
-          name: voice.name,
-          preview_url: voice.preview_url ?? null,
-          description: voice.description ?? null,
-          category: voice.category ?? null,
-          gender: voice.gender ?? labels.gender ?? null,
-          accent: voice.accent ?? labels.accent ?? null,
-          descriptive: labels.descriptive ?? null,
-          use_case: labels.use_case ?? null,
-        };
-
-        if (existing) {
-          await this.voiceOverRepository.update({ id: existing.id }, payload);
-          updated += 1;
-        } else {
-          await this.voiceOverRepository.save(
-            this.voiceOverRepository.create(payload),
-          );
-          imported += 1;
-        }
-      }
-
-      pageToken = data.next_page_token ?? null;
-    
-
- 
+    pageToken = data.next_page_token ?? null;
 
     return { imported, updated };
   }

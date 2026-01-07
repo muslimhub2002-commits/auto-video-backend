@@ -25,7 +25,9 @@ export class Sentence {
   @Column({ type: 'uuid', nullable: true })
   image_id: string | null;
 
-  @ManyToOne(() => Script, (script) => script.sentences, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Script, (script) => script.sentences, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'script_id' })
   script: Script;
 

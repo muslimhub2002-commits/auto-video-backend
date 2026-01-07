@@ -36,7 +36,7 @@ export class AiController {
 
     try {
       // OpenAI stream is an async iterable of ChatCompletionChunk objects
-      // eslint-disable-next-line no-restricted-syntax
+
       for await (const chunk of stream) {
         const content = chunk.choices[0]?.delta?.content || '';
         if (content) {
@@ -80,7 +80,7 @@ export class AiController {
 
     try {
       // OpenAI stream is an async iterable of ChatCompletionChunk objects
-      // eslint-disable-next-line no-restricted-syntax
+
       for await (const chunk of stream) {
         const content = chunk.choices[0]?.delta?.content || '';
         if (content) {
@@ -129,5 +129,3 @@ export class AiController {
     res.send(audioBuffer);
   }
 }
-
-

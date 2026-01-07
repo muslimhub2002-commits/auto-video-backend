@@ -8,25 +8,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
 import type { Multer } from 'multer';
-import { extname, join } from 'path';
-import { randomUUID } from 'crypto';
-import * as fs from 'fs';
 import { CreateRenderVideoDto } from './dto/create-render-video.dto';
 import { RenderVideosService } from './render-videos.service';
 
-const storage = diskStorage({
-  destination: (_req, file, cb) => {
-    const sub = file.fieldname === 'voiceOver' ? 'audio' : 'images';
-    const dir = join(process.cwd(), 'storage', sub);
-    fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir as string);
-  },
-  filename: (_req, file, cb) => {
-    cb(null, `${randomUUID()}${extname(file.originalname)}`);
-  },
-});
+const SUBSCRIBE_SENTENCE =
+  'Please Subscribe & Help us reach out to more people';
 
 @Controller('videos')
 export class RenderVideosController {
@@ -39,7 +26,7 @@ export class RenderVideosController {
         { name: 'voiceOver', maxCount: 1 },
         { name: 'images', maxCount: 200 },
       ],
-      { storage },
+      // Intentionally use memory storage (no local disk writes).
     ),
   )
   async create(
@@ -58,20 +45,43 @@ export class RenderVideosController {
       ? Number(body.audioDurationSeconds)
       : undefined;
 
-    const audioPath = voice
-      ? join(process.cwd(), 'storage', 'audio', voice.filename)
-      : '';
-    const imagePaths = images.map((f) =>
-      join(process.cwd(), 'storage', 'images', f.filename),
-    );
+    // Preserve alignment between sentences and uploaded media.
+    // The frontend does not upload an image for the subscribe sentence (it uses a built-in subscribe video),
+    // so we map uploaded images to non-subscribe sentences in order and insert null for the subscribe sentence.
+    const alignedImages: Array<Multer.File | null> = [];
+    let imageCursor = 0;
+    for (const s of sentences) {
+      const isSubscribe = (s.text || '').trim() === SUBSCRIBE_SENTENCE;
+      if (isSubscribe) {
+        alignedImages.push(null);
+      } else {
+        alignedImages.push(images[imageCursor] ?? null);
+        imageCursor += 1;
+      }
+    }
+
     const useLowerFps = body.useLowerFps === 'true';
     const useLowerResolution = body.useLowerResolution === 'true';
     const enableGlitchTransitions = body.enableGlitchTransitions === 'true';
 
     const job = await this.renderVideosService.createJob({
-      audioPath,
+      audioFile: voice
+        ? {
+            buffer: voice.buffer,
+            originalName: voice.originalname,
+            mimeType: voice.mimetype,
+          }
+        : null,
       sentences,
-      imagePaths,
+      imageFiles: alignedImages.map((f) =>
+        f
+          ? {
+              buffer: f.buffer,
+              originalName: f.originalname,
+              mimeType: f.mimetype,
+            }
+          : null,
+      ),
       scriptLength: body.scriptLength,
       audioDurationSeconds,
       useLowerFps,
@@ -94,5 +104,3 @@ export class RenderVideosController {
     };
   }
 }
-
-

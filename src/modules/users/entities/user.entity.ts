@@ -56,4 +56,3 @@ export class User {
   @OneToMany(() => Script, (script) => script.user)
   scripts: Script[];
 }
-

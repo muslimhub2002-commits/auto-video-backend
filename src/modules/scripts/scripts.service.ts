@@ -16,9 +16,17 @@ export class ScriptsService {
     private readonly aiService: AiService,
   ) {}
 
-  async create(userId: string, createScriptDto: CreateScriptDto): Promise<Script> {
-    const { script, message_id, voice_id, sentences, title: providedTitle } =
-      createScriptDto;
+  async create(
+    userId: string,
+    createScriptDto: CreateScriptDto,
+  ): Promise<Script> {
+    const {
+      script,
+      message_id,
+      voice_id,
+      sentences,
+      title: providedTitle,
+    } = createScriptDto;
     const trimmedScript = script.trim();
 
     // If an identical script already exists for this user, update it instead
@@ -95,7 +103,8 @@ export class ScriptsService {
     limit = 20,
   ): Promise<{ items: Script[]; total: number; page: number; limit: number }> {
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
-    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
+    const safeLimit =
+      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
 
     const [items, total] = await this.scriptRepository.findAndCount({
       where: { user_id: userId },

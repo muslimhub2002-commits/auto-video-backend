@@ -47,4 +47,3 @@ export class Voice {
   @OneToMany(() => Script, (script) => script.voice)
   scripts: Script[];
 }
-

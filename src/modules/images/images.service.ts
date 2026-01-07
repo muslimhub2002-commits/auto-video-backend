@@ -18,7 +18,11 @@ export class ImagesService {
       tinify.key = process.env.TINIFY_KEY;
     }
 
-    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_CLOUD_SECRET) {
+    if (
+      process.env.CLOUDINARY_CLOUD_NAME &&
+      process.env.CLOUDINARY_API_KEY &&
+      process.env.CLOUDINARY_CLOUD_SECRET
+    ) {
       cloudinary.config({
         cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
         api_key: process.env.CLOUDINARY_API_KEY,
@@ -38,7 +42,8 @@ export class ImagesService {
     limit = 20,
   ): Promise<{ items: Image[]; total: number; page: number; limit: number }> {
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
-    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
+    const safeLimit =
+      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
 
     const [items, total] = await this.imagesRepository.findAndCount({
       where: { user_id },
@@ -63,8 +68,14 @@ export class ImagesService {
       throw new InternalServerErrorException('TINIFY_KEY is not configured');
     }
 
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_CLOUD_SECRET) {
-      throw new InternalServerErrorException('Cloudinary environment variables are not configured');
+    if (
+      !process.env.CLOUDINARY_CLOUD_NAME ||
+      !process.env.CLOUDINARY_API_KEY ||
+      !process.env.CLOUDINARY_CLOUD_SECRET
+    ) {
+      throw new InternalServerErrorException(
+        'Cloudinary environment variables are not configured',
+      );
     }
 
     try {
@@ -127,7 +138,7 @@ export class ImagesService {
       return await this.imagesRepository.save(imageEntity);
     } catch (error: any) {
       // Log underlying error for debugging while returning a safe message
-      // eslint-disable-next-line no-console
+
       console.error('Error in saveCompressedToCloudinary:', error);
       throw new InternalServerErrorException(
         error?.message ?? 'Failed to compress and upload image',

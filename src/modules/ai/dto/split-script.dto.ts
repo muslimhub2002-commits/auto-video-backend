@@ -10,5 +10,3 @@ export class SplitScriptDto {
   @IsOptional()
   model?: string;
 }
-
-

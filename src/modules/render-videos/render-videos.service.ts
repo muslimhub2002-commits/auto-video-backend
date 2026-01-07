@@ -2,11 +2,19 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RenderJob } from './entities/render-job.entity';
-import { join, basename, extname } from 'path';
+import { join, extname } from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
+import { v2 as cloudinary } from 'cloudinary';
 import OpenAI from 'openai';
 
 type SentenceInput = { text: string };
+
+type UploadedAsset = {
+  buffer: Buffer;
+  originalName: string;
+  mimeType?: string;
+};
 
 type SentenceTiming = {
   index: number;
@@ -31,9 +39,9 @@ export class RenderVideosService {
   }
 
   async createJob(params: {
-    audioPath: string;
+    audioFile: UploadedAsset | null;
     sentences: SentenceInput[];
-    imagePaths: string[];
+    imageFiles: Array<UploadedAsset | null>;
     scriptLength: string;
     audioDurationSeconds?: number;
     useLowerFps?: boolean;
@@ -43,7 +51,8 @@ export class RenderVideosService {
     const job = this.jobsRepo.create({
       status: 'queued',
       error: null,
-      audioPath: params.audioPath,
+      // audioPath is required by the DB schema; store a non-local placeholder.
+      audioPath: '',
       videoPath: null,
       timeline: null,
     });
@@ -123,7 +132,7 @@ export class RenderVideosService {
       return {
         index,
         text: s.text,
-        imageSrc: params.imagePaths[index],
+        imageSrc: isSubscribe ? undefined : params.imagePaths[index],
         videoSrc: isSubscribe ? params.subscribeVideoSrc : undefined,
         startFrame,
         durationFrames,
@@ -134,7 +143,7 @@ export class RenderVideosService {
     const durationInFrames =
       scenes.length > 0
         ? scenes[scenes.length - 1].startFrame +
-        scenes[scenes.length - 1].durationFrames
+          scenes[scenes.length - 1].durationFrames
         : Math.ceil(T * fps);
 
     return {
@@ -153,6 +162,95 @@ export class RenderVideosService {
 
   private ensureDir(dir: string) {
     fs.mkdirSync(dir, { recursive: true });
+  }
+
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    ms: number,
+    label: string,
+  ): Promise<T> {
+    let timeoutId: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${ms}ms`));
+      }, ms);
+    });
+
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }
+
+  private ensureCloudinaryConfigured() {
+    if (
+      !process.env.CLOUDINARY_CLOUD_NAME ||
+      !process.env.CLOUDINARY_API_KEY ||
+      !process.env.CLOUDINARY_CLOUD_SECRET
+    ) {
+      throw new Error('Cloudinary environment variables are not configured');
+    }
+
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
+    });
+  }
+
+  private async uploadBufferToCloudinary(params: {
+    buffer: Buffer;
+    folder: string;
+    resource_type: 'image' | 'video';
+  }): Promise<{ secure_url: string; public_id: string }> {
+    this.ensureCloudinaryConfigured();
+
+    const uploadPromise = new Promise<any>((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: params.folder,
+          resource_type: params.resource_type,
+          overwrite: false,
+          use_filename: false,
+        },
+        (error, result) => {
+          if (error || !result) {
+            return reject(error ?? new Error('Cloudinary upload failed'));
+          }
+          resolve(result);
+        },
+      );
+
+      stream.end(params.buffer);
+    });
+
+    const uploadResult: any = await this.withTimeout(
+      uploadPromise,
+      params.resource_type === 'image' ? 60_000 : 90_000,
+      `Cloudinary ${params.resource_type} upload`,
+    );
+
+    if (!uploadResult?.secure_url || !uploadResult?.public_id) {
+      throw new Error('Cloudinary upload did not return a secure_url');
+    }
+
+    return {
+      secure_url: uploadResult.secure_url as string,
+      public_id: uploadResult.public_id as string,
+    };
+  }
+
+  private createTempDir(prefix: string) {
+    return fs.mkdtempSync(join(os.tmpdir(), prefix));
+  }
+
+  private safeRmDir(dir: string) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
   }
 
   private getPublicVideoUrl(jobId: string) {
@@ -188,9 +286,7 @@ export class RenderVideosService {
     const compositions = await renderer.getCompositions(serveUrl, {
       inputProps: { timeline: params.timeline },
     });
-    const composition = compositions.find(
-      (c: any) => c.id === 'AutoVideo',
-    ) ?? {
+    const composition = compositions.find((c: any) => c.id === 'AutoVideo') ?? {
       id: 'AutoVideo',
       width: params.timeline.width,
       height: params.timeline.height,
@@ -213,26 +309,11 @@ export class RenderVideosService {
     });
   }
 
-  private prepareRemotionPublicDir(jobId: string, params: {
-    audioPath: string;
-    imagePaths: string[];
-  }) {
+  private prepareRemotionPublicDir(jobId: string) {
     const root = this.getStorageRoot();
     const publicDir = join(root, 'render-public', jobId);
     this.ensureDir(publicDir);
     this.ensureDir(join(publicDir, 'images'));
-
-    const audioExt = extname(params.audioPath) || '.mp3';
-    const audioDestName = `audio${audioExt}`;
-    fs.copyFileSync(params.audioPath, join(publicDir, audioDestName));
-
-    const imageSrcs: string[] = [];
-    for (const p of params.imagePaths) {
-      const name = basename(p);
-      const dest = join(publicDir, 'images', name);
-      fs.copyFileSync(p, dest);
-      imageSrcs.push(`images/${name}`);
-    }
 
     // Try to copy the subscribe.mp4 video and background.mp3 audio
     // from known public folders into this job's public directory.
@@ -242,7 +323,13 @@ export class RenderVideosService {
         // Preferred: backend Remotion public folder
         join(process.cwd(), 'remotion', 'public', 'subscribe.mp4'),
         // Legacy: frontend public folder
-        join(process.cwd(), '..', 'frontend', 'public', 'subscribe.mp4'),
+        join(
+          process.cwd(),
+          '..',
+          'auto-video-frontend',
+          'public',
+          'subscribe.mp4',
+        ),
       ];
 
       for (const source of videoSources) {
@@ -260,7 +347,13 @@ export class RenderVideosService {
     try {
       const bgSources = [
         join(process.cwd(), 'remotion', 'public', 'background.mp3'),
-        join(process.cwd(), '..', 'frontend', 'public', 'background.mp3'),
+        join(
+          process.cwd(),
+          '..',
+          'auto-video-frontend',
+          'public',
+          'background.mp3',
+        ),
       ];
 
       for (const source of bgSources) {
@@ -277,7 +370,13 @@ export class RenderVideosService {
     try {
       const glitchSources = [
         join(process.cwd(), 'remotion', 'public', 'glitch-fx.mp3'),
-        join(process.cwd(), '..', 'frontend', 'public', 'glitch-fx.mp3'),
+        join(
+          process.cwd(),
+          '..',
+          'auto-video-frontend',
+          'public',
+          'glitch-fx.mp3',
+        ),
       ];
 
       for (const source of glitchSources) {
@@ -293,8 +392,6 @@ export class RenderVideosService {
 
     return {
       publicDir,
-      audioSrc: audioDestName,
-      imageSrcs,
       subscribeVideoSrc,
     };
   }
@@ -302,38 +399,87 @@ export class RenderVideosService {
   private async processJob(
     jobId: string,
     params: {
-      audioPath: string;
+      audioFile: UploadedAsset | null;
       sentences: SentenceInput[];
-      imagePaths: string[];
+      imageFiles: Array<UploadedAsset | null>;
       scriptLength: string;
       audioDurationSeconds?: number;
-        useLowerFps?: boolean;
-        useLowerResolution?: boolean;      enableGlitchTransitions?: boolean;    },
+      useLowerFps?: boolean;
+      useLowerResolution?: boolean;
+      enableGlitchTransitions?: boolean;
+    },
   ) {
+    const tempDir = this.createTempDir('auto-video-generator-');
+    let publicDirToClean: string | null = null;
     try {
       const job = await this.getJob(jobId);
       job.status = 'processing';
       await this.jobsRepo.save(job);
+
+      if (!params.audioFile?.buffer) {
+        throw new Error('Missing voiceOver audio file');
+      }
+
+      // Upload audio to Cloudinary and use the URL inside Remotion.
+      const uploadedAudio = await this.uploadBufferToCloudinary({
+        buffer: params.audioFile.buffer,
+        folder: 'auto-video-generator/render-inputs/audio',
+        resource_type: 'video',
+      });
+      job.audioPath = uploadedAudio.secure_url;
+      await this.jobsRepo.save(job);
+
+      // Upload per-sentence images to Cloudinary (no local persistence).
+      // Keep sentence alignment; subscribe sentence gets no image.
+      const imageSrcs: string[] = [];
+      for (let i = 0; i < params.sentences.length; i += 1) {
+        const sentenceText = (params.sentences[i]?.text || '').trim();
+        const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
+        if (isSubscribe) {
+          imageSrcs.push('');
+          continue;
+        }
+
+        const file = params.imageFiles[i];
+        if (!file?.buffer) {
+          throw new Error(
+            `Missing image upload for sentence ${i + 1} (non-subscribe sentence)`,
+          );
+        }
+
+        const uploadedImage = await this.uploadBufferToCloudinary({
+          buffer: file.buffer,
+          folder: 'auto-video-generator/render-inputs/images',
+          resource_type: 'image',
+        });
+        imageSrcs.push(uploadedImage.secure_url);
+      }
+
+      // Create a temporary local audio file for alignment and audio analysis.
+      // This is not persisted in project storage.
+      const audioExt = extname(params.audioFile.originalName || '') || '.mp3';
+      const tempAudioPath = join(tempDir, `audio${audioExt}`);
+      fs.writeFileSync(tempAudioPath, params.audioFile.buffer);
 
       const durationSeconds =
         params.audioDurationSeconds && params.audioDurationSeconds > 0
           ? params.audioDurationSeconds
           : 1;
 
-      const { publicDir, audioSrc, imageSrcs, subscribeVideoSrc } =
-        this.prepareRemotionPublicDir(
-          jobId,
-          {
-            audioPath: params.audioPath,
-            imagePaths: params.imagePaths,
-          },
-        );
+      const { publicDir, subscribeVideoSrc } =
+        this.prepareRemotionPublicDir(jobId);
+      publicDirToClean = publicDir;
+
+      // Place audio into the Remotion publicDir so rendering does not rely on
+      // remote audio URLs (prevents CORS/network stalls in Chromium).
+      const publicAudioName = `audio${audioExt}`;
+      fs.writeFileSync(join(publicDir, publicAudioName), params.audioFile.buffer);
 
       // Align audio with sentences to get per-sentence timings.
       // Currently uses a word-based proportional approach and is structured
       // so that a real aligner (e.g. Whisper-based) can be plugged in later.
       const sentenceTimings = await this.alignAudioToSentences(
-        params.audioPath,
+        tempAudioPath,
         params.sentences,
         durationSeconds,
       );
@@ -343,7 +489,7 @@ export class RenderVideosService {
         imagePaths: imageSrcs,
         scriptLength: params.scriptLength,
         audioDurationSeconds: durationSeconds,
-        audioSrc,
+        audioSrc: publicAudioName,
         sentenceTimings,
         subscribeVideoSrc,
         useLowerFps: params.useLowerFps,
@@ -356,9 +502,37 @@ export class RenderVideosService {
       await this.jobsRepo.save(job);
 
       const outputFsPath = this.getVideoFsPath(jobId);
-      await this.renderWithRemotion({ timeline, outputFsPath, publicDir });
+      await this.withTimeout(
+        this.renderWithRemotion({ timeline, outputFsPath, publicDir }),
+        20 * 60_000,
+        'Remotion render',
+      );
+
+      // Upload the rendered video to Cloudinary and remove the local file.
+      this.ensureCloudinaryConfigured();
+      const uploadResult: any = await this.withTimeout(
+        cloudinary.uploader.upload(outputFsPath, {
+          folder: 'auto-video-generator/videos',
+          resource_type: 'video',
+          overwrite: false,
+          use_filename: false,
+        }),
+        20 * 60_000,
+        'Cloudinary final video upload',
+      );
+
+      if (!uploadResult?.secure_url) {
+        throw new Error('Cloudinary video upload did not return a secure_url');
+      }
+
+      try {
+        fs.unlinkSync(outputFsPath);
+      } catch {
+        // ignore
+      }
+
       job.status = 'completed';
-      job.videoPath = this.getPublicVideoUrl(jobId);
+      job.videoPath = uploadResult.secure_url as string;
       await this.jobsRepo.save(job);
     } catch (err: any) {
       await this.jobsRepo.save({
@@ -366,6 +540,11 @@ export class RenderVideosService {
         status: 'failed',
         error: err?.message || 'Failed to process render job',
       });
+    } finally {
+      this.safeRmDir(tempDir);
+      if (publicDirToClean) {
+        this.safeRmDir(publicDirToClean);
+      }
     }
   }
 
@@ -386,7 +565,7 @@ export class RenderVideosService {
       this.alignByVoiceActivity(audioPath, sentences, audioDurationSeconds);
 
     // Debug logging to inspect whether OpenAI-based alignment is used.
-    // eslint-disable-next-line no-console
+
     console.log('[RenderVideosService] alignAudioToSentences called', {
       audioPath,
       audioDurationSeconds,
@@ -395,13 +574,13 @@ export class RenderVideosService {
     });
 
     if (!this.openai) {
-      // eslint-disable-next-line no-console
-      console.log('[RenderVideosService] OpenAI client not configured, using fallback alignment');
+      console.log(
+        '[RenderVideosService] OpenAI client not configured, using fallback alignment',
+      );
       return fallback();
     }
 
     if (!fs.existsSync(audioPath)) {
-      // eslint-disable-next-line no-console
       console.warn('[RenderVideosService] Audio file not found for alignment', {
         audioPath,
       });
@@ -409,29 +588,30 @@ export class RenderVideosService {
     }
 
     try {
-      const model =
-        process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe';
+      const model = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe';
       // Newer GPT-4o-based transcription models only support 'json' or 'text'.
-      const responseFormat = model.startsWith('gpt-4o') ? 'json' : 'verbose_json';
+      const responseFormat = model.startsWith('gpt-4o')
+        ? 'json'
+        : 'verbose_json';
 
-      // eslint-disable-next-line no-console
-      console.log('[RenderVideosService] Calling OpenAI audio.transcriptions.create', {
-        model,
-        responseFormat,
-      });
-
-      const transcription: any =
-        await this.openai.audio.transcriptions.create({
-          file: fs.createReadStream(audioPath),
+      console.log(
+        '[RenderVideosService] Calling OpenAI audio.transcriptions.create',
+        {
           model,
-          response_format: responseFormat as any,
-        } as any);
+          responseFormat,
+        },
+      );
+
+      const transcription: any = await this.openai.audio.transcriptions.create({
+        file: fs.createReadStream(audioPath),
+        model,
+        response_format: responseFormat as any,
+      } as any);
 
       let segments: any[] = Array.isArray(transcription?.segments)
         ? transcription.segments
         : [];
 
-      // eslint-disable-next-line no-console
       console.log('[RenderVideosService] OpenAI transcription result', {
         hasSegments: Array.isArray(transcription?.segments),
         segmentCount: segments.length,
@@ -441,7 +621,7 @@ export class RenderVideosService {
         // If the chosen model (e.g. gpt-4o-transcribe) does not return
         // word-level segments, fall back to Whisper, which does.
         const whisperModel = 'whisper-1';
-        // eslint-disable-next-line no-console
+
         console.warn(
           '[RenderVideosService] Primary transcription model returned no segments; retrying with Whisper',
           { primaryModel: model, whisperModel },
@@ -458,15 +638,15 @@ export class RenderVideosService {
           ? whisperTranscription.segments
           : [];
 
-        // eslint-disable-next-line no-console
         console.log('[RenderVideosService] Whisper transcription result', {
           hasSegments: Array.isArray(whisperTranscription?.segments),
           segmentCount: segments.length,
         });
 
         if (!segments.length) {
-          // eslint-disable-next-line no-console
-          console.warn('[RenderVideosService] Whisper also returned no segments, using fallback alignment');
+          console.warn(
+            '[RenderVideosService] Whisper also returned no segments, using fallback alignment',
+          );
           return fallback();
         }
       }
@@ -486,8 +666,8 @@ export class RenderVideosService {
       const wordsTimeline: WordTiming[] = [];
 
       for (const seg of segments) {
-        const segStartRaw = (seg as any).start;
-        const segEndRaw = (seg as any).end;
+        const segStartRaw = seg.start;
+        const segEndRaw = seg.end;
         const segStart =
           typeof segStartRaw === 'number'
             ? segStartRaw
@@ -498,7 +678,7 @@ export class RenderVideosService {
         if (!Number.isFinite(segStart) || !Number.isFinite(segEnd)) continue;
         if (segEnd <= segStart) continue;
 
-        const rawText = (seg as any).text ?? '';
+        const rawText = seg.text ?? '';
         const text = rawText.toString().trim();
         if (!text) continue;
 
@@ -518,8 +698,9 @@ export class RenderVideosService {
       }
 
       if (!wordsTimeline.length) {
-        // eslint-disable-next-line no-console
-        console.warn('[RenderVideosService] No wordsTimeline built from transcription, using fallback alignment');
+        console.warn(
+          '[RenderVideosService] No wordsTimeline built from transcription, using fallback alignment',
+        );
         return fallback();
       }
 
@@ -568,8 +749,7 @@ export class RenderVideosService {
       for (let i = 0; i < cleaned.length; i += 1) {
         const text = cleaned[i];
         if (!text) {
-          const prevEnd =
-            i > 0 ? timings[i - 1].endSeconds : 0;
+          const prevEnd = i > 0 ? timings[i - 1].endSeconds : 0;
           const endSeconds = Math.min(T, prevEnd + 0.1);
           timings.push({
             index: i,
@@ -587,8 +767,7 @@ export class RenderVideosService {
           .filter(Boolean);
 
         if (!sentenceTokens.length) {
-          const prevEnd =
-            i > 0 ? timings[i - 1].endSeconds : 0;
+          const prevEnd = i > 0 ? timings[i - 1].endSeconds : 0;
           const endSeconds = Math.min(T, prevEnd + 0.1);
           timings.push({
             index: i,
@@ -602,7 +781,9 @@ export class RenderVideosService {
         const match = findBestMatch(wordIndex, sentenceTokens);
 
         if (!match) {
-          const prevEnd = timings.length ? timings[timings.length - 1].endSeconds : 0;
+          const prevEnd = timings.length
+            ? timings[timings.length - 1].endSeconds
+            : 0;
           const remainingDuration = Math.max(0.1, T - prevEnd);
           const remaining = this.alignByWordCount(
             sentences.slice(i),
@@ -654,17 +835,21 @@ export class RenderVideosService {
         }
       }
 
-      // eslint-disable-next-line no-console
-      console.log('[RenderVideosService] OpenAI-based alignment produced timings', {
-        timingCount: timings.length,
-      });
+      console.log(
+        '[RenderVideosService] OpenAI-based alignment produced timings',
+        {
+          timingCount: timings.length,
+        },
+      );
 
       return timings;
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[RenderVideosService] Error during OpenAI alignment, using fallback', {
-        message: (err as any)?.message,
-      });
+      console.error(
+        '[RenderVideosService] Error during OpenAI alignment, using fallback',
+        {
+          message: err?.message,
+        },
+      );
       return fallback();
     }
   }
@@ -698,7 +883,12 @@ export class RenderVideosService {
           start: Number(p.startInSeconds),
           end: Number(p.endInSeconds),
         }))
-        .filter((p) => Number.isFinite(p.start) && Number.isFinite(p.end) && p.end > p.start)
+        .filter(
+          (p) =>
+            Number.isFinite(p.start) &&
+            Number.isFinite(p.end) &&
+            p.end > p.start,
+        )
         .sort((a, b) => a.start - b.start);
 
       if (!segments.length) {
@@ -756,7 +946,10 @@ export class RenderVideosService {
         }
 
         for (const seg of segmentMaps) {
-          if (tCompressed >= seg.compressedStart && tCompressed <= seg.compressedEnd) {
+          if (
+            tCompressed >= seg.compressedStart &&
+            tCompressed <= seg.compressedEnd
+          ) {
             const within = tCompressed - seg.compressedStart;
             return seg.realStart + within;
           }
@@ -767,10 +960,7 @@ export class RenderVideosService {
 
       const mappedTimings: SentenceTiming[] = compressedTimings.map((t) => {
         const realStart = mapTime(t.startSeconds);
-        const realEnd = Math.max(
-          realStart + 0.05,
-          mapTime(t.endSeconds),
-        );
+        const realEnd = Math.max(realStart + 0.05, mapTime(t.endSeconds));
 
         return {
           index: t.index,
@@ -780,7 +970,8 @@ export class RenderVideosService {
         };
       });
 
-      const realDuration = Number(result?.durationInSeconds) || audioDurationSeconds || 1;
+      const realDuration =
+        Number(result?.durationInSeconds) || audioDurationSeconds || 1;
       const T = Math.max(1, realDuration);
 
       // Clamp everything to the actual audio duration and ensure
@@ -793,7 +984,10 @@ export class RenderVideosService {
           t.endSeconds = t.startSeconds + 0.1;
         }
         t.startSeconds = Math.max(0, Math.min(t.startSeconds, T));
-        t.endSeconds = Math.max(t.startSeconds + 0.05, Math.min(t.endSeconds, T));
+        t.endSeconds = Math.max(
+          t.startSeconds + 0.05,
+          Math.min(t.endSeconds, T),
+        );
       }
 
       if (mappedTimings.length) {
@@ -854,5 +1048,3 @@ export class RenderVideosService {
     return timings;
   }
 }
-
-

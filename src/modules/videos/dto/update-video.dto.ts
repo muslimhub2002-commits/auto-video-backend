@@ -24,4 +24,3 @@ export class UpdateVideoDto {
   @Min(1)
   width?: number;
 }
-

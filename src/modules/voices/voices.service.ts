@@ -37,7 +37,8 @@ export class VoicesService {
     limit = 20,
   ): Promise<{ items: Voice[]; total: number; page: number; limit: number }> {
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
-    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
+    const safeLimit =
+      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
 
     const [items, total] = await this.voicesRepository.findAndCount({
       where: { user_id },
@@ -123,13 +124,12 @@ export class VoicesService {
         number_of_times_used: 0,
         voice_type: params.voice_type,
         voice_lang: params.voice_lang,
-         hash,
+        hash,
       };
 
       const voiceEntity = this.voicesRepository.create(voicePartial);
       return await this.voicesRepository.save(voiceEntity);
     } catch (error: any) {
-      // eslint-disable-next-line no-console
       console.error('Error in saveToCloudinary (voice):', error);
       throw new InternalServerErrorException(
         error?.message ?? 'Failed to upload voice-over',

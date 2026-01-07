@@ -26,4 +26,3 @@ export class GenerateScriptDto {
   @IsOptional()
   model?: string;
 }
-

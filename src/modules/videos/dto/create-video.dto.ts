@@ -1,4 +1,12 @@
-import { IsNotEmpty, IsString, IsUUID, IsOptional, IsEnum, IsInt, Min } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsUUID,
+  IsOptional,
+  IsEnum,
+  IsInt,
+  Min,
+} from 'class-validator';
 import { VideoSize } from '../entities/video.entity';
 
 export class CreateVideoDto {
@@ -28,4 +36,3 @@ export class CreateVideoDto {
   @Min(1)
   width?: number;
 }
-

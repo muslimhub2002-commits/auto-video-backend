@@ -20,7 +20,9 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async register(registerDto: RegisterDto): Promise<{ access_token: string; user: Partial<User> }> {
+  async register(
+    registerDto: RegisterDto,
+  ): Promise<{ access_token: string; user: Partial<User> }> {
     const { email, password } = registerDto;
 
     // Check if user already exists
@@ -63,7 +65,9 @@ export class AuthService {
     };
   }
 
-  async login(loginDto: LoginDto): Promise<{ access_token: string; user: Partial<User> }> {
+  async login(
+    loginDto: LoginDto,
+  ): Promise<{ access_token: string; user: Partial<User> }> {
     const { email, password } = loginDto;
 
     // Find user
@@ -118,4 +122,3 @@ export class AuthService {
     return user;
   }
 }
-

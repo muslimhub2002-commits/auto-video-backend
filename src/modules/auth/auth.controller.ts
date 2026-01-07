@@ -37,4 +37,3 @@ export class AuthController {
     return userWithoutPassword;
   }
 }
-

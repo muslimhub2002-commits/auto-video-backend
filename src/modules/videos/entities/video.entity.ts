@@ -52,4 +52,3 @@ export class Video {
   @OneToOne(() => Message, (message) => message.video)
   message: Message;
 }
-

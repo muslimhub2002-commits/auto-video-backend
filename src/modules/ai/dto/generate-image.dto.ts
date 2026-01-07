@@ -19,6 +19,3 @@ export class GenerateImageDto {
   @IsOptional()
   scriptLength?: string;
 }
-
-
-

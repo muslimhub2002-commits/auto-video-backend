@@ -1,8 +1,8 @@
 export type TimelineScene = {
   index: number;
   text: string;
-  imageSrc?: string; // path relative to Remotion publicDir (used via staticFile)
-  videoSrc?: string; // optional video for this scene (relative to publicDir, used via staticFile)
+  imageSrc?: string; // static file path (publicDir) or absolute URL
+  videoSrc?: string; // static file path (publicDir) or absolute URL
   startFrame: number;
   durationFrames: number;
   useGlitch?: boolean; // Apply glitch transition effect
@@ -13,7 +13,7 @@ export type Timeline = {
   height: number;
   fps: number;
   durationInFrames: number;
-  audioSrc: string; // path relative to Remotion publicDir (used via staticFile)
+  audioSrc: string; // static file path (publicDir) or absolute URL
   scenes: TimelineScene[];
   // Optional render/transition configuration from the backend
   enableGlitchTransitions?: boolean;

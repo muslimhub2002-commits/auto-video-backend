@@ -13,4 +13,3 @@ export class CreateMessageDto {
   @IsUUID()
   voice_id?: string;
 }
-

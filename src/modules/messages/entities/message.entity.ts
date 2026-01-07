@@ -49,4 +49,3 @@ export class Message {
   @OneToMany(() => Script, (script) => script.message)
   scripts: Script[];
 }
-

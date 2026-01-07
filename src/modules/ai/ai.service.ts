@@ -87,7 +87,10 @@ export class AiService {
   /**
    * Takes a raw script string and returns an ordered list of short sentences.
    */
-  async splitScript(dto: { script: string; model?: string }): Promise<string[]> {
+  async splitScript(dto: {
+    script: string;
+    model?: string;
+  }): Promise<string[]> {
     try {
       const script = dto.script;
       const model = dto.model?.trim() || this.model;
@@ -265,8 +268,7 @@ export class AiService {
       });
 
       const prompt =
-        promptCompletion.choices[0]?.message?.content?.trim() ||
-        dto.sentence;
+        promptCompletion.choices[0]?.message?.content?.trim() || dto.sentence;
 
       // Decide target aspect ratio / dimensions based on script length.
       // For short scripts (e.g. 30 seconds or 1 minute), prefer a
@@ -316,7 +318,7 @@ export class AiService {
 
       if (!createResponse.ok) {
         const errorText = await createResponse.text().catch(() => '');
-        // eslint-disable-next-line no-console
+
         console.error('Leonardo create generation failed', {
           status: createResponse.status,
           statusText: createResponse.statusText,
@@ -340,7 +342,7 @@ export class AiService {
         );
       }
 
-      const createJson = (await createResponse.json()) as any;
+      const createJson = await createResponse.json();
 
       const generationId =
         createJson?.sdGenerationJob?.generationId ||
@@ -349,7 +351,6 @@ export class AiService {
         createJson?.id;
 
       if (!generationId) {
-        // eslint-disable-next-line no-console
         console.error('Leonardo create generation unexpected response', {
           body: createJson,
         });
@@ -368,7 +369,6 @@ export class AiService {
       let imageUrl: string | undefined;
       const maxAttempts = 30; // ~60 seconds total with 2s interval
 
-      // eslint-disable-next-line no-restricted-syntax
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         const statusResponse = await fetch(
           `https://cloud.leonardo.ai/api/rest/v1/generations/${generationId}`,
@@ -382,7 +382,7 @@ export class AiService {
 
         if (!statusResponse.ok) {
           const errorText = await statusResponse.text().catch(() => '');
-          // eslint-disable-next-line no-console
+
           console.error('Leonardo get generation failed', {
             status: statusResponse.status,
             statusText: statusResponse.statusText,
@@ -391,7 +391,7 @@ export class AiService {
           break;
         }
 
-        const statusJson = (await statusResponse.json()) as any;
+        const statusJson = await statusResponse.json();
 
         // Leonardo REST responses typically wrap the generation in `generations_by_pk`
         const generation =
@@ -403,7 +403,11 @@ export class AiService {
         const status =
           generation?.status || generation?.state || statusJson?.status;
 
-        if (status === 'COMPLETE' || status === 'FINISHED' || status === 'succeeded') {
+        if (
+          status === 'COMPLETE' ||
+          status === 'FINISHED' ||
+          status === 'succeeded'
+        ) {
           const candidateImages =
             generation?.generated_images ||
             generation?.images ||
@@ -417,7 +421,6 @@ export class AiService {
         }
 
         if (status === 'FAILED' || status === 'ERROR') {
-          // eslint-disable-next-line no-console
           console.error('Leonardo generation failed', {
             body: statusJson,
           });
@@ -425,7 +428,7 @@ export class AiService {
         }
 
         // Still running - wait and poll again
-        // eslint-disable-next-line no-await-in-loop
+
         await delay(2000);
       }
 
@@ -437,13 +440,13 @@ export class AiService {
 
       // Step 3: download the image and convert to base64 so the frontend
       // can continue treating it like the previous OpenAI response
-      const imgResp = await fetch(imageUrl as string, {
+      const imgResp = await fetch(imageUrl, {
         method: 'GET',
       } as any);
 
       if (!imgResp.ok) {
         const errorText = await imgResp.text().catch(() => '');
-        // eslint-disable-next-line no-console
+
         console.error('Leonardo image download failed', {
           status: imgResp.status,
           statusText: imgResp.statusText,
@@ -464,8 +467,8 @@ export class AiService {
     } catch (error) {
       // The OpenAI SDK throws rich errors (status, error.message, code, etc.).
       // Log details for debugging and map common statuses to clearer HTTP errors.
-      const err = error as any;
-      // eslint-disable-next-line no-console
+      const err = error;
+
       console.error('OpenAI image generation failed', {
         message: err?.message,
         status: err?.status,
@@ -500,7 +503,9 @@ export class AiService {
   ): Promise<Buffer> {
     const text = script?.trim();
     if (!text) {
-      throw new BadRequestException('Script text is required to generate voice');
+      throw new BadRequestException(
+        'Script text is required to generate voice',
+      );
     }
 
     if (!this.elevenApiKey) {
@@ -530,7 +535,7 @@ export class AiService {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => '');
-        // eslint-disable-next-line no-console
+
         console.error('ElevenLabs TTS failed', {
           status: response.status,
           statusText: response.statusText,
@@ -557,13 +562,16 @@ export class AiService {
       const arrayBuffer = await response.arrayBuffer();
       return Buffer.from(arrayBuffer);
     } catch (error) {
-      const err = error as any;
-      // eslint-disable-next-line no-console
+      const err = error;
+
       console.error('Error while calling ElevenLabs TTS', {
         message: err?.message,
         stack: err?.stack,
       });
-      if (err instanceof BadRequestException || err instanceof UnauthorizedException) {
+      if (
+        err instanceof BadRequestException ||
+        err instanceof UnauthorizedException
+      ) {
         throw err;
       }
       throw new InternalServerErrorException(
@@ -572,4 +580,3 @@ export class AiService {
     }
   }
 }
-

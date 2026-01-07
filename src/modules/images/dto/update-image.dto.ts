@@ -1,4 +1,11 @@
-import { IsOptional, IsString, IsEnum, IsInt, Min, IsUUID } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsEnum,
+  IsInt,
+  Min,
+  IsUUID,
+} from 'class-validator';
 import { ImageSize, ImageQuality } from '../entities/image.entity';
 
 export class UpdateImageDto {
@@ -31,4 +38,3 @@ export class UpdateImageDto {
   @IsString()
   public_id?: string;
 }
-

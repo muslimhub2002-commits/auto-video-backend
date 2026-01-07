@@ -35,4 +35,3 @@ export class Chat {
   @OneToMany(() => Message, (message) => message.chat)
   messages: Message[];
 }
-

@@ -18,4 +18,3 @@ export class UpdateVoiceDto {
   @IsString()
   voice_lang?: string;
 }
-

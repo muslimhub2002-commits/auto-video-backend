@@ -1,4 +1,15 @@
-import { Controller, Post, Get, Body, UseInterceptors, UploadedFile, Req, UseGuards, UnauthorizedException, Query } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseInterceptors,
+  UploadedFile,
+  Req,
+  UseGuards,
+  UnauthorizedException,
+  Query,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ImagesService } from './images.service';
 import { CreateImageDto } from './dto/create-image.dto';

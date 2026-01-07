@@ -1,4 +1,11 @@
-import { IsNotEmpty, IsString, IsUUID, IsOptional, IsInt, Min } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsUUID,
+  IsOptional,
+  IsInt,
+  Min,
+} from 'class-validator';
 
 export class CreateVoiceDto {
   @IsString()
@@ -22,4 +29,3 @@ export class CreateVoiceDto {
   @IsString()
   voice_lang?: string;
 }
-

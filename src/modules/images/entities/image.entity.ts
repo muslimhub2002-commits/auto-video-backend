@@ -71,4 +71,3 @@ export class Image {
   @JoinColumn({ name: 'message_id' })
   message: Message;
 }
-

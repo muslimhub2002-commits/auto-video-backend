@@ -1,4 +1,12 @@
-import { IsNotEmpty, IsString, IsUUID, IsOptional, IsEnum, IsInt, Min } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsUUID,
+  IsOptional,
+  IsEnum,
+  IsInt,
+  Min,
+} from 'class-validator';
 import { ImageSize, ImageQuality } from '../entities/image.entity';
 
 export class CreateImageDto {
@@ -35,4 +43,3 @@ export class CreateImageDto {
   @IsString()
   public_id?: string;
 }
-
