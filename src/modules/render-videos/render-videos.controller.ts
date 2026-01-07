@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   Param,
@@ -26,7 +27,16 @@ export class RenderVideosController {
         { name: 'voiceOver', maxCount: 1 },
         { name: 'images', maxCount: 200 },
       ],
-      // Intentionally use memory storage (no local disk writes).
+      {
+        // Intentionally use memory storage (no local disk writes).
+        // Limits help avoid OOM/timeouts (especially on serverless platforms).
+        limits: {
+          files: 201,
+          // Per-file size limit (bytes). Tune as needed for your typical inputs.
+          fileSize: 10 * 1024 * 1024,
+          fields: 50,
+        },
+      },
     ),
   )
   async create(
@@ -40,7 +50,21 @@ export class RenderVideosController {
     const voice = files.voiceOver?.[0];
     const images = files.images ?? [];
 
-    const sentences = JSON.parse(body.sentences) as Array<{ text: string }>;
+    let sentences: Array<{ text: string }>;
+    try {
+      sentences = JSON.parse(body.sentences) as Array<{ text: string }>;
+    } catch {
+      throw new BadRequestException('Invalid `sentences` JSON');
+    }
+
+    if (!Array.isArray(sentences) || sentences.length === 0) {
+      throw new BadRequestException('`sentences` must be a non-empty array');
+    }
+
+    if (!voice?.buffer?.length) {
+      throw new BadRequestException('Missing `voiceOver` upload');
+    }
+
     const audioDurationSeconds = body.audioDurationSeconds
       ? Number(body.audioDurationSeconds)
       : undefined;
