@@ -367,6 +367,24 @@ export class RenderVideosService {
 
     const entryPoint = join(process.cwd(), 'remotion', 'src', 'index.tsx');
 
+    const concurrencyRaw = Number(process.env.REMOTION_CONCURRENCY ?? '1');
+    const concurrency = Number.isFinite(concurrencyRaw)
+      ? Math.max(1, Math.floor(concurrencyRaw))
+      : 1;
+
+    const chromiumOptions: any = {
+      // Helpful on constrained Linux environments.
+      disableWebSecurity: true,
+      // Remotion will pass these through to Chromium.
+      // Keep it minimal to reduce surprises.
+      // If you still hit crashes, consider setting:
+      // REMOTION_CHROMIUM_DISABLE_SANDBOX=true
+    };
+
+    if (process.env.REMOTION_CHROMIUM_DISABLE_SANDBOX === 'true') {
+      chromiumOptions.disableSandbox = true;
+    }
+
     const serveUrl = await bundler.bundle({
       entryPoint,
       publicDir: params.publicDir,
@@ -374,6 +392,7 @@ export class RenderVideosService {
 
     const compositions = await renderer.getCompositions(serveUrl, {
       inputProps: { timeline: params.timeline },
+      chromiumOptions,
     });
     const composition = compositions.find((c: any) => c.id === 'AutoVideo') ?? {
       id: 'AutoVideo',
@@ -395,6 +414,8 @@ export class RenderVideosService {
       codec: 'h264',
       outputLocation: params.outputFsPath,
       inputProps: { timeline: params.timeline },
+      chromiumOptions,
+      concurrency,
     });
   }
 
