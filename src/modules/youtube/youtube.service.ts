@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { YoutubeUploadDto } from './dto/youtube-upload.dto';
 import { Readable } from 'stream';
+import { MessagesService } from '../messages/messages.service';
 
 const YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.upload'];
 
@@ -27,6 +28,7 @@ export class YoutubeService {
         private readonly configService: ConfigService,
         @InjectRepository(User)
         private readonly usersRepository: Repository<User>,
+        private readonly messagesService: MessagesService,
     ) { }
 
     private createOAuthClient(
@@ -138,6 +140,18 @@ export class YoutubeService {
     }
 
     async uploadVideo(user: User, dto: YoutubeUploadDto): Promise<{ videoId: string }> {
+        // Optionally save the generation before uploading to YouTube
+        if (dto as any && (dto as any).saveBeforeUpload && (dto as any).saveBeforeUpload.script) {
+            const save = (dto as any).saveBeforeUpload as any;
+            await this.messagesService.saveGeneration(user.id, {
+                script: save.script,
+                video_url: save.video_url ?? dto.videoUrl,
+                chat_id: save.chat_id,
+                voice_id: save.voice_id,
+                sentences: save.sentences,
+            });
+        }
+
         const oauth2Client = await this.getAuthedClientForUser(user);
 
         const youtube = google.youtube({ version: 'v3', auth: oauth2Client });

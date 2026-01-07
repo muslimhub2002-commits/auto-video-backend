@@ -18,5 +18,6 @@ import { RenderVideosModule } from '../render-videos/render-videos.module';
   ],
   controllers: [MessagesController],
   providers: [MessagesService],
+  exports: [MessagesService],
 })
 export class MessagesModule {}

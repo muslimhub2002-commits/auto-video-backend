@@ -36,42 +36,36 @@ export class MessagesService {
     const jobIdFromUrl = this.extractJobIdFromVideoUrl(video_url);
 
     if (jobIdFromUrl) {
-      if (
-        !process.env.CLOUDINARY_CLOUD_NAME ||
-        !process.env.CLOUDINARY_API_KEY ||
-        !process.env.CLOUDINARY_CLOUD_SECRET
-      ) {
-        throw new Error(
-          'Cloudinary environment variables are not configured (cannot save a local render URL)',
-        );
-      }
+      const hasCloudinary =
+        !!process.env.CLOUDINARY_CLOUD_NAME &&
+        !!process.env.CLOUDINARY_API_KEY &&
+        !!process.env.CLOUDINARY_CLOUD_SECRET;
 
       const localPath = this.renderVideosService.getVideoFsPath(jobIdFromUrl);
 
-      if (!fs.existsSync(localPath)) {
-        throw new Error(
-          'Rendered video file not found on disk; cannot upload to Cloudinary',
-        );
+      if (hasCloudinary && fs.existsSync(localPath)) {
+        cloudinary.config({
+          cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+          api_key: process.env.CLOUDINARY_API_KEY,
+          api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
+        });
+
+        try {
+          const uploadResult: any = await cloudinary.uploader.upload(localPath, {
+            folder: 'auto-video-generator/videos',
+            resource_type: 'video',
+            overwrite: false,
+            use_filename: false,
+          });
+
+          if (uploadResult?.secure_url) {
+            finalVideoUrl = uploadResult.secure_url as string;
+          }
+        } catch (e) {
+          // Graceful fallback: keep original local/served URL
+        }
       }
-
-      cloudinary.config({
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
-      });
-
-      const uploadResult: any = await cloudinary.uploader.upload(localPath, {
-        folder: 'auto-video-generator/videos',
-        resource_type: 'video',
-        overwrite: false,
-        use_filename: false,
-      });
-
-      if (!uploadResult?.secure_url) {
-        throw new Error('Cloudinary upload failed (no secure_url returned)');
-      }
-
-      finalVideoUrl = uploadResult.secure_url as string;
+      // else: missing Cloudinary config or file not found — keep original URL
     }
 
     const title = await this.aiService.generateTitleForScript(script);
