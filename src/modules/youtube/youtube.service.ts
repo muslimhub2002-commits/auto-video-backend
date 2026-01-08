@@ -46,7 +46,7 @@ export class YoutubeService {
             );
         }
 
-        return new google.auth.OAuth2(clientId, clientSecret, 'https://auto-video-backend.vercel.app/youtube/oauth2callback');
+        return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
     }
 
     getAuthUrl(userId: string, redirectUriOverride?: string): string {
@@ -170,7 +170,7 @@ export class YoutubeService {
             ? dto.tags.map((t) => t.trim()).filter(Boolean).slice(0, 500)
             : undefined;
 
-        const privacyStatus = dto.privacyStatus ?? 'unlisted';
+        const privacyStatus = dto.privacyStatus ?? 'public';
 
         const response = await youtube.videos.insert({
             part: ['snippet', 'status'],
@@ -179,10 +179,18 @@ export class YoutubeService {
                     title: dto.title,
                     description: dto.description ?? '',
                     tags,
-                    categoryId: '22',
+                    // Entertainment
+                    categoryId: '24',
+                    // English metadata + audio language
+                    defaultLanguage: 'en',
+                    defaultAudioLanguage: 'en',
                 },
                 status: {
                     privacyStatus,
+                    // Audience: not made for kids
+                    selfDeclaredMadeForKids: false,
+                    // “Altered content” disclosure: No
+                    containsSyntheticMedia: false,
                 },
             },
             media: {

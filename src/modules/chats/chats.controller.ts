@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ChatsService } from './chats.service';
@@ -29,5 +29,14 @@ export class ChatsController {
     const user_id = user?.id;
 
     return this.chatsService.getChatMessages(id, user_id);
+  }
+
+  @Delete(':id')
+  async deleteChat(@Req() req: Request, @Param('id') id: string) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    await this.chatsService.deleteChat(id, user_id);
+    return { ok: true };
   }
 }
