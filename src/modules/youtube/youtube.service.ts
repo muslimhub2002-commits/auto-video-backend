@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+    Injectable,
+    BadRequestException,
+    UnauthorizedException,
+    InternalServerErrorException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google } from 'googleapis';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -20,6 +25,29 @@ function normalizeRedirectUri(value: string | undefined | null): string {
     }
     // Allow env values like "auto-video-backend.vercel.app/youtube/oauth2callback"
     return `https://${trimmed.replace(/^\/\/+/, '')}`;
+}
+
+async function responseBodyToNodeReadable(res: Response): Promise<NodeJS.ReadableStream> {
+    const body: any = (res as any).body;
+    if (!body) {
+        throw new BadRequestException('Video download returned an empty body');
+    }
+
+    // If already a Node stream (some fetch implementations), use it directly.
+    if (typeof body.pipe === 'function') {
+        return body as NodeJS.ReadableStream;
+    }
+
+    // Prefer Readable.fromWeb when available (Node 18+).
+    const fromWeb = (Readable as any).fromWeb;
+    if (typeof fromWeb === 'function') {
+        return fromWeb(body);
+    }
+
+    // Fallback for environments without Readable.fromWeb:
+    // buffer the response and stream it. (Not ideal for huge files, but prevents 500s.)
+    const arrayBuffer = await (res as any).arrayBuffer();
+    return Readable.from(Buffer.from(arrayBuffer));
 }
 
 @Injectable()
@@ -152,58 +180,94 @@ export class YoutubeService {
             });
         }
 
-        const oauth2Client = await this.getAuthedClientForUser(user);
+        try {
+            const oauth2Client = await this.getAuthedClientForUser(user);
+            const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
-        const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+            const res = await fetch(dto.videoUrl);
+            if (!res.ok) {
+                throw new BadRequestException(
+                    `Failed to download video from videoUrl (status ${res.status})`,
+                );
+            }
 
-        const res = await fetch(dto.videoUrl);
-        if (!res.ok || !res.body) {
-            throw new BadRequestException(
-                `Failed to download video from videoUrl (status ${res.status})`,
+            const bodyStream = await responseBodyToNodeReadable(res as any);
+
+            const tags = Array.isArray(dto.tags)
+                ? dto.tags.map((t) => t.trim()).filter(Boolean).slice(0, 500)
+                : undefined;
+
+            const privacyStatus = dto.privacyStatus ?? 'public';
+            const categoryId = (dto.categoryId ?? '24').trim();
+            const selfDeclaredMadeForKids = !!dto.selfDeclaredMadeForKids;
+
+            const response = await youtube.videos.insert({
+                part: ['snippet', 'status'],
+                requestBody: {
+                    snippet: {
+                        title: dto.title,
+                        description: dto.description ?? '',
+                        tags,
+                        categoryId,
+                        // English metadata + audio language
+                        defaultLanguage: 'en',
+                        defaultAudioLanguage: 'en',
+                    },
+                    status: {
+                        privacyStatus,
+                        selfDeclaredMadeForKids,
+                        // “Altered content” disclosure: No
+                        containsSyntheticMedia: false,
+                    },
+                },
+                media: {
+                    mimeType: 'video/mp4',
+                    body: bodyStream as any,
+                },
+            });
+
+            const videoId = response.data.id;
+            if (!videoId) {
+                throw new BadRequestException('YouTube did not return a video id');
+            }
+
+            return { videoId };
+        } catch (err: any) {
+            // Add actionable logs for Vercel/serverless debugging.
+            console.error('YouTube upload failed', {
+                message: err?.message,
+                name: err?.name,
+                code: err?.code,
+                status: err?.response?.status,
+                data: err?.response?.data,
+            });
+
+            // Preserve explicit HTTP exceptions.
+            if (err instanceof BadRequestException || err instanceof UnauthorizedException) {
+                throw err;
+            }
+
+            const status = err?.response?.status;
+            const apiMessage =
+                err?.response?.data?.error?.message ||
+                err?.response?.data?.message ||
+                err?.message;
+
+            if (status === 401 || status === 403) {
+                throw new UnauthorizedException(
+                    apiMessage || 'YouTube authorization failed. Reconnect YouTube.',
+                );
+            }
+
+            if (status === 400) {
+                throw new BadRequestException(
+                    apiMessage || 'YouTube rejected the upload request.',
+                );
+            }
+
+            throw new InternalServerErrorException(
+                apiMessage || 'YouTube upload failed unexpectedly.',
             );
         }
-
-        // Convert Web ReadableStream -> Node Readable for googleapis
-        const bodyStream = Readable.fromWeb(res.body as any);
-
-        const tags = Array.isArray(dto.tags)
-            ? dto.tags.map((t) => t.trim()).filter(Boolean).slice(0, 500)
-            : undefined;
-
-        const privacyStatus = dto.privacyStatus ?? 'public';
-
-        const response = await youtube.videos.insert({
-            part: ['snippet', 'status'],
-            requestBody: {
-                snippet: {
-                    title: dto.title,
-                    description: dto.description ?? '',
-                    tags,
-                    // Entertainment
-                    categoryId: '24',
-                    // English metadata + audio language
-                    defaultLanguage: 'en',
-                    defaultAudioLanguage: 'en',
-                },
-                status: {
-                    privacyStatus,
-                    // Audience: not made for kids
-                    selfDeclaredMadeForKids: false,
-                    // “Altered content” disclosure: No
-                    containsSyntheticMedia: false,
-                },
-            },
-            media: {
-                mimeType: 'video/mp4',
-                body: bodyStream,
-            },
-        });
-
-        const videoId = response.data.id;
-        if (!videoId) {
-            throw new BadRequestException('YouTube did not return a video id');
-        }
-
-        return { videoId };
     }
 }
