@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { RenderJob } from './entities/render-job.entity';
 import { join, extname } from 'path';
 import * as fs from 'fs';
@@ -46,7 +46,7 @@ const WHOOSH_CLOUDINARY_URL =
   'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057829/whoosh_ioio4g.mp3';
 
 @Injectable()
-export class RenderVideosService {
+export class RenderVideosService implements OnModuleInit {
   private readonly openai: OpenAI | null;
 
   private static remotionServeUrlPromise: Promise<string> | null = null;
@@ -54,11 +54,38 @@ export class RenderVideosService {
   private static remotionServeUrlPublicDir: string | null = null;
 
   constructor(
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     @InjectRepository(RenderJob)
     private readonly jobsRepo: Repository<RenderJob>,
   ) {
     const apiKey = process.env.OPENAI_API_KEY;
     this.openai = apiKey ? new OpenAI({ apiKey }) : null;
+  }
+
+  async onModuleInit() {
+    await this.ensureRenderJobsSchema();
+  }
+
+  private async ensureRenderJobsSchema() {
+    // Older DBs may have the render_jobs table without newer columns.
+    // This guard avoids runtime errors like:
+    // QueryFailedError: column RenderJob.lastProgressAt does not exist
+    try {
+      await this.dataSource.query(
+        'ALTER TABLE render_jobs ADD COLUMN IF NOT EXISTS "lastProgressAt" TIMESTAMP NULL',
+      );
+    } catch (err: any) {
+      const message = String(err?.message || '');
+      // Ignore if table doesn't exist yet (fresh DB), or if permissions prevent ALTER.
+      if (
+        message.includes('does not exist') ||
+        message.includes('permission denied')
+      ) {
+        return;
+      }
+      throw err;
+    }
   }
 
   private isCloudinaryUrl(url: string): boolean {
