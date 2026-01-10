@@ -171,6 +171,8 @@ export class YoutubeService {
             : undefined;
 
         const privacyStatus = dto.privacyStatus ?? 'public';
+        const categoryId = (dto.categoryId ?? '24').trim();
+        const selfDeclaredMadeForKids = !!dto.selfDeclaredMadeForKids;
 
         const response = await youtube.videos.insert({
             part: ['snippet', 'status'],
@@ -179,16 +181,14 @@ export class YoutubeService {
                     title: dto.title,
                     description: dto.description ?? '',
                     tags,
-                    // Entertainment
-                    categoryId: '24',
+                    categoryId,
                     // English metadata + audio language
                     defaultLanguage: 'en',
                     defaultAudioLanguage: 'en',
                 },
                 status: {
                     privacyStatus,
-                    // Audience: not made for kids
-                    selfDeclaredMadeForKids: false,
+                    selfDeclaredMadeForKids,
                     // “Altered content” disclosure: No
                     containsSyntheticMedia: false,
                 },

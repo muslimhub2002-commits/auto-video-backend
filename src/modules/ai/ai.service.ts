@@ -19,6 +19,9 @@ export class AiService {
   private readonly leonardoApiKey?: string;
   private readonly leonardoModelId?: string;
 
+  // Narration pacing assumption (words per minute) used to derive strict word-count targets.
+  private readonly narrationWpm = 150;
+
   constructor() {
     const apiKey = process.env.OPENAI_API_KEY;
 
@@ -37,6 +40,42 @@ export class AiService {
     this.leonardoModelId = process.env.LEONARDO_MODEL_ID;
   }
 
+  private parseApproxLengthToSeconds(lengthRaw: string): number | null {
+    const s = (lengthRaw || '').toLowerCase().trim();
+    if (!s) return null;
+
+    // Match patterns like "1 minute", "2.5 min", "90 seconds", "30 sec"
+    const match = s.match(/(\d+(?:\.\d+)?)\s*(seconds?|secs?|s|minutes?|mins?|m)\b/);
+    if (!match) return null;
+
+    const value = Number(match[1]);
+    if (!Number.isFinite(value) || value <= 0) return null;
+
+    const unit = match[2];
+    const isSeconds = unit.startsWith('s');
+    const seconds = isSeconds ? value : value * 60;
+
+    // Cap to a reasonable range to avoid extreme prompts if user input is weird.
+    if (seconds < 5) return 5;
+    if (seconds > 60 * 30) return 60 * 30; // 30 minutes cap
+    return Math.round(seconds);
+  }
+
+  private getStrictWordRange(lengthRaw: string): { targetWords: number; minWords: number; maxWords: number } {
+    const seconds = this.parseApproxLengthToSeconds(lengthRaw);
+
+    const targetWords = seconds
+      ? Math.max(20, Math.round((seconds / 60) * this.narrationWpm))
+      : this.narrationWpm; // default ~1 minute
+
+    // Strict tolerance: ~4% or at least 5 words.
+    const tolerance = Math.max(5, Math.round(targetWords * 0.04));
+    const minWords = Math.max(10, targetWords - tolerance);
+    const maxWords = Math.max(minWords + 1, targetWords + tolerance);
+
+    return { targetWords, minWords, maxWords };
+  }
+
   /**
    * Returns an async iterable stream of script content chunks from OpenAI.
    */
@@ -46,6 +85,7 @@ export class AiService {
     const length = options.length?.trim() || '1 minute';
     const style = options.style?.trim() || 'Conversational';
     const model = options.model?.trim() || this.model;
+    const wordRange = this.getStrictWordRange(length);
 
     try {
       const stream = await this.client.chat.completions.create({
@@ -57,18 +97,26 @@ export class AiService {
             content:
               'You are an expert video script writer. ' +
               'You ONLY respond with the script text, no explanations, headings, or markdown. ' +
-              'Write clear, engaging narration suitable for AI video generation.',
+              'Write clear, engaging narration suitable for AI video generation. ' +
+              'Prioritize: (1) Curiosity / Open Loops, (2) Story Arc / Micro Narrative, (3) Rhythm & Pacing, (4) Natural Call to Action (CTA), (5) Emotional Trigger. ' +
+              `HARD LENGTH CONSTRAINT: Output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.`,
           },
           {
             role: 'user',
             content:
               `Generate a detailed video narration script.\n` +
               `Approximate length: ${length}.\n` +
+              `Strict word count requirement: ${wordRange.minWords}-${wordRange.maxWords} words (target ${wordRange.targetWords}).\n` +
               `Subject: ${subject}.\n` +
               (subjectContent
-                ? `Specific focus on a single story/subject within the subject: ${subjectContent}.\n`
+                ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${subjectContent}.\n`
                 : '') +
               `Style/tone: ${style}.\n` +
+              `Writing goals to focus on:\n` +
+                `1) Curiosity / Open Loops: introduce an unanswered question early and pay it off later.\n` +
+                `2) Story Arc / Micro Narrative: a clear setup → tension/problem → insight/turn → resolution.\n` +
+                `3) Rhythm & Pacing: short punchy lines mixed with a few longer lines; avoid monotone cadence.\n` +
+                `4) Emotional Trigger: open with a strong feeling (awe, hope, urgency, empathy, etc.).\n` +
               `For religious (Islam) scripts, keep it respectful, authentic, and avoid controversial topics.\n` +
               `Do not include scene directions, only spoken narration.`,
           },
@@ -149,6 +197,7 @@ export class AiService {
     const length = dto.length?.trim() || '1 minute';
     const style = dto.style?.trim() || 'Conversational';
     const model = dto.model?.trim() || this.model;
+    const wordRange = this.getStrictWordRange(length);
     
     try {
       const stream = await this.client.chat.completions.create({
@@ -161,13 +210,15 @@ export class AiService {
               'You are an expert video script editor. ' +
               'You improve existing narration scripts by enhancing clarity, flow, and emotional impact, ' +
               'while strictly preserving the original meaning, topic, and approximate length. ' +
-              'You ONLY respond with the improved script text, no explanations, headings, or markdown.',
+              'You ONLY respond with the improved script text, no explanations, headings, or markdown. ' +
+              `HARD LENGTH CONSTRAINT: Your output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.`,
           },
           {
             role: 'user',
             content:
               `Here is a video narration script that needs refinement.\n` +
               `Target approximate length: ${length}.\n` +
+              `Strict word count requirement: ${wordRange.minWords}-${wordRange.maxWords} words (target ${wordRange.targetWords}).\n` +
               `Desired style/tone: ${style}.\n` +
               'Improve wording, pacing, and engagement, but do not change the underlying message or topic.\n' +
               'Do not add disclaimers or meta commentary.\n\n' +

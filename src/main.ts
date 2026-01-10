@@ -1,11 +1,17 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { json, urlencoded } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Allow larger request bodies (e.g., longer scripts/sentence payloads).
+  // Keep this reasonably bounded; uploads should still use multipart endpoints.
+  app.use(json({ limit: process.env.BODY_SIZE_LIMIT ?? '400mb' }));
+  app.use(urlencoded({ extended: true, limit: process.env.BODY_SIZE_LIMIT ?? '400mb' }));
 
   // Enable validation globally
   app.useGlobalPipes(
