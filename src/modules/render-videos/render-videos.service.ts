@@ -61,6 +61,10 @@ export class RenderVideosService {
     this.openai = apiKey ? new OpenAI({ apiKey }) : null;
   }
 
+  private isCloudinaryUrl(url: string): boolean {
+    return /^(https?:\/\/)?res\.cloudinary\.com\//i.test(url || '');
+  }
+
   async createJob(params: {
     audioFile: UploadedAsset | null;
     audioUrl?: string | null;
@@ -614,10 +618,7 @@ export class RenderVideosService {
         audioName = params.audioFile.originalName || 'audio.mp3';
         audioMimeType = params.audioFile.mimeType;
       } else {
-        // audioUrl should already point to a public URL (ideally Cloudinary).
-        job.audioPath = String(params.audioUrl);
-        await this.jobsRepo.save(job);
-
+        // audioUrl must be a public URL; if it's not Cloudinary, re-host it on Cloudinary.
         const downloaded = await this.downloadUrlToBuffer({
           url: String(params.audioUrl),
           maxBytes: 30 * 1024 * 1024,
@@ -626,6 +627,19 @@ export class RenderVideosService {
         audioBuffer = downloaded.buffer;
         audioMimeType = downloaded.mimeType;
         audioName = 'audio.mp3';
+
+        const audioUrlString = String(params.audioUrl);
+        if (this.isCloudinaryUrl(audioUrlString)) {
+          job.audioPath = audioUrlString;
+        } else {
+          const uploadedAudio = await this.uploadBufferToCloudinary({
+            buffer: audioBuffer,
+            folder: 'auto-video-generator/render-inputs/audio',
+            resource_type: 'video',
+          });
+          job.audioPath = uploadedAudio.secure_url;
+        }
+        await this.jobsRepo.save(job);
       }
 
       // Create a temporary local audio file for alignment and audio analysis.
@@ -643,14 +657,11 @@ export class RenderVideosService {
         this.prepareRemotionPublicDir(jobId);
       publicDirToClean = jobDir;
 
-      // Place audio into the Remotion publicDir so rendering does not rely on
-      // remote audio URLs (prevents CORS/network stalls in Chromium).
-      const publicAudioName = `audio${audioExt}`;
-      fs.writeFileSync(join(jobDir, publicAudioName), audioBuffer);
+      // Voice-over audio is hosted on Cloudinary (no jobDir audio file).
+      const voiceoverAudioSrc = job.audioPath;
 
-      // Build per-sentence image sources.
-      // Store images locally under jobDir so Remotion can load via staticFile() without
-      // per-image Cloudinary uploads or Chromium doing many remote fetches during render.
+      // Build per-sentence image sources as Cloudinary URLs.
+      // This avoids relying on jobDir local images and ensures the pipeline is Cloudinary-only.
       const imageSrcs: string[] = [];
       const providedUrls = Array.isArray(params.imageUrls)
         ? params.imageUrls
@@ -660,7 +671,6 @@ export class RenderVideosService {
         throw new Error('imageUrls length must match sentences length');
       }
 
-      const imagesDir = join(jobDir, 'images');
       for (let i = 0; i < params.sentences.length; i += 1) {
         const sentenceText = (params.sentences[i]?.text || '').trim();
         const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
@@ -671,23 +681,26 @@ export class RenderVideosService {
 
         const url = providedUrls ? providedUrls[i] : null;
         if (url) {
-          try {
-            const downloaded = await this.downloadUrlToBuffer({
-              url: String(url),
-              maxBytes: 12 * 1024 * 1024,
-              label: `imageUrl for sentence ${i + 1}`,
-            });
-            const ext = this.inferExt({
-              mimeType: downloaded.mimeType,
-              fallback: '.png',
-            });
-            const fileName = `img-${i + 1}${ext}`;
-            fs.writeFileSync(join(imagesDir, fileName), downloaded.buffer);
-            imageSrcs.push(`images/${fileName}`);
-          } catch {
-            // If the download fails, fall back to the remote URL.
-            imageSrcs.push(String(url));
+          const urlString = String(url);
+          if (this.isCloudinaryUrl(urlString)) {
+            imageSrcs.push(urlString);
+            continue;
           }
+
+          // Re-host non-Cloudinary URLs on Cloudinary.
+          const downloaded = await this.downloadUrlToBuffer({
+            url: urlString,
+            maxBytes: 12 * 1024 * 1024,
+            label: `imageUrl for sentence ${i + 1}`,
+          });
+
+          const uploadedImage = await this.uploadBufferToCloudinary({
+            buffer: downloaded.buffer,
+            folder: 'auto-video-generator/render-inputs/images',
+            resource_type: 'image',
+          });
+
+          imageSrcs.push(uploadedImage.secure_url);
           continue;
         }
 
@@ -697,15 +710,12 @@ export class RenderVideosService {
             `Missing image upload for sentence ${i + 1} (non-subscribe sentence)`,
           );
         }
-
-        const ext = this.inferExt({
-          originalName: file.originalName,
-          mimeType: file.mimeType,
-          fallback: '.png',
+        const uploadedImage = await this.uploadBufferToCloudinary({
+          buffer: file.buffer,
+          folder: 'auto-video-generator/render-inputs/images',
+          resource_type: 'image',
         });
-        const fileName = `img-${i + 1}${ext}`;
-        fs.writeFileSync(join(imagesDir, fileName), file.buffer);
-        imageSrcs.push(`images/${fileName}`);
+        imageSrcs.push(uploadedImage.secure_url);
       }
 
       // Align audio with sentences to get per-sentence timings.
@@ -722,7 +732,7 @@ export class RenderVideosService {
         imagePaths: imageSrcs,
         scriptLength: params.scriptLength,
         audioDurationSeconds: durationSeconds,
-        audioSrc: publicAudioName,
+        audioSrc: voiceoverAudioSrc,
         sentenceTimings,
         subscribeVideoSrc,
         useLowerFps: params.useLowerFps,
