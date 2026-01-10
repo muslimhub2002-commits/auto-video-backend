@@ -658,7 +658,10 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`glitch-sfx-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio src={staticFile('glitch-fx.mp3')} volume={0.9} />
+            <Audio
+              src={'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057729/glitch-fx_xkpwzq.mp3'}
+              volume={0.9}
+            />
           </Sequence>
         );
       })}

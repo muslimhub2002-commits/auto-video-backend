@@ -36,6 +36,9 @@ const SUBSCRIBE_VIDEO_CLOUDINARY_URL =
 const BACKGROUND_AUDIO_CLOUDINARY_URL =
   'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057652/background_ny4lml.mp3';
 
+const GLITCH_FX_CLOUDINARY_URL =
+  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057729/glitch-fx_xkpwzq.mp3';
+
 @Injectable()
 export class RenderVideosService {
   private readonly openai: OpenAI | null;
@@ -534,28 +537,8 @@ export class RenderVideosService {
     // Keep the constant here for future wiring (e.g., passing into timeline).
     void BACKGROUND_AUDIO_CLOUDINARY_URL;
 
-    try {
-      const glitchSources = [
-        join(process.cwd(), 'remotion', 'public', 'glitch-fx.mp3'),
-        join(
-          process.cwd(),
-          '..',
-          'auto-video-frontend',
-          'public',
-          'glitch-fx.mp3',
-        ),
-      ];
-
-      for (const source of glitchSources) {
-        if (fs.existsSync(source)) {
-          const dest = join(jobDir, 'glitch-fx.mp3');
-          fs.copyFileSync(source, dest);
-          break;
-        }
-      }
-    } catch {
-      // Glitch sound effect is optional; ignore copy errors.
-    }
+    // Glitch SFX is hosted on Cloudinary.
+    void GLITCH_FX_CLOUDINARY_URL;
 
     try {
       const whooshSources = [
