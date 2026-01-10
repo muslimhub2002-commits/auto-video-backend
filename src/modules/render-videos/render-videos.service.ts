@@ -34,6 +34,10 @@ const SUBSCRIBE_SENTENCE =
 export class RenderVideosService {
   private readonly openai: OpenAI | null;
 
+  private static remotionServeUrlPromise: Promise<string> | null = null;
+  private static remotionServeUrl: string | null = null;
+  private static remotionServeUrlPublicDir: string | null = null;
+
   constructor(
     @InjectRepository(RenderJob)
     private readonly jobsRepo: Repository<RenderJob>,
@@ -281,6 +285,32 @@ export class RenderVideosService {
     fs.mkdirSync(dir, { recursive: true });
   }
 
+  private inferExt(params: {
+    originalName?: string;
+    mimeType?: string;
+    fallback: string;
+  }) {
+    const fromName = params.originalName ? extname(params.originalName) : '';
+    if (fromName) return fromName;
+
+    const mt = (params.mimeType ?? '').toLowerCase();
+    if (mt.includes('png')) return '.png';
+    if (mt.includes('jpeg') || mt.includes('jpg')) return '.jpg';
+    if (mt.includes('webp')) return '.webp';
+    if (mt.includes('gif')) return '.gif';
+    if (mt.includes('mp3')) return '.mp3';
+    if (mt.includes('wav')) return '.wav';
+    if (mt.includes('mpeg')) return '.mp3';
+    return params.fallback;
+  }
+
+  private getRemotionPublicRootDir() {
+    const root = this.getStorageRoot();
+    const publicRoot = join(root, 'render-public');
+    this.ensureDir(publicRoot);
+    return publicRoot;
+  }
+
   private async withTimeout<T>(
     promise: Promise<T>,
     ms: number,
@@ -395,10 +425,11 @@ export class RenderVideosService {
 
     const entryPoint = join(process.cwd(), 'remotion', 'src', 'index.tsx');
 
-    const concurrencyRaw = Number(process.env.REMOTION_CONCURRENCY ?? '1');
-    const concurrency = Number.isFinite(concurrencyRaw)
+    const concurrencyRaw = Number(process.env.REMOTION_CONCURRENCY ?? '');
+    const defaultConcurrency = Math.min(2, Math.max(1, os.cpus().length));
+    const concurrency = Number.isFinite(concurrencyRaw) && concurrencyRaw > 0
       ? Math.max(1, Math.floor(concurrencyRaw))
-      : 1;
+      : defaultConcurrency;
 
     const chromiumOptions: any = {
       // Helpful on constrained Linux environments.
@@ -413,7 +444,8 @@ export class RenderVideosService {
       chromiumOptions.disableSandbox = true;
     }
 
-    const serveUrl = await bundler.bundle({
+    const serveUrl = await this.getOrCreateRemotionServeUrl({
+      bundler,
       entryPoint,
       publicDir: params.publicDir,
     });
@@ -447,11 +479,47 @@ export class RenderVideosService {
     });
   }
 
+  private async getOrCreateRemotionServeUrl(params: {
+    bundler: any;
+    entryPoint: string;
+    publicDir: string;
+  }) {
+    if (
+      RenderVideosService.remotionServeUrl &&
+      RenderVideosService.remotionServeUrlPublicDir === params.publicDir
+    ) {
+      return RenderVideosService.remotionServeUrl;
+    }
+
+    if (
+      RenderVideosService.remotionServeUrlPromise &&
+      RenderVideosService.remotionServeUrlPublicDir === params.publicDir
+    ) {
+      return RenderVideosService.remotionServeUrlPromise;
+    }
+
+    RenderVideosService.remotionServeUrlPublicDir = params.publicDir;
+    RenderVideosService.remotionServeUrlPromise = params.bundler
+      .bundle({
+        entryPoint: params.entryPoint,
+        publicDir: params.publicDir,
+      })
+      .then((url: string) => {
+        RenderVideosService.remotionServeUrl = url;
+        return url;
+      })
+      .finally(() => {
+        RenderVideosService.remotionServeUrlPromise = null;
+      });
+
+    return RenderVideosService.remotionServeUrlPromise;
+  }
+
   private prepareRemotionPublicDir(jobId: string) {
-    const root = this.getStorageRoot();
-    const publicDir = join(root, 'render-public', jobId);
-    this.ensureDir(publicDir);
-    this.ensureDir(join(publicDir, 'images'));
+    const publicRoot = this.getRemotionPublicRootDir();
+    const jobDir = join(publicRoot, jobId);
+    this.ensureDir(jobDir);
+    this.ensureDir(join(jobDir, 'images'));
 
     // Try to copy the subscribe.mp4 video and background.mp3 audio
     // from known public folders into this job's public directory.
@@ -472,7 +540,7 @@ export class RenderVideosService {
 
       for (const source of videoSources) {
         if (fs.existsSync(source)) {
-          const dest = join(publicDir, 'subscribe.mp4');
+          const dest = join(jobDir, 'subscribe.mp4');
           fs.copyFileSync(source, dest);
           subscribeVideoSrc = 'subscribe.mp4';
           break;
@@ -496,7 +564,7 @@ export class RenderVideosService {
 
       for (const source of bgSources) {
         if (fs.existsSync(source)) {
-          const dest = join(publicDir, 'background.mp3');
+          const dest = join(jobDir, 'background.mp3');
           fs.copyFileSync(source, dest);
           break;
         }
@@ -519,7 +587,7 @@ export class RenderVideosService {
 
       for (const source of glitchSources) {
         if (fs.existsSync(source)) {
-          const dest = join(publicDir, 'glitch-fx.mp3');
+          const dest = join(jobDir, 'glitch-fx.mp3');
           fs.copyFileSync(source, dest);
           break;
         }
@@ -528,8 +596,56 @@ export class RenderVideosService {
       // Glitch sound effect is optional; ignore copy errors.
     }
 
+    try {
+      const whooshSources = [
+        join(process.cwd(), 'remotion', 'public', 'whoosh.mp3'),
+        join(
+          process.cwd(),
+          '..',
+          'auto-video-frontend',
+          'public',
+          'whoosh.mp3',
+        ),
+      ];
+
+      for (const source of whooshSources) {
+        if (fs.existsSync(source)) {
+          const dest = join(jobDir, 'whoosh.mp3');
+          fs.copyFileSync(source, dest);
+          break;
+        }
+      }
+    } catch {
+      // Whoosh sound effect is optional; ignore copy errors.
+    }
+
+    try {
+      const cameraClickSources = [
+        join(process.cwd(), 'remotion', 'public', 'camera_click.mp3'),
+        join(
+          process.cwd(),
+          '..',
+          'auto-video-frontend',
+          'public',
+          'camera_click.mp3',
+        ),
+      ];
+
+      for (const source of cameraClickSources) {
+        if (fs.existsSync(source)) {
+          const dest = join(jobDir, 'camera_click.mp3');
+          fs.copyFileSync(source, dest);
+          break;
+        }
+      }
+    } catch {
+      // Camera click sound effect is optional; ignore copy errors.
+    }
+
     return {
-      publicDir,
+      // Use a job-scoped publicDir so Remotion bundling includes the job's assets.
+      publicDir: jobDir,
+      jobDir,
       subscribeVideoSrc,
     };
   }
@@ -598,47 +714,6 @@ export class RenderVideosService {
         audioName = 'audio.mp3';
       }
 
-      // Build per-sentence image sources.
-      // If imageUrls are provided (frontend already uploaded), use them.
-      // Otherwise, upload provided buffers to Cloudinary.
-      const imageSrcs: string[] = [];
-      const providedUrls = Array.isArray(params.imageUrls)
-        ? params.imageUrls
-        : null;
-
-      if (providedUrls && providedUrls.length !== params.sentences.length) {
-        throw new Error('imageUrls length must match sentences length');
-      }
-
-      for (let i = 0; i < params.sentences.length; i += 1) {
-        const sentenceText = (params.sentences[i]?.text || '').trim();
-        const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
-        if (isSubscribe) {
-          imageSrcs.push('');
-          continue;
-        }
-
-        const url = providedUrls ? providedUrls[i] : null;
-        if (url) {
-          imageSrcs.push(String(url));
-          continue;
-        }
-
-        const file = params.imageFiles[i];
-        if (!file?.buffer) {
-          throw new Error(
-            `Missing image upload for sentence ${i + 1} (non-subscribe sentence)`,
-          );
-        }
-
-        const uploadedImage = await this.uploadBufferToCloudinary({
-          buffer: file.buffer,
-          folder: 'auto-video-generator/render-inputs/images',
-          resource_type: 'image',
-        });
-        imageSrcs.push(uploadedImage.secure_url);
-      }
-
       // Create a temporary local audio file for alignment and audio analysis.
       // This is not persisted in project storage.
       const audioExt = extname(audioName || '') || '.mp3';
@@ -650,14 +725,74 @@ export class RenderVideosService {
           ? params.audioDurationSeconds
           : 1;
 
-      const { publicDir, subscribeVideoSrc } =
+      const { publicDir, jobDir, subscribeVideoSrc } =
         this.prepareRemotionPublicDir(jobId);
-      publicDirToClean = publicDir;
+      publicDirToClean = jobDir;
 
       // Place audio into the Remotion publicDir so rendering does not rely on
       // remote audio URLs (prevents CORS/network stalls in Chromium).
       const publicAudioName = `audio${audioExt}`;
-      fs.writeFileSync(join(publicDir, publicAudioName), audioBuffer);
+      fs.writeFileSync(join(jobDir, publicAudioName), audioBuffer);
+
+      // Build per-sentence image sources.
+      // Store images locally under jobDir so Remotion can load via staticFile() without
+      // per-image Cloudinary uploads or Chromium doing many remote fetches during render.
+      const imageSrcs: string[] = [];
+      const providedUrls = Array.isArray(params.imageUrls)
+        ? params.imageUrls
+        : null;
+
+      if (providedUrls && providedUrls.length !== params.sentences.length) {
+        throw new Error('imageUrls length must match sentences length');
+      }
+
+      const imagesDir = join(jobDir, 'images');
+      for (let i = 0; i < params.sentences.length; i += 1) {
+        const sentenceText = (params.sentences[i]?.text || '').trim();
+        const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
+        if (isSubscribe) {
+          imageSrcs.push('');
+          continue;
+        }
+
+        const url = providedUrls ? providedUrls[i] : null;
+        if (url) {
+          try {
+            const downloaded = await this.downloadUrlToBuffer({
+              url: String(url),
+              maxBytes: 12 * 1024 * 1024,
+              label: `imageUrl for sentence ${i + 1}`,
+            });
+            const ext = this.inferExt({
+              mimeType: downloaded.mimeType,
+              fallback: '.png',
+            });
+            const fileName = `img-${i + 1}${ext}`;
+            fs.writeFileSync(join(imagesDir, fileName), downloaded.buffer);
+            imageSrcs.push(`images/${fileName}`);
+          } catch {
+            // If the download fails, fall back to the remote URL.
+            imageSrcs.push(String(url));
+          }
+          continue;
+        }
+
+        const file = params.imageFiles[i];
+        if (!file?.buffer) {
+          throw new Error(
+            `Missing image upload for sentence ${i + 1} (non-subscribe sentence)`,
+          );
+        }
+
+        const ext = this.inferExt({
+          originalName: file.originalName,
+          mimeType: file.mimeType,
+          fallback: '.png',
+        });
+        const fileName = `img-${i + 1}${ext}`;
+        fs.writeFileSync(join(imagesDir, fileName), file.buffer);
+        imageSrcs.push(`images/${fileName}`);
+      }
 
       // Align audio with sentences to get per-sentence timings.
       // Currently uses a word-based proportional approach and is structured
@@ -788,11 +923,15 @@ export class RenderVideosService {
         },
       );
 
-      const transcription: any = await this.openai.audio.transcriptions.create({
-        file: fs.createReadStream(audioPath),
-        model,
-        response_format: responseFormat as any,
-      } as any);
+      const transcription: any = await this.withTimeout(
+        this.openai.audio.transcriptions.create({
+          file: fs.createReadStream(audioPath),
+          model,
+          response_format: responseFormat as any,
+        } as any),
+        Number(process.env.OPENAI_TRANSCRIBE_TIMEOUT_MS ?? '120000'),
+        'OpenAI transcription',
+      );
 
       let segments: any[] = Array.isArray(transcription?.segments)
         ? transcription.segments
@@ -813,12 +952,15 @@ export class RenderVideosService {
           { primaryModel: model, whisperModel },
         );
 
-        const whisperTranscription: any =
-          await this.openai.audio.transcriptions.create({
+        const whisperTranscription: any = await this.withTimeout(
+          this.openai.audio.transcriptions.create({
             file: fs.createReadStream(audioPath),
             model: whisperModel,
             response_format: 'verbose_json' as any,
-          } as any);
+          } as any),
+          Number(process.env.OPENAI_TRANSCRIBE_TIMEOUT_MS ?? '120000'),
+          'OpenAI Whisper transcription',
+        );
 
         segments = Array.isArray(whisperTranscription?.segments)
           ? whisperTranscription.segments

@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import type { Multer } from 'multer';
+import { ensureUuid } from '../../common/errors/ensure-uuid';
 import { CreateRenderVideoDto } from './dto/create-render-video.dto';
 import { CreateRenderVideoUrlDto } from './dto/create-render-video-url.dto';
 import { RenderVideosService } from './render-videos.service';
@@ -160,6 +161,7 @@ export class RenderVideosController {
 
   @Get(':id')
   async get(@Param('id') id: string) {
+    ensureUuid(id);
     const job = await this.renderVideosService.getJob(id);
     await this.renderVideosService.failIfStale(job);
     const updated = await this.renderVideosService.getJob(id);
