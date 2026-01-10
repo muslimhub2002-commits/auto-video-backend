@@ -2,6 +2,7 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsISO8601,
   IsOptional,
   IsString,
   IsUrl,
@@ -76,6 +77,12 @@ export class YoutubeUploadDto {
   @IsOptional()
   @IsBoolean()
   selfDeclaredMadeForKids?: boolean;
+
+  // If provided, YouTube will schedule the publish time.
+  // Must be a future time. For scheduling, YouTube requires privacyStatus=private.
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  publishAt?: string;
 
   @IsOptional()
   @ValidateNested()
