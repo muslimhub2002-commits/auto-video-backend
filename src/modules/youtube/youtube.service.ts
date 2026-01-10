@@ -15,6 +15,52 @@ import { MessagesService } from '../messages/messages.service';
 
 const YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.upload'];
 
+function isPrivateOrLocalHost(hostname: string): boolean {
+    const host = (hostname || '').toLowerCase();
+    if (!host) return true;
+
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+    if (host.endsWith('.local')) return true;
+
+    // If it's an IP, block common private ranges.
+    const ipv4Match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (ipv4Match) {
+        const a = Number(ipv4Match[1]);
+        const b = Number(ipv4Match[2]);
+        const c = Number(ipv4Match[3]);
+        const d = Number(ipv4Match[4]);
+        const inRange = (n: number) => Number.isFinite(n) && n >= 0 && n <= 255;
+        if (![a, b, c, d].every(inRange)) return true;
+
+        if (a === 10) return true;
+        if (a === 127) return true;
+        if (a === 192 && b === 168) return true;
+        if (a === 172 && b >= 16 && b <= 31) return true;
+        if (a === 169 && b === 254) return true; // link-local
+    }
+
+    return false;
+}
+
+function assertVideoUrlIsPubliclyReachable(videoUrl: string): void {
+    let parsed: URL;
+    try {
+        parsed = new URL(videoUrl);
+    } catch {
+        throw new BadRequestException('videoUrl must be a valid absolute URL');
+    }
+
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        throw new BadRequestException('videoUrl must use http or https');
+    }
+
+    if (isPrivateOrLocalHost(parsed.hostname)) {
+        throw new BadRequestException(
+            `videoUrl must be publicly reachable from the server. Local/private URLs are not accessible from Vercel. Received host: ${parsed.hostname}`,
+        );
+    }
+}
+
 function normalizeRedirectUri(value: string | undefined | null): string {
     const trimmed = (value ?? '').trim();
     if (!trimmed) {
@@ -184,7 +230,18 @@ export class YoutubeService {
             const oauth2Client = await this.getAuthedClientForUser(user);
             const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
-            const res = await fetch(dto.videoUrl);
+            assertVideoUrlIsPubliclyReachable(dto.videoUrl);
+
+            let res: Response;
+            try {
+                res = await fetch(dto.videoUrl, { redirect: 'follow' } as any);
+            } catch (fetchErr: any) {
+                // This is the common Vercel error: "fetch failed" when the URL is not reachable.
+                const details = fetchErr?.cause?.message || fetchErr?.message || 'fetch failed';
+                throw new BadRequestException(
+                    `Unable to download video from videoUrl. Ensure it is a PUBLIC https URL reachable from Vercel. Details: ${details}`,
+                );
+            }
             if (!res.ok) {
                 throw new BadRequestException(
                     `Failed to download video from videoUrl (status ${res.status})`,
