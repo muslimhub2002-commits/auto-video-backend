@@ -39,6 +39,9 @@ const BACKGROUND_AUDIO_CLOUDINARY_URL =
 const GLITCH_FX_CLOUDINARY_URL =
   'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057729/glitch-fx_xkpwzq.mp3';
 
+const CAMERA_CLICK_CLOUDINARY_URL =
+  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057799/camera_click_mziq08.mp3';
+
 @Injectable()
 export class RenderVideosService {
   private readonly openai: OpenAI | null;
@@ -540,6 +543,9 @@ export class RenderVideosService {
     // Glitch SFX is hosted on Cloudinary.
     void GLITCH_FX_CLOUDINARY_URL;
 
+    // Camera click SFX is hosted on Cloudinary.
+    void CAMERA_CLICK_CLOUDINARY_URL;
+
     try {
       const whooshSources = [
         join(process.cwd(), 'remotion', 'public', 'whoosh.mp3'),
@@ -563,28 +569,7 @@ export class RenderVideosService {
       // Whoosh sound effect is optional; ignore copy errors.
     }
 
-    try {
-      const cameraClickSources = [
-        join(process.cwd(), 'remotion', 'public', 'camera_click.mp3'),
-        join(
-          process.cwd(),
-          '..',
-          'auto-video-frontend',
-          'public',
-          'camera_click.mp3',
-        ),
-      ];
-
-      for (const source of cameraClickSources) {
-        if (fs.existsSync(source)) {
-          const dest = join(jobDir, 'camera_click.mp3');
-          fs.copyFileSync(source, dest);
-          break;
-        }
-      }
-    } catch {
-      // Camera click sound effect is optional; ignore copy errors.
-    }
+    // No local file copy needed.
 
     return {
       // Use a job-scoped publicDir so Remotion bundling includes the job's assets.

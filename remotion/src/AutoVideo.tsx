@@ -700,7 +700,10 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`flash-sfx-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio src={staticFile('camera_click.mp3')} volume={0.9} />
+            <Audio
+              src={'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057799/camera_click_mziq08.mp3'}
+              volume={0.9}
+            />
           </Sequence>
         );
       })}
