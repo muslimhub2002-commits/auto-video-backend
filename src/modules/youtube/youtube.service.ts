@@ -15,22 +15,6 @@ import { MessagesService } from '../messages/messages.service';
 
 const YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.upload'];
 
-function parseFuturePublishAt(value: string): string {
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
-        throw new BadRequestException('publishAt must be a valid ISO-8601 datetime');
-    }
-
-    // Basic sanity: must be at least 2 minutes in the future to avoid API rejection.
-    const now = Date.now();
-    if (parsed.getTime() < now + 2 * 60 * 1000) {
-        throw new BadRequestException('publishAt must be in the future');
-    }
-
-    // Preserve the original string (keeps timezone offset like +03:00).
-    return value;
-}
-
 function isPrivateOrLocalHost(hostname: string): boolean {
     const host = (hostname || '').toLowerCase();
     if (!host) return true;
@@ -270,9 +254,7 @@ export class YoutubeService {
                 ? dto.tags.map((t) => t.trim()).filter(Boolean).slice(0, 500)
                 : undefined;
 
-            const publishAt = dto.publishAt ? parseFuturePublishAt(dto.publishAt) : undefined;
-            // Scheduling on YouTube requires privacyStatus=private.
-            const privacyStatus = publishAt ? 'private' : (dto.privacyStatus ?? 'public');
+            const privacyStatus = dto.privacyStatus ?? 'public';
             const categoryId = (dto.categoryId ?? '24').trim();
             const selfDeclaredMadeForKids = !!dto.selfDeclaredMadeForKids;
 
@@ -291,7 +273,6 @@ export class YoutubeService {
                     status: {
                         privacyStatus,
                         selfDeclaredMadeForKids,
-                        ...(publishAt ? { publishAt } : {}),
                         // “Altered content” disclosure: No
                         containsSyntheticMedia: false,
                     },
