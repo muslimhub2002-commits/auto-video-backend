@@ -1,11 +1,9 @@
 import {
   IsArray,
-  IsBoolean,
   IsIn,
   IsOptional,
   IsString,
   IsUrl,
-  Matches,
   MaxLength,
   ValidateNested,
   IsUUID,
@@ -66,16 +64,6 @@ export class YoutubeUploadDto {
   @IsOptional()
   @IsIn(['private', 'public', 'unlisted'])
   privacyStatus?: 'private' | 'public' | 'unlisted';
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(5)
-  @Matches(/^\d+$/)
-  categoryId?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  selfDeclaredMadeForKids?: boolean;
 
   @IsOptional()
   @ValidateNested()
