@@ -30,6 +30,9 @@ type SentenceTiming = {
 const SUBSCRIBE_SENTENCE =
   'Please Subscribe & Help us reach out to more people';
 
+const SUBSCRIBE_VIDEO_CLOUDINARY_URL =
+  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768053443/subscribe_ejq4q9.mp4';
+
 @Injectable()
 export class RenderVideosService {
   private readonly openai: OpenAI | null;
@@ -521,34 +524,8 @@ export class RenderVideosService {
     this.ensureDir(jobDir);
     this.ensureDir(join(jobDir, 'images'));
 
-    // Try to copy the subscribe.mp4 video and background.mp3 audio
-    // from known public folders into this job's public directory.
-    let subscribeVideoSrc: string | null = null;
-    try {
-      const videoSources = [
-        // Preferred: backend Remotion public folder
-        join(process.cwd(), 'remotion', 'public', 'subscribe.mp4'),
-        // Legacy: frontend public folder
-        join(
-          process.cwd(),
-          '..',
-          'auto-video-frontend',
-          'public',
-          'subscribe.mp4',
-        ),
-      ];
-
-      for (const source of videoSources) {
-        if (fs.existsSync(source)) {
-          const dest = join(jobDir, 'subscribe.mp4');
-          fs.copyFileSync(source, dest);
-          subscribeVideoSrc = 'subscribe.mp4';
-          break;
-        }
-      }
-    } catch {
-      // If copying fails, just skip the video; the scene will fall back to black.
-    }
+    // Subscribe clip is hosted on Cloudinary (no local static file).
+    const subscribeVideoSrc: string | null = SUBSCRIBE_VIDEO_CLOUDINARY_URL;
 
     try {
       const bgSources = [
