@@ -680,7 +680,10 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`whoosh-sfx-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio src={staticFile('whoosh.mp3')} volume={0.85} />
+            <Audio
+              src={'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057829/whoosh_ioio4g.mp3'}
+              volume={0.85}
+            />
           </Sequence>
         );
       })}

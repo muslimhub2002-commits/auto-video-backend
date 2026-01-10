@@ -42,6 +42,9 @@ const GLITCH_FX_CLOUDINARY_URL =
 const CAMERA_CLICK_CLOUDINARY_URL =
   'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057799/camera_click_mziq08.mp3';
 
+const WHOOSH_CLOUDINARY_URL =
+  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057829/whoosh_ioio4g.mp3';
+
 @Injectable()
 export class RenderVideosService {
   private readonly openai: OpenAI | null;
@@ -546,28 +549,10 @@ export class RenderVideosService {
     // Camera click SFX is hosted on Cloudinary.
     void CAMERA_CLICK_CLOUDINARY_URL;
 
-    try {
-      const whooshSources = [
-        join(process.cwd(), 'remotion', 'public', 'whoosh.mp3'),
-        join(
-          process.cwd(),
-          '..',
-          'auto-video-frontend',
-          'public',
-          'whoosh.mp3',
-        ),
-      ];
+    // Whoosh SFX is hosted on Cloudinary.
+    void WHOOSH_CLOUDINARY_URL;
 
-      for (const source of whooshSources) {
-        if (fs.existsSync(source)) {
-          const dest = join(jobDir, 'whoosh.mp3');
-          fs.copyFileSync(source, dest);
-          break;
-        }
-      }
-    } catch {
-      // Whoosh sound effect is optional; ignore copy errors.
-    }
+    // No local file copy needed.
 
     // No local file copy needed.
 
