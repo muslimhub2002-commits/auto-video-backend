@@ -388,62 +388,6 @@ export class RenderVideosService {
     };
   }
 
-  private async uploadVideoFileToCloudinary(params: {
-    filePath: string;
-    folder: string;
-  }): Promise<{ secure_url: string; public_id?: string }> {
-    this.ensureCloudinaryConfigured();
-
-    const stat = fs.statSync(params.filePath);
-    const bytes = stat.size;
-
-    // Cloudinary requires chunked uploads for larger video files.
-    // Using upload_large avoids 413 "Request Entity Too Large" for big MP4s.
-    const useChunked = bytes >= 90 * 1024 * 1024;
-
-    const uploadPromise = new Promise<any>((resolve, reject) => {
-      const cb = (error: any, result: any) => {
-        if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'));
-        resolve(result);
-      };
-
-      const options: any = {
-        folder: params.folder,
-        resource_type: 'video',
-        overwrite: false,
-        use_filename: false,
-      };
-
-      if (useChunked) {
-        cloudinary.uploader.upload_large(
-          params.filePath,
-          {
-            ...options,
-            chunk_size: 20 * 1024 * 1024,
-          },
-          cb,
-        );
-      } else {
-        cloudinary.uploader.upload(params.filePath, options, cb);
-      }
-    });
-
-    const uploadResult: any = await this.withTimeout(
-      uploadPromise,
-      30 * 60_000,
-      'Cloudinary final video upload',
-    );
-
-    if (!uploadResult?.secure_url) {
-      throw new Error('Cloudinary video upload did not return a secure_url');
-    }
-
-    return {
-      secure_url: uploadResult.secure_url as string,
-      public_id: uploadResult.public_id as string | undefined,
-    };
-  }
-
   private createTempDir(prefix: string) {
     return fs.mkdtempSync(join(os.tmpdir(), prefix));
   }
@@ -884,33 +828,31 @@ export class RenderVideosService {
         'Remotion render',
       );
 
-      // Upload the rendered video to Cloudinary.
-      // If it fails (often due to 413 on large files), fall back to serving the local file.
-      let finalUrl: string | null = null;
-      try {
-        const uploaded = await this.uploadVideoFileToCloudinary({
-          filePath: outputFsPath,
+      // Upload the rendered video to Cloudinary and remove the local file.
+      this.ensureCloudinaryConfigured();
+      const uploadResult: any = await this.withTimeout(
+        cloudinary.uploader.upload(outputFsPath, {
           folder: 'auto-video-generator/videos',
-        });
-        finalUrl = uploaded.secure_url;
+          resource_type: 'video',
+          overwrite: false,
+          use_filename: false,
+        }),
+        20 * 60_000,
+        'Cloudinary final video upload',
+      );
 
-        // If upload succeeded, clean up local output.
-        try {
-          fs.unlinkSync(outputFsPath);
-        } catch {
-          // ignore
-        }
-      } catch (uploadErr: any) {
-        // Keep local output and serve it via /static/videos.
-        console.warn('[RenderVideosService] Cloudinary upload failed; using local video URL', {
-          jobId,
-          message: uploadErr?.message,
-        });
-        finalUrl = this.getPublicVideoUrl(jobId);
+      if (!uploadResult?.secure_url) {
+        throw new Error('Cloudinary video upload did not return a secure_url');
+      }
+
+      try {
+        fs.unlinkSync(outputFsPath);
+      } catch {
+        // ignore
       }
 
       job.status = 'completed';
-      job.videoPath = finalUrl;
+      job.videoPath = uploadResult.secure_url as string;
       await this.jobsRepo.save(job);
     } catch (err: any) {
       await this.jobsRepo.save({
