@@ -641,8 +641,8 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       {timeline.audioSrc && (
         <Html5Audio src={resolveMediaSrc(timeline.audioSrc)} />
       )}
-      {/* Global background music from remotion/public, trimmed to video length by the composition */}
-      <Audio src={staticFile('background.mp3')} />
+      {/* Global background music hosted on Cloudinary */}
+      <Audio src={'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057652/background_ny4lml.mp3'} />
 
       {/* Glitch SFX only during image->image cut windows */}
       {timeline.scenes.map((next, idx) => {

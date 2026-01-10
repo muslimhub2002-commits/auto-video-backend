@@ -33,6 +33,9 @@ const SUBSCRIBE_SENTENCE =
 const SUBSCRIBE_VIDEO_CLOUDINARY_URL =
   'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768053443/subscribe_ejq4q9.mp4';
 
+const BACKGROUND_AUDIO_CLOUDINARY_URL =
+  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057652/background_ny4lml.mp3';
+
 @Injectable()
 export class RenderVideosService {
   private readonly openai: OpenAI | null;
@@ -527,28 +530,9 @@ export class RenderVideosService {
     // Subscribe clip is hosted on Cloudinary (no local static file).
     const subscribeVideoSrc: string | null = SUBSCRIBE_VIDEO_CLOUDINARY_URL;
 
-    try {
-      const bgSources = [
-        join(process.cwd(), 'remotion', 'public', 'background.mp3'),
-        join(
-          process.cwd(),
-          '..',
-          'auto-video-frontend',
-          'public',
-          'background.mp3',
-        ),
-      ];
-
-      for (const source of bgSources) {
-        if (fs.existsSync(source)) {
-          const dest = join(jobDir, 'background.mp3');
-          fs.copyFileSync(source, dest);
-          break;
-        }
-      }
-    } catch {
-      // Background music is optional; ignore copy errors.
-    }
+    // Background music is hosted on Cloudinary (no local static file).
+    // Keep the constant here for future wiring (e.g., passing into timeline).
+    void BACKGROUND_AUDIO_CLOUDINARY_URL;
 
     try {
       const glitchSources = [
