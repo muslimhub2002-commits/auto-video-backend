@@ -136,34 +136,6 @@ export class YoutubeService {
         });
     }
 
-    async getStatus(user: User): Promise<{
-        connected: boolean;
-        connectedAt: string | null;
-        hasRefreshToken: boolean;
-        tokenExpiry: string | null;
-    }> {
-        const connected = !!(user.youtube_refresh_token || user.youtube_access_token);
-        return {
-            connected,
-            connectedAt: user.youtube_connected_at
-                ? user.youtube_connected_at.toISOString()
-                : null,
-            hasRefreshToken: !!user.youtube_refresh_token,
-            tokenExpiry: user.youtube_token_expiry
-                ? user.youtube_token_expiry.toISOString()
-                : null,
-        };
-    }
-
-    async disconnect(user: User): Promise<{ ok: true }> {
-        user.youtube_access_token = null;
-        user.youtube_refresh_token = null;
-        user.youtube_token_expiry = null;
-        user.youtube_connected_at = null;
-        await this.usersRepository.save(user);
-        return { ok: true };
-    }
-
     async handleOAuthCallback(params: {
         code?: string;
         state?: string;
@@ -282,7 +254,26 @@ export class YoutubeService {
                 ? dto.tags.map((t) => t.trim()).filter(Boolean).slice(0, 500)
                 : undefined;
 
-            const privacyStatus = dto.privacyStatus ?? 'public';
+            const publishAt = dto.publishAt?.trim() || undefined;
+            if (publishAt) {
+                const publishAtMs = Date.parse(publishAt);
+                if (!Number.isFinite(publishAtMs)) {
+                    throw new BadRequestException(
+                        'Invalid publishAt. Use ISO8601/RFC3339 like 2026-01-13T18:00:00+03:00',
+                    );
+                }
+
+                // YouTube scheduling requires a future publish time. We enforce a small buffer.
+                const minMs = Date.now() + 2 * 60 * 1000;
+                if (publishAtMs < minMs) {
+                    throw new BadRequestException(
+                        'publishAt must be at least 2 minutes in the future.',
+                    );
+                }
+            }
+
+            // When publishAt is set, YouTube requires privacyStatus=private.
+            const privacyStatus = publishAt ? 'private' : dto.privacyStatus ?? 'public';
             const categoryId = (dto.categoryId ?? '24').trim();
             const selfDeclaredMadeForKids = !!dto.selfDeclaredMadeForKids;
 
@@ -301,6 +292,7 @@ export class YoutubeService {
                     status: {
                         privacyStatus,
                         selfDeclaredMadeForKids,
+                        ...(publishAt ? { publishAt } : {}),
                         // “Altered content” disclosure: No
                         containsSyntheticMedia: false,
                     },

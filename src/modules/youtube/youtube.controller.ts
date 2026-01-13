@@ -21,16 +21,7 @@ export class YoutubeController {
   constructor(private readonly youtubeService: YoutubeService) {}
 
   @UseGuards(JwtAuthGuard)
-  @Get('status')
-  async status(@GetUser() user: User) {
-    return this.youtubeService.getStatus(user);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('disconnect')
-  async disconnect(@GetUser() user: User) {
-    return this.youtubeService.disconnect(user);
-  }
+ 
 
   @UseGuards(JwtAuthGuard)
   @Get('auth-url')

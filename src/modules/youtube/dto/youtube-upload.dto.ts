@@ -2,6 +2,7 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsISO8601,
   IsOptional,
   IsString,
   IsUrl,
@@ -76,6 +77,13 @@ export class YoutubeUploadDto {
   @IsOptional()
   @IsBoolean()
   selfDeclaredMadeForKids?: boolean;
+
+  // RFC3339 timestamp, e.g. 2026-01-13T18:00:00+03:00
+  // YouTube requires privacyStatus=private when publishAt is set.
+  @IsOptional()
+  @IsString()
+  @IsISO8601({ strict: true })
+  publishAt?: string;
 
   @IsOptional()
   @ValidateNested()
