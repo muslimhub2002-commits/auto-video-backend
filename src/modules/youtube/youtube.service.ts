@@ -136,6 +136,34 @@ export class YoutubeService {
         });
     }
 
+    async getStatus(user: User): Promise<{
+        connected: boolean;
+        connectedAt: string | null;
+        hasRefreshToken: boolean;
+        tokenExpiry: string | null;
+    }> {
+        const connected = !!(user.youtube_refresh_token || user.youtube_access_token);
+        return {
+            connected,
+            connectedAt: user.youtube_connected_at
+                ? user.youtube_connected_at.toISOString()
+                : null,
+            hasRefreshToken: !!user.youtube_refresh_token,
+            tokenExpiry: user.youtube_token_expiry
+                ? user.youtube_token_expiry.toISOString()
+                : null,
+        };
+    }
+
+    async disconnect(user: User): Promise<{ ok: true }> {
+        user.youtube_access_token = null;
+        user.youtube_refresh_token = null;
+        user.youtube_token_expiry = null;
+        user.youtube_connected_at = null;
+        await this.usersRepository.save(user);
+        return { ok: true };
+    }
+
     async handleOAuthCallback(params: {
         code?: string;
         state?: string;

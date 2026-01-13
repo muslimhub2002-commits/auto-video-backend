@@ -6,6 +6,8 @@ import {
   Img,
   OffthreadVideo,
   Sequence,
+  delayRender,
+  continueRender,
   useCurrentFrame,
   useVideoConfig,
   interpolate,
@@ -33,6 +35,39 @@ const FADE_EDGE_FRAMES = 12;
 const WHIP_EDGE_FRAMES = 10;
 const WHIP_DISTANCE_MULTIPLIER = 1.15; // fraction of frame width
 const WHIP_MAX_BLUR_PX = 18;
+
+const preloadImage = (src: string) =>
+  new Promise<void>((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve();
+    img.onerror = () => resolve();
+    img.src = src;
+  });
+
+const preloadAudio = (src: string) =>
+  new Promise<void>((resolve) => {
+    const audio = document.createElement('audio');
+    const done = () => resolve();
+    audio.preload = 'auto';
+    audio.oncanplaythrough = done;
+    audio.onloadedmetadata = done;
+    audio.onerror = done;
+    audio.src = src;
+    // Some browsers require calling load() to start fetching.
+    audio.load();
+  });
+
+const preloadVideo = (src: string) =>
+  new Promise<void>((resolve) => {
+    const video = document.createElement('video');
+    const done = () => resolve();
+    video.preload = 'auto';
+    video.onloadeddata = done;
+    video.onloadedmetadata = done;
+    video.onerror = done;
+    video.src = src;
+    video.load();
+  });
 
 type TransitionType = 'none' | 'glitch' | 'whip' | 'flash' | 'fade';
 
@@ -634,6 +669,73 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
     () => buildCutTransitions(timeline.scenes),
     [timeline.scenes],
   );
+
+  // Preload remote media so we don't show the black background while assets fetch.
+  const preloadHandle = React.useMemo(
+    () => delayRender('preload-media'),
+    [],
+  );
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const sources = new Set<string>();
+
+    if (timeline.audioSrc) sources.add(resolveMediaSrc(timeline.audioSrc));
+
+    // Global background music hosted on Cloudinary
+    sources.add(
+      'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057652/background_ny4lml.mp3',
+    );
+
+    // Transition SFX
+    sources.add(
+      'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057729/glitch-fx_xkpwzq.mp3',
+    );
+    sources.add(
+      'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057829/whoosh_ioio4g.mp3',
+    );
+    sources.add(
+      'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057799/camera_click_mziq08.mp3',
+    );
+
+    for (const scene of timeline.scenes) {
+      if (scene.imageSrc) sources.add(resolveMediaSrc(scene.imageSrc));
+      if (scene.videoSrc) sources.add(resolveMediaSrc(scene.videoSrc));
+    }
+
+    const run = async () => {
+      const tasks = Array.from(sources).map((src) => {
+        const lower = src.toLowerCase();
+        if (lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.m4a')) {
+          return preloadAudio(src);
+        }
+        if (lower.endsWith('.mp4') || lower.endsWith('.webm') || lower.endsWith('.mov')) {
+          return preloadVideo(src);
+        }
+        return preloadImage(src);
+      });
+
+      await Promise.allSettled(tasks);
+
+      if (!cancelled) {
+        continueRender(preloadHandle);
+      }
+    };
+
+    // Safety net: never hang rendering forever if a remote host is slow.
+    const timeout = setTimeout(() => {
+      if (!cancelled) {
+        continueRender(preloadHandle);
+      }
+    }, 15000);
+
+    run().finally(() => clearTimeout(timeout));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [preloadHandle, timeline]);
 
 
   return (

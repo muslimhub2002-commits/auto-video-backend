@@ -146,6 +146,83 @@ export class ImagesService {
     }
   }
 
+  async saveToCloudinary(params: {
+    buffer: Buffer;
+    filename: string;
+    user_id: string;
+    message_id?: string;
+    image_style?: string;
+    image_size?: Image['image_size'];
+    image_quality?: Image['image_quality'];
+  }): Promise<Image> {
+    if (
+      !process.env.CLOUDINARY_CLOUD_NAME ||
+      !process.env.CLOUDINARY_API_KEY ||
+      !process.env.CLOUDINARY_CLOUD_SECRET
+    ) {
+      throw new InternalServerErrorException(
+        'Cloudinary environment variables are not configured',
+      );
+    }
+
+    try {
+      const hash = crypto
+        .createHash('sha256')
+        .update(params.buffer)
+        .digest('hex');
+
+      const existing = await this.imagesRepository.findOne({
+        where: {
+          user_id: params.user_id,
+          hash,
+        },
+      });
+
+      if (existing) {
+        existing.number_of_times_used += 1;
+        return this.imagesRepository.save(existing);
+      }
+
+      const uploadResult: any = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder: 'auto-video-generator/images',
+            resource_type: 'image',
+            overwrite: false,
+          },
+          (error, result) => {
+            if (error || !result) {
+              return reject(error ?? new Error('Cloudinary upload failed'));
+            }
+            resolve(result);
+          },
+        );
+
+        stream.end(params.buffer);
+      });
+
+      const imagePartial: Partial<Image> = {
+        image: uploadResult.secure_url,
+        user_id: params.user_id,
+        message_id: params.message_id ?? null,
+        image_style: params.image_style,
+        image_size: params.image_size,
+        image_quality: params.image_quality,
+        public_id: uploadResult.public_id,
+        number_of_times_used: 0,
+        hash,
+      };
+
+      const imageEntity = this.imagesRepository.create(imagePartial);
+      return await this.imagesRepository.save(imageEntity);
+    } catch (error: any) {
+      console.error('Error in saveToCloudinary:', error);
+      throw new InternalServerErrorException(
+        error?.message ?? 'Failed to upload image',
+      );
+    }
+  }
+
   async update(id: string, updateImageDto: UpdateImageDto): Promise<Image> {
     await this.imagesRepository.update(id, updateImageDto);
     const updated = await this.imagesRepository.findOne({ where: { id } });

@@ -8,6 +8,8 @@ import OpenAI from 'openai';
 import { GenerateScriptDto } from './dto/generate-script.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
+import { ImagesService } from '../images/images.service';
+import { ImageQuality, ImageSize } from '../images/entities/image.entity';
 
 @Injectable()
 export class AiService {
@@ -22,7 +24,7 @@ export class AiService {
   // Narration pacing assumption (words per minute) used to derive strict word-count targets.
   private readonly narrationWpm = 150;
 
-  constructor() {
+  constructor(private readonly imagesService: ImagesService) {
     const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
@@ -151,6 +153,7 @@ export class AiService {
               'You split long scripts into clean sentences. ' +
               'You cannot write any more or less words than the original script. ' +
               'Ensure each sentence is self-contained and suitable for pairing with a single image. ' +
+              'Sentences cannot be too short, it can be long if there is a deep meaning to the sentence. ' +
               'Always respond with pure JSON: an array of strings. No extra text.',
           },
           {
@@ -347,7 +350,7 @@ export class AiService {
   /**
    * Generates a detailed image prompt for a sentence, then generates an image.
    */
-  async generateImageForSentence(dto: GenerateImageDto) {
+  async generateImageForSentence(dto: GenerateImageDto, userId: string) {
     const subject = dto.subject?.trim() || 'religious (Islam)';
     // Force an anime-inspired look by default.
     const style =
@@ -579,9 +582,22 @@ export class AiService {
       const imgBuffer = Buffer.from(await imgResp.arrayBuffer());
       const b64 = imgBuffer.toString('base64');
 
+      // Persist the generated image to Cloudinary + DB first.
+      // This enables "library" reuse and ensures the render pipeline can use stable URLs.
+      const saved = await this.imagesService.saveCompressedToCloudinary({
+        buffer: imgBuffer,
+        filename: `ai-${Date.now()}.png`,
+        user_id: userId,
+        image_style: style,
+        image_size: isShortForm ? ImageSize.PORTRAIT : ImageSize.LANDSCAPE,
+        image_quality: ImageQuality.HIGH,
+      });
+
       return {
         prompt,
         imageBase64: b64,
+        imageUrl: saved.image,
+        savedImageId: saved.id,
       };
     } catch (error) {
       // The OpenAI SDK throws rich errors (status, error.message, code, etc.).

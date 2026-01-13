@@ -5,6 +5,7 @@ import {
   Res,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { AiService } from './ai.service';
@@ -14,6 +15,9 @@ import { GenerateImageDto } from './dto/generate-image.dto';
 import { GenerateVoiceDto } from './dto/generate-voice.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { YoutubeSeoDto } from './dto/youtube-seo.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { User } from '../users/entities/user.entity';
 
 @Controller('ai')
 export class AiController {
@@ -103,8 +107,12 @@ export class AiController {
    */
   @Post('generate-image-from-sentence')
   @HttpCode(HttpStatus.OK)
-  async generateImageFromSentence(@Body() body: GenerateImageDto) {
-    const result = await this.aiService.generateImageForSentence(body);
+  @UseGuards(JwtAuthGuard)
+  async generateImageFromSentence(
+    @GetUser() user: User,
+    @Body() body: GenerateImageDto,
+  ) {
+    const result = await this.aiService.generateImageForSentence(body, user.id);
     return result;
   }
 

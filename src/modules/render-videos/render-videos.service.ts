@@ -210,26 +210,45 @@ export class RenderVideosService implements OnModuleInit {
       ? Math.floor(N / 2)
       : -1;
 
-    const scenes = params.sentences.map((s, index) => {
+    const nominalEndFrames: number[] = params.sentences.map((s, index) => {
       const timing = params.sentenceTimings?.[index];
-
-      const isSubscribe =
-        (s.text || '').trim() === SUBSCRIBE_SENTENCE &&
-        !!params.subscribeVideoSrc;
+      const nextTiming =
+        index + 1 < N ? params.sentenceTimings?.[index + 1] : undefined;
 
       const startSeconds =
         timing && typeof timing.startSeconds === 'number'
           ? Math.max(0, Math.min(timing.startSeconds, T))
           : (T * index) / N;
-      const endSeconds =
+
+      const rawEndSeconds =
         timing && typeof timing.endSeconds === 'number'
-          ? Math.max(startSeconds + 1 / fps, Math.min(timing.endSeconds, T))
-          : (T * (index + 1)) / N;
-      const startFrame = Math.floor(startSeconds * fps);
-      const durationFrames = Math.max(
-        1,
-        Math.ceil(endSeconds * fps) - startFrame,
+          ? timing.endSeconds
+          : nextTiming && typeof nextTiming.startSeconds === 'number'
+            ? nextTiming.startSeconds
+            : (T * (index + 1)) / N;
+
+      const endSeconds = Math.max(
+        startSeconds + 1 / fps,
+        Math.min(Math.max(0, rawEndSeconds), T),
       );
+
+      // Use ceil for the end to avoid truncating away the last visible frame.
+      return Math.ceil(endSeconds * fps);
+    });
+
+    let cursor = 0;
+    const scenes = params.sentences.map((s, index) => {
+      const isSubscribe =
+        (s.text || '').trim() === SUBSCRIBE_SENTENCE &&
+        !!params.subscribeVideoSrc;
+
+      // Critical: ensure scenes are frame-contiguous.
+      // Any gap from rounding would otherwise show as black in Remotion.
+      const startFrame = index === 0 ? 0 : cursor;
+      const endFrame = Math.max(startFrame + 1, nominalEndFrames[index] ?? startFrame + 1);
+      const durationFrames = endFrame - startFrame;
+      cursor = endFrame;
+
       return {
         index,
         text: s.text,
