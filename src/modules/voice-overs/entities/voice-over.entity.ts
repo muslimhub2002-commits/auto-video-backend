@@ -17,6 +17,9 @@ export class VoiceOver {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
+  @Column({ type: 'boolean', default: false })
+  isFavorite: boolean;
+
   @Column({ type: 'varchar', length: 500, nullable: true })
   preview_url?: string | null;
 

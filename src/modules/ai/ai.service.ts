@@ -100,7 +100,7 @@ export class AiService {
               'You are an expert video script writer. ' +
               'You ONLY respond with the script text, no explanations, headings, or markdown. ' +
               'Write clear, engaging narration suitable for AI video generation. ' +
-              'Prioritize: (1) Curiosity / Open Loops, (2) Story Arc / Micro Narrative, (3) Rhythm & Pacing, (4) Natural Call to Action (CTA), (5) Emotional Trigger. ' +
+              'Prioritize: (1) Perfect Hook for Customer Attention, (2) Curiosity / Open Loops, (3) Story Arc / Micro Narrative, (4) Rhythm & Pacing, (5) Emotional Trigger. ' +
               `HARD LENGTH CONSTRAINT: Output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.`,
           },
           {

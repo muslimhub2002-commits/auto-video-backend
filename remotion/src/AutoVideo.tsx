@@ -36,6 +36,12 @@ const WHIP_EDGE_FRAMES = 10;
 const WHIP_DISTANCE_MULTIPLIER = 1.15; // fraction of frame width
 const WHIP_MAX_BLUR_PX = 18;
 
+// VR Chroma Leaks transition: RGB channel separation + light leak around the cut.
+// Applies to the last/first N frames (no overlap required).
+const CHROMA_EDGE_FRAMES = 10;
+const CHROMA_MAX_SHIFT_PX = 22;
+const CHROMA_MAX_BLUR_PX = 6;
+
 const preloadImage = (src: string) =>
   new Promise<void>((resolve) => {
     const img = new Image();
@@ -69,7 +75,10 @@ const preloadVideo = (src: string) =>
     video.load();
   });
 
-type TransitionType = 'none' | 'glitch' | 'whip' | 'flash' | 'fade';
+const CHROMA_LEAK_SFX_URL =
+  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768515034/whoosh-end-384629_1_k8lth5.mp3';
+
+type TransitionType = 'none' | 'glitch' | 'whip' | 'flash' | 'fade' | 'chromaLeak';
 
 type GlitchParams = {
   intensity: number;
@@ -346,7 +355,7 @@ const buildCutTransitions = (scenes: TimelineScene[]): TransitionType[] => {
     (c) => c !== firstCut && c !== lastCut,
   );
 
-  const pool: TransitionType[] = ['whip', 'flash', 'fade'];
+  const pool: TransitionType[] = ['whip', 'flash', 'fade', 'chromaLeak'];
   if (pool.length === 0) return transitions;
 
   // Deterministic shuffle seed for this timeline.
@@ -408,6 +417,16 @@ const pickWhipDirection = (prev: TimelineScene, next: TimelineScene) => {
   // +1 = move right, -1 = move left
   const r = mulberry32(getCutSeed(prev, next) ^ 0x9e3779b9)();
   return r < 0.5 ? 1 : -1;
+};
+
+const getChromaParams = (seed: number) => {
+  const rand = mulberry32(seed ^ 0x7f4a7c15);
+  const dirX = rand() < 0.5 ? -1 : 1;
+  const dirY = rand() < 0.5 ? -1 : 1;
+  const strength = 0.85 + rand() * 0.5; // 0.85..1.35
+  const originX = 20 + rand() * 60; // 20%..80%
+  const originY = 20 + rand() * 50; // 20%..70%
+  return { dirX, dirY, strength, originX, originY };
 };
 
 const Scene: React.FC<{
@@ -581,6 +600,46 @@ const Scene: React.FC<{
 
   const fadeAlpha = Math.max(fadeInAlpha, fadeOutAlpha);
 
+  // VR Chroma Leaks: RGB split + light leak around the cut.
+  const hasChromaIn =
+    transitionFromPrev === 'chromaLeak' && frame < CHROMA_EDGE_FRAMES;
+  const hasChromaOut =
+    transitionToNext === 'chromaLeak' &&
+    frame >= scene.durationFrames - CHROMA_EDGE_FRAMES;
+
+  const chromaInAlpha = hasChromaIn
+    ? interpolate(frame, [0, CHROMA_EDGE_FRAMES - 1], [1, 0], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: Easing.out(Easing.cubic),
+      })
+    : 0;
+
+  const chromaOutAlpha = hasChromaOut
+    ? interpolate(
+        frame,
+        [scene.durationFrames - CHROMA_EDGE_FRAMES, scene.durationFrames - 1],
+        [0, 1],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.in(Easing.cubic),
+        },
+      )
+    : 0;
+
+  const chromaAlpha = Math.max(chromaInAlpha, chromaOutAlpha);
+  const chromaSeed = hasChromaIn ? seedFromPrev : hasChromaOut ? seedToNext : 0;
+  const chroma = chromaSeed ? getChromaParams(chromaSeed) : null;
+  const chromaShift =
+    chroma && chromaAlpha > 0
+      ? CHROMA_MAX_SHIFT_PX * chroma.strength * chromaAlpha
+      : 0;
+  const chromaBlur =
+    chroma && chromaAlpha > 0
+      ? CHROMA_MAX_BLUR_PX * chroma.strength * chromaAlpha
+      : 0;
+
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
       {scene.videoSrc ? (
@@ -605,6 +664,54 @@ const Scene: React.FC<{
               enableStart={transitionFromPrev === 'glitch'}
               enableEnd={transitionToNext === 'glitch'}
             />
+
+            {/* Chroma leak overlays (only during edge frames) */}
+            {chroma && chromaAlpha > 0.001 ? (
+              <>
+                <AbsoluteFill style={{ opacity: 0.6 * chromaAlpha, mixBlendMode: 'screen' }}>
+                  <Img
+                    src={resolveMediaSrc(scene.imageSrc)}
+                    style={{
+                      ...imageStyle,
+                      transform: `${imageStyle.transform ?? ''} translate(${(
+                        chroma.dirX * chromaShift
+                      ).toFixed(2)}px, ${(-chroma.dirY * chromaShift * 0.35).toFixed(2)}px)`,
+                      filter: `blur(${chromaBlur.toFixed(2)}px) saturate(1.4) hue-rotate(-18deg) contrast(1.12)`,
+                    }}
+                  />
+                </AbsoluteFill>
+
+                <AbsoluteFill style={{ opacity: 0.5 * chromaAlpha, mixBlendMode: 'screen' }}>
+                  <Img
+                    src={resolveMediaSrc(scene.imageSrc)}
+                    style={{
+                      ...imageStyle,
+                      transform: `${imageStyle.transform ?? ''} translate(${(
+                        -chroma.dirX * chromaShift * 1.15
+                      ).toFixed(2)}px, ${(chroma.dirY * chromaShift * 0.45).toFixed(2)}px)`,
+                      filter: `blur(${(chromaBlur * 0.9).toFixed(2)}px) saturate(1.25) hue-rotate(24deg) contrast(1.1)`,
+                    }}
+                  />
+                </AbsoluteFill>
+
+                {/* Light leak bloom */}
+                <AbsoluteFill
+                  style={{
+                    opacity: 0.55 * chromaAlpha,
+                    mixBlendMode: 'screen',
+                    background: `radial-gradient(circle at ${chroma.originX}% ${chroma.originY}%, rgba(255, 80, 200, 0.55) 0%, rgba(80, 160, 255, 0.30) 35%, rgba(0,0,0,0) 68%)`,
+                  }}
+                />
+                <AbsoluteFill
+                  style={{
+                    opacity: 0.25 * chromaAlpha,
+                    mixBlendMode: 'screen',
+                    background:
+                      'linear-gradient(120deg, rgba(255,0,170,0) 0%, rgba(255,0,170,0.22) 40%, rgba(80,160,255,0.18) 65%, rgba(0,0,0,0) 100%)',
+                  }}
+                />
+              </>
+            ) : null}
           </AbsoluteFill>
         )
       )}
@@ -695,6 +802,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
     sources.add(
       'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057829/whoosh_ioio4g.mp3',
     );
+    sources.add(CHROMA_LEAK_SFX_URL);
     sources.add(
       'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057799/camera_click_mziq08.mp3',
     );
@@ -813,6 +921,22 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         );
       })}
 
+      {/* Chroma leak SFX only during chromaLeak image->image cut windows */}
+      {timeline.scenes.map((next, idx) => {
+        if (idx === 0) return null;
+        const prevIndex = timeline.scenes[idx - 1].index;
+        const transition = cutTransitions[idx] ?? 'none';
+        if (transition !== 'chromaLeak') return null;
+
+        const from = Math.max(0, next.startFrame - CHROMA_EDGE_FRAMES)-8;
+
+        return (
+          <Sequence key={`chroma-sfx-${prevIndex}-${next.index}`} from={from}>
+            <Audio src={CHROMA_LEAK_SFX_URL} volume={0.9} />
+          </Sequence>
+        );
+      })}
+
       {timeline.scenes.map((scene, idx) => {
         const prev = idx > 0 ? timeline.scenes[idx - 1] : null;
         const next = idx + 1 < timeline.scenes.length ? timeline.scenes[idx + 1] : null;
@@ -822,9 +946,13 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
           idx + 1 < timeline.scenes.length ? (cutTransitions[idx + 1] ?? 'none') : 'none';
 
         const seedFromPrev =
-          prev && transitionFromPrev === 'glitch' ? getCutSeed(prev, scene) : 0;
+          prev && (transitionFromPrev === 'glitch' || transitionFromPrev === 'chromaLeak')
+            ? getCutSeed(prev, scene)
+            : 0;
         const seedToNext =
-          next && transitionToNext === 'glitch' ? getCutSeed(scene, next) : 0;
+          next && (transitionToNext === 'glitch' || transitionToNext === 'chromaLeak')
+            ? getCutSeed(scene, next)
+            : 0;
 
         const whipDirFromPrev =
           prev && transitionFromPrev === 'whip' ? pickWhipDirection(prev, scene) : 1;

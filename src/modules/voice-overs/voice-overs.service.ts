@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { VoiceOver } from './entities/voice-over.entity';
@@ -111,6 +111,47 @@ export class VoiceOversService {
   }
 
   async findAll(): Promise<VoiceOver[]> {
-    return this.voiceOverRepository.find({ order: { name: 'ASC' } });
+    return this.voiceOverRepository.find({
+      order: {
+        isFavorite: 'DESC',
+        name: 'ASC',
+      },
+    });
+  }
+
+  async setFavoriteByVoiceId(voiceId: string): Promise<VoiceOver> {
+    const target = await this.voiceOverRepository.findOne({
+      where: { voice_id: voiceId },
+    });
+
+    if (!target) {
+      throw new NotFoundException('Voice not found');
+    }
+
+    await this.voiceOverRepository.manager.transaction(async (manager) => {
+      await manager
+        .createQueryBuilder()
+        .update(VoiceOver)
+        .set({ isFavorite: false })
+        .where('isFavorite = :isFavorite', { isFavorite: true })
+        .execute();
+
+      await manager
+        .createQueryBuilder()
+        .update(VoiceOver)
+        .set({ isFavorite: true })
+        .where('voice_id = :voiceId', { voiceId })
+        .execute();
+    });
+
+    const updated = await this.voiceOverRepository.findOne({
+      where: { voice_id: voiceId },
+    });
+
+    if (!updated) {
+      throw new NotFoundException('Voice not found after update');
+    }
+
+    return updated;
   }
 }
