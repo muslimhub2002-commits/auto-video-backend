@@ -1,4 +1,18 @@
-import { IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsOptional, IsString, ValidateNested } from 'class-validator';
+
+class ReferenceScriptDto {
+  @IsString()
+  script: string;
+
+  @IsString()
+  @IsOptional()
+  id?: string;
+
+  @IsString()
+  @IsOptional()
+  title?: string;
+}
 
 export class GenerateScriptDto {
   // High-level topic, e.g. "religious (Islam)", "motivational"
@@ -25,4 +39,17 @@ export class GenerateScriptDto {
   @IsString()
   @IsOptional()
   model?: string;
+
+  // Optional override for the system prompt. If provided, it replaces the default system prompt.
+  @IsString()
+  @IsOptional()
+  systemPrompt?: string;
+
+  // Optional reference scripts (full text) used as style exemplars.
+  // When provided, they override style/tone and systemPrompt-based writing goals.
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReferenceScriptDto)
+  @IsOptional()
+  referenceScripts?: ReferenceScriptDto[];
 }

@@ -87,42 +87,105 @@ export class AiService {
     const length = options.length?.trim() || '1 minute';
     const style = options.style?.trim() || 'Conversational';
     const model = options.model?.trim() || this.model;
+    const customSystemPrompt = options.systemPrompt?.trim() || '';
     const wordRange = this.getStrictWordRange(length);
+    const haveCustomPrompt = Boolean(customSystemPrompt);
+    const referenceScripts = (options.referenceScripts ?? [])
+      .map((r) => ({
+        id: typeof r?.id === 'string' ? r.id.trim() : '',
+        title: typeof r?.title === 'string' ? r.title.trim() : '',
+        script: typeof r?.script === 'string' ? r.script.trim() : '',
+      }))
+      .filter((r) => Boolean(r.script));
+    const haveReferences = referenceScripts.length > 0;
 
     try {
+      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+        {
+          role: 'system',
+          content:
+            'You are an expert video script writer. ' +
+            'You ONLY respond with the script text, no explanations, headings, or markdown. ' +
+            'You have a talent for getting straight to the point and engaging the audience quickly. ' +
+            `HARD LENGTH CONSTRAINT: Output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.`,
+        },
+      ];
+
+      if (haveReferences) {
+        messages.push({
+          role: 'system',
+          content:
+            'REFERENCE SCRIPTS MODE: The user provided one or more reference scripts in the conversation history below. ' +
+            'Analyze them to infer writing style (voice, pacing, structure, rhythm, hooks, transitions). ' +
+            'For this request, IGNORE any style/tone field and IGNORE any writing-goals prompt text. ' +
+            'Generate a NEW script that matches the requested subject, subject content, and length constraints, while matching the STYLE of the references. ' +
+            'Do NOT mention the reference scripts. Do NOT copy unique facts or reuse long verbatim phrases; only mimic style.',
+        });
+
+        referenceScripts.forEach((ref, idx) => {
+          const headerParts = [`Reference Script #${idx + 1}`];
+          if (ref.title) headerParts.push(`Title: ${ref.title}`);
+          if (ref.id) headerParts.push(`Id: ${ref.id}`);
+
+          messages.push({
+            role: 'user',
+            content:
+              `${headerParts.join(' | ')}\n` +
+              'Use this script as a STYLE exemplar only.',
+          });
+
+          messages.push({
+            role: 'assistant',
+            content: ref.script,
+          });
+        });
+
+        messages.push({
+          role: 'user',
+          content:
+            `Generate a detailed video narration script.\n` +
+            `Approximate length: ${length}.\n` +
+            `Strict word count requirement: ${wordRange.minWords}-${wordRange.maxWords} words (target ${wordRange.targetWords}).\n` +
+            `Subject: ${subject}.\n` +
+            (subjectContent
+              ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${subjectContent}.\n`
+              : '') +
+            'Write the NEW script in the same narrative style as the reference scripts above.\n' +
+            `For religious (Islam) scripts, keep it respectful, authentic, and avoid controversial topics.\n` +
+            'Do not include scene directions, only spoken narration.',
+        });
+      } else {
+        const writingGoals = haveCustomPrompt
+          ? `${customSystemPrompt}\n`
+          :
+              `1) Get Straight to the Point/Subject: Hook the viewer within the first 3 seconds. Avoid long intros or fluffy openings.\n` +
+              `2) Curiosity / Open Loops: introduce an unanswered question early and pay it off later.\n` +
+              `3) Story Arc / Micro Narrative: a clear setup → tension/problem → insight/turn → resolution.\n` +
+              `4) Rhythm & Pacing: short punchy lines mixed with a few longer lines; avoid monotone cadence.\n` +
+              `5) Emotional Trigger: open with a strong feeling (awe, hope, urgency, empathy, etc.).\n`;
+
+        messages.push({
+          role: 'user',
+          content:
+            `Generate a detailed video narration script.\n` +
+            `Approximate length: ${length}.\n` +
+            `Strict word count requirement: ${wordRange.minWords}-${wordRange.maxWords} words (target ${wordRange.targetWords}).\n` +
+            `Subject: ${subject}.\n` +
+            (subjectContent
+              ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${subjectContent}.\n`
+              : '') +
+            `Style/tone: ${style}.\n` +
+            `Writing goals to focus on:\n` +
+            writingGoals +
+            `For religious (Islam) scripts, keep it respectful, authentic, and avoid controversial topics.\n` +
+            'Do not include scene directions, only spoken narration.',
+        });
+      }
+
       const stream = await this.client.chat.completions.create({
         model,
         stream: true,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are an expert video script writer. ' +
-              'You ONLY respond with the script text, no explanations, headings, or markdown. ' +
-              'Write clear, engaging narration suitable for AI video generation. ' +
-              'Prioritize: (1) Perfect Hook for Customer Attention, (2) Curiosity / Open Loops, (3) Story Arc / Micro Narrative, (4) Rhythm & Pacing, (5) Emotional Trigger. ' +
-              `HARD LENGTH CONSTRAINT: Output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.`,
-          },
-          {
-            role: 'user',
-            content:
-              `Generate a detailed video narration script.\n` +
-              `Approximate length: ${length}.\n` +
-              `Strict word count requirement: ${wordRange.minWords}-${wordRange.maxWords} words (target ${wordRange.targetWords}).\n` +
-              `Subject: ${subject}.\n` +
-              (subjectContent
-                ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${subjectContent}.\n`
-                : '') +
-              `Style/tone: ${style}.\n` +
-              `Writing goals to focus on:\n` +
-                `1) Curiosity / Open Loops: introduce an unanswered question early and pay it off later.\n` +
-                `2) Story Arc / Micro Narrative: a clear setup → tension/problem → insight/turn → resolution.\n` +
-                `3) Rhythm & Pacing: short punchy lines mixed with a few longer lines; avoid monotone cadence.\n` +
-                `4) Emotional Trigger: open with a strong feeling (awe, hope, urgency, empathy, etc.).\n` +
-              `For religious (Islam) scripts, keep it respectful, authentic, and avoid controversial topics.\n` +
-              `Do not include scene directions, only spoken narration.`,
-          },
-        ],
+        messages,
       });
 
       return stream;
@@ -140,21 +203,29 @@ export class AiService {
   async splitScript(dto: {
     script: string;
     model?: string;
+    systemPrompt?: string;
   }): Promise<string[]> {
     try {
       const script = dto.script;
       const model = dto.model?.trim() || this.model;
+
+      const requiredSplitterPrompt =
+        'You split long scripts into clean sentences. ' +
+        'You cannot write any more or less words than the original script. ' +
+        'Ensure each sentence is self-contained and suitable for pairing with a single image. ' +
+        'Sentences cannot be too short, it can be long if there is a deep meaning to the sentence. ' +
+        'Always respond with pure JSON: an array of strings. No extra text.';
+
+      const splitterSystemPrompt = [requiredSplitterPrompt]
+        .filter(Boolean)
+        .join('\n');
+
       const completion = await this.client.chat.completions.create({
         model,
         messages: [
           {
             role: 'system',
-            content:
-              'You split long scripts into clean sentences. ' +
-              'You cannot write any more or less words than the original script. ' +
-              'Ensure each sentence is self-contained and suitable for pairing with a single image. ' +
-              'Sentences cannot be too short, it can be long if there is a deep meaning to the sentence. ' +
-              'Always respond with pure JSON: an array of strings. No extra text.',
+            content: splitterSystemPrompt,
           },
           {
             role: 'user',
@@ -200,8 +271,26 @@ export class AiService {
     const length = dto.length?.trim() || '1 minute';
     const style = dto.style?.trim() || 'Conversational';
     const model = dto.model?.trim() || this.model;
+    const customSystemPrompt = dto.systemPrompt?.trim();
     const wordRange = this.getStrictWordRange(length);
-    
+
+    const requiredEnhanceRoleLine = 'You are an expert video script editor.';
+    const requiredEnhanceOutputOnlyLine =
+      'You ONLY respond with the improved script text, no explanations, headings, or markdown.';
+    const requiredEnhanceLengthLine =
+      `HARD LENGTH CONSTRAINT: Your output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). ` +
+      'Count words before responding; if over or under, rewrite until within range.';
+
+    const enhanceSystemPrompt = [
+      customSystemPrompt,
+      requiredEnhanceRoleLine,
+      'You improve existing narration scripts by enhancing clarity, flow, and emotional impact, while strictly preserving the original meaning, topic, and approximate length.',
+      requiredEnhanceOutputOnlyLine,
+      requiredEnhanceLengthLine,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
     try {
       const stream = await this.client.chat.completions.create({
         model,
@@ -209,12 +298,7 @@ export class AiService {
         messages: [
           {
             role: 'system',
-            content:
-              'You are an expert video script editor. ' +
-              'You improve existing narration scripts by enhancing clarity, flow, and emotional impact, ' +
-              'while strictly preserving the original meaning, topic, and approximate length. ' +
-              'You ONLY respond with the improved script text, no explanations, headings, or markdown. ' +
-              `HARD LENGTH CONSTRAINT: Your output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.`,
+            content: enhanceSystemPrompt,
           },
           {
             role: 'user',
@@ -329,11 +413,11 @@ export class AiService {
     const description = String(parsed.description ?? '').trim().slice(0, 5000);
     const tags = Array.isArray(parsed.tags)
       ? parsed.tags
-          .map((t: any) => String(t).trim())
-          .filter(Boolean)
-          .map((t: string) => t.replace(/^#/, ''))
-          .map((t: string) => t.slice(0, 30))
-          .slice(0, 25)
+        .map((t: any) => String(t).trim())
+        .filter(Boolean)
+        .map((t: string) => t.replace(/^#/, ''))
+        .map((t: string) => t.slice(0, 30))
+        .slice(0, 25)
       : [];
 
     if (!title) {
@@ -367,7 +451,7 @@ export class AiService {
               'You are a visual prompt engineer for image generation models. ' +
               'Given a narration sentence, you create one detailed, vivid image prompt. ' +
               'Make the visual gradient, catchy, composition rich, varied, and imaginative with various comforting colors. ' +
-              'The scene must not contain any written words, letters, symbols, or text overlays. ' +
+              // 'The scene must not contain any written words, letters, symbols, or text overlays. ' +
               'Do NOT mention camera settings unless clearly helpful. ' +
               'Respond with a single prompt sentence only, describing visuals only.',
           },
@@ -380,7 +464,8 @@ export class AiService {
               'Important constraints:\n' +
               '- The image must not contain any females at all.\n' +
               '- If the content is religious, especially Islamic, do NOT depict God, any divine being, any prophet, or any of the Sahaba/Companions.\n' +
-              '- Prefer abstract, calligraphic, architectural, landscape, or symbolic representations instead of people for such cases.\n' +
+              '- If the sentence implies a person/character who is NOT Allah, a prophet, or a Sahabi/Companion, you MAY depict an illustrative human figure(NOT A FEMALE) (anonymous, respectful, non-identifiable, shadow).\n' +
+              '- You may also illustrate the sentence by focusing on the environment and details implied by the sentence (scene location/site, objects, hands/body parts, silhouettes, clothing textures, lighting, atmosphere) to convey meaning without showing a specific identity.\n' +
               '- Be creative with scenery, nature, architecture, and symbolic elements to convey the message without human figures.\n' +
               '- The overall look should be consistent with anime-style illustration.\n' +
               '- Absolutely no visible text, captions, calligraphy phrases, logos, or any readable characters in the scene. Focus purely on graphical and environmental elements.\n\n' +

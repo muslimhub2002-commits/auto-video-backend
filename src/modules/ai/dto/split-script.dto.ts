@@ -9,4 +9,9 @@ export class SplitScriptDto {
   @IsString()
   @IsOptional()
   model?: string;
+
+  // Optional override for the system prompt. If provided, it replaces the default system prompt.
+  @IsString()
+  @IsOptional()
+  systemPrompt?: string;
 }

@@ -785,6 +785,13 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
 
   React.useEffect(() => {
     let cancelled = false;
+    let didContinue = false;
+
+    const safeContinue = () => {
+      if (didContinue) return;
+      didContinue = true;
+      continueRender(preloadHandle);
+    };
 
     const sources = new Set<string>();
 
@@ -826,22 +833,22 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
 
       await Promise.allSettled(tasks);
 
-      if (!cancelled) {
-        continueRender(preloadHandle);
-      }
+      if (!cancelled) safeContinue();
     };
 
     // Safety net: never hang rendering forever if a remote host is slow.
     const timeout = setTimeout(() => {
-      if (!cancelled) {
-        continueRender(preloadHandle);
-      }
+      if (!cancelled) safeContinue();
     }, 15000);
 
     run().finally(() => clearTimeout(timeout));
 
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
+      // If React remounts/unmounts quickly (e.g. StrictMode), ensure we never
+      // leave a delayRender handle unresolved which would hang rendering.
+      safeContinue();
     };
   }, [preloadHandle, timeline]);
 
@@ -928,7 +935,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         const transition = cutTransitions[idx] ?? 'none';
         if (transition !== 'chromaLeak') return null;
 
-        const from = Math.max(0, next.startFrame - CHROMA_EDGE_FRAMES)-8;
+        const from = Math.max(0, next.startFrame - CHROMA_EDGE_FRAMES - 8);
 
         return (
           <Sequence key={`chroma-sfx-${prevIndex}-${next.index}`} from={from}>

@@ -16,6 +16,18 @@ export class ScriptsService {
     private readonly aiService: AiService,
   ) {}
 
+  async findByScriptText(userId: string, scriptText: string): Promise<Script | null> {
+    const trimmed = (scriptText ?? '').trim();
+    if (!trimmed) return null;
+
+    return this.scriptRepository.findOne({
+      where: {
+        user_id: userId,
+        script: trimmed,
+      },
+    });
+  }
+
   async create(
     userId: string,
     createScriptDto: CreateScriptDto,

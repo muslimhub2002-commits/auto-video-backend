@@ -28,6 +28,54 @@ export class MessagesService {
   async saveGeneration(userId: string, dto: SaveGenerationDto) {
     const { script, sentences, video_url, voice_id, chat_id } = dto;
 
+    const trimmedScript = (script ?? '').trim();
+    const [existingScript, existingVideo] = await Promise.all([
+      this.scriptsService.findByScriptText(userId, trimmedScript),
+      this.videoRepository.findOne({
+        where: {
+          user_id: userId,
+          video: video_url,
+        },
+      }),
+    ]);
+
+    if (existingScript?.message_id) {
+      const existingMessage = await this.messageRepository.findOne({
+        where: { id: existingScript.message_id },
+        select: { id: true, chat_id: true },
+      });
+
+      return {
+        chat_id: existingMessage?.chat_id ?? null,
+        message_id: existingMessage?.id ?? existingScript.message_id,
+        already_saved: true,
+        reason: 'script',
+      };
+    }
+
+    if (existingScript) {
+      return {
+        chat_id: null,
+        message_id: null,
+        already_saved: true,
+        reason: 'script',
+      };
+    }
+
+    if (existingVideo?.id) {
+      const existingMessage = await this.messageRepository.findOne({
+        where: { video_id: existingVideo.id },
+        select: { id: true, chat_id: true },
+      });
+
+      return {
+        chat_id: existingMessage?.chat_id ?? null,
+        message_id: existingMessage?.id ?? null,
+        already_saved: true,
+        reason: 'video',
+      };
+    }
+
     let finalVideoUrl = video_url;
 
     // Derive the render job id from the local video URL so we can
@@ -68,7 +116,7 @@ export class MessagesService {
       // else: missing Cloudinary config or file not found — keep original URL
     }
 
-    const title = await this.aiService.generateTitleForScript(script);
+    const title = await this.aiService.generateTitleForScript(trimmedScript);
 
     let targetChat: Chat;
 
@@ -114,7 +162,7 @@ export class MessagesService {
 
     if (sentences && sentences.length > 0) {
       await this.scriptsService.create(userId, {
-        script,
+        script: trimmedScript,
         message_id: savedMessage.id,
         sentences,
         title,
