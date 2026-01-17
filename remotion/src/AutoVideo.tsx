@@ -75,8 +75,12 @@ const preloadVideo = (src: string) =>
     video.load();
   });
 
-const CHROMA_LEAK_SFX_URL =
-  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768515034/whoosh-end-384629_1_k8lth5.mp3';
+// These assets are expected to be present in the Remotion `publicDir` (downloaded by backend).
+const BACKGROUND_MUSIC_SRC = 'audio/background_3.mp3';
+const GLITCH_FX_URL = 'sfx/glitch.mp3';
+const WHOOSH_SFX_URL = 'sfx/whoosh.mp3';
+const CAMERA_CLICK_SFX_URL = 'sfx/camera_click.mp3';
+const CHROMA_LEAK_SFX_URL = 'sfx/chroma_leak.mp3';
 
 type TransitionType = 'none' | 'glitch' | 'whip' | 'flash' | 'fade' | 'chromaLeak';
 
@@ -305,7 +309,7 @@ const resolveMediaSrc = (src: string) => {
   if (!src) return src;
   // If we already have an absolute URL (e.g. Cloudinary), use it as-is.
   if (/^https?:\/\//i.test(src)) return src;
-  return staticFile(src);
+  return staticFile(src.replace(/^\/+/, ''));
 };
 
 const isImageToImageCut = (prev?: TimelineScene, next?: TimelineScene) => {
@@ -797,22 +801,12 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
 
     if (timeline.audioSrc) sources.add(resolveMediaSrc(timeline.audioSrc));
 
-    // Global background music hosted on Cloudinary
-    sources.add(
-      'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057652/background_ny4lml.mp3',
-    );
-
-    // Transition SFX
-    sources.add(
-      'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057729/glitch-fx_xkpwzq.mp3',
-    );
-    sources.add(
-      'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057829/whoosh_ioio4g.mp3',
-    );
-    sources.add(CHROMA_LEAK_SFX_URL);
-    sources.add(
-      'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057799/camera_click_mziq08.mp3',
-    );
+    // Global background music + transition SFX (served locally via staticFile()).
+    sources.add(resolveMediaSrc(BACKGROUND_MUSIC_SRC));
+    sources.add(resolveMediaSrc(GLITCH_FX_URL));
+    sources.add(resolveMediaSrc(WHOOSH_SFX_URL));
+    sources.add(resolveMediaSrc(CHROMA_LEAK_SFX_URL));
+    sources.add(resolveMediaSrc(CAMERA_CLICK_SFX_URL));
 
     for (const scene of timeline.scenes) {
       if (scene.imageSrc) sources.add(resolveMediaSrc(scene.imageSrc));
@@ -858,8 +852,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       {timeline.audioSrc && (
         <Html5Audio src={resolveMediaSrc(timeline.audioSrc)} />
       )}
-      {/* Global background music hosted on Cloudinary */}
-      <Audio src={'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057652/background_ny4lml.mp3'} />
+      <Audio src={resolveMediaSrc(BACKGROUND_MUSIC_SRC)} volume={0.55} />
 
       {/* Glitch SFX only during image->image cut windows */}
       {timeline.scenes.map((next, idx) => {
@@ -875,10 +868,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`glitch-sfx-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio
-              src={'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057729/glitch-fx_xkpwzq.mp3'}
-              volume={0.9}
-            />
+            <Audio src={resolveMediaSrc(GLITCH_FX_URL)} volume={0.9} />
           </Sequence>
         );
       })}
@@ -897,10 +887,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`whoosh-sfx-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio
-              src={'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057829/whoosh_ioio4g.mp3'}
-              volume={0.85}
-            />
+            <Audio src={resolveMediaSrc(WHOOSH_SFX_URL)} volume={0.85} />
           </Sequence>
         );
       })}
@@ -920,10 +907,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`flash-sfx-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio
-              src={'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057799/camera_click_mziq08.mp3'}
-              volume={0.9}
-            />
+            <Audio src={resolveMediaSrc(CAMERA_CLICK_SFX_URL)} volume={0.9} />
           </Sequence>
         );
       })}
@@ -939,7 +923,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
 
         return (
           <Sequence key={`chroma-sfx-${prevIndex}-${next.index}`} from={from}>
-            <Audio src={CHROMA_LEAK_SFX_URL} volume={0.9} />
+            <Audio src={resolveMediaSrc(CHROMA_LEAK_SFX_URL)} volume={0.9} />
           </Sequence>
         );
       })}

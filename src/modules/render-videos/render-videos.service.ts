@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { RenderJob } from './entities/render-job.entity';
-import { join, extname } from 'path';
+import { join, extname, dirname } from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { v2 as cloudinary } from 'cloudinary';
@@ -44,6 +44,18 @@ const CAMERA_CLICK_CLOUDINARY_URL =
 
 const WHOOSH_CLOUDINARY_URL =
   'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057829/whoosh_ioio4g.mp3';
+
+const CHROMA_LEAK_SFX_CLOUDINARY_URL =
+  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768515034/whoosh-end-384629_1_k8lth5.mp3';
+
+// Remotion publicDir relative paths (these are served via staticFile()).
+const REMOTION_VOICEOVER_REL = 'audio/voiceover.mp3';
+const REMOTION_BACKGROUND_REL = 'audio/background_3.mp3';
+const REMOTION_GLITCH_SFX_REL = 'sfx/glitch.mp3';
+const REMOTION_WHOOSH_SFX_REL = 'sfx/whoosh.mp3';
+const REMOTION_CAMERA_CLICK_SFX_REL = 'sfx/camera_click.mp3';
+const REMOTION_CHROMA_LEAK_SFX_REL = 'sfx/chroma_leak.mp3';
+const REMOTION_SUBSCRIBE_VIDEO_REL = 'videos/subscribe.mp4';
 
 @Injectable()
 export class RenderVideosService implements OnModuleInit {
@@ -263,7 +275,7 @@ export class RenderVideosService implements OnModuleInit {
     const durationInFrames =
       scenes.length > 0
         ? scenes[scenes.length - 1].startFrame +
-          scenes[scenes.length - 1].durationFrames
+        scenes[scenes.length - 1].durationFrames
         : Math.ceil(T * fps);
 
     return {
@@ -465,6 +477,15 @@ export class RenderVideosService implements OnModuleInit {
     }
   }
 
+  private safeCopyFile(src: string, dest: string) {
+    this.ensureDir(dirname(dest));
+    fs.copyFileSync(src, dest);
+  }
+
+  private getRemotionPublicAssetsDir() {
+    return join(process.cwd(), 'remotion', 'public');
+  }
+
   private getPublicVideoUrl(jobId: string) {
     const baseUrl =
       process.env.REMOTION_ASSET_BASE_URL ??
@@ -540,7 +561,8 @@ export class RenderVideosService implements OnModuleInit {
       outputLocation: params.outputFsPath,
       inputProps: { timeline: params.timeline },
       chromiumOptions,
-      concurrency,
+      concurrency: 1,
+      timeoutInMilliseconds: 600_000,
     });
   }
 
@@ -585,32 +607,15 @@ export class RenderVideosService implements OnModuleInit {
     const jobDir = join(publicRoot, jobId);
     this.ensureDir(jobDir);
     this.ensureDir(join(jobDir, 'images'));
-
-    // Subscribe clip is hosted on Cloudinary (no local static file).
-    const subscribeVideoSrc: string | null = SUBSCRIBE_VIDEO_CLOUDINARY_URL;
-
-    // Background music is hosted on Cloudinary (no local static file).
-    // Keep the constant here for future wiring (e.g., passing into timeline).
-    void BACKGROUND_AUDIO_CLOUDINARY_URL;
-
-    // Glitch SFX is hosted on Cloudinary.
-    void GLITCH_FX_CLOUDINARY_URL;
-
-    // Camera click SFX is hosted on Cloudinary.
-    void CAMERA_CLICK_CLOUDINARY_URL;
-
-    // Whoosh SFX is hosted on Cloudinary.
-    void WHOOSH_CLOUDINARY_URL;
-
-    // No local file copy needed.
-
-    // No local file copy needed.
+    this.ensureDir(join(jobDir, 'audio'));
+    this.ensureDir(join(jobDir, 'sfx'));
+    this.ensureDir(join(jobDir, 'videos'));
 
     return {
       // Use a job-scoped publicDir so Remotion bundling includes the job's assets.
       publicDir: jobDir,
       jobDir,
-      subscribeVideoSrc,
+      subscribeVideoSrc: REMOTION_SUBSCRIBE_VIDEO_REL,
     };
   }
 
@@ -699,15 +704,58 @@ export class RenderVideosService implements OnModuleInit {
           ? params.audioDurationSeconds
           : 1;
 
-      const { publicDir, jobDir, subscribeVideoSrc } =
-        this.prepareRemotionPublicDir(jobId);
+      const prepared = this.prepareRemotionPublicDir(jobId);
+      const { publicDir, jobDir } = prepared;
+      let subscribeVideoSrc: string | null = prepared.subscribeVideoSrc;
       publicDirToClean = jobDir;
 
-      // Voice-over audio is hosted on Cloudinary (no jobDir audio file).
-      const voiceoverAudioSrc = job.audioPath;
+      // Materialize required Remotion assets into the job-scoped publicDir.
+      // This avoids streaming from Cloudinary during rendering.
+      fs.writeFileSync(join(jobDir, REMOTION_VOICEOVER_REL), audioBuffer);
 
-      // Build per-sentence image sources as Cloudinary URLs.
-      // This avoids relying on jobDir local images and ensures the pipeline is Cloudinary-only.
+      // Background + SFX: copy from remotion/public so everything is local.
+      const remotionAssetsDir = this.getRemotionPublicAssetsDir();
+      this.safeCopyFile(
+        join(remotionAssetsDir, 'background_3.mp3'),
+        join(jobDir, REMOTION_BACKGROUND_REL),
+      );
+      this.safeCopyFile(
+        join(remotionAssetsDir, 'glitch-fx.mp3'),
+        join(jobDir, REMOTION_GLITCH_SFX_REL),
+      );
+      this.safeCopyFile(
+        join(remotionAssetsDir, 'whoosh.mp3'),
+        join(jobDir, REMOTION_WHOOSH_SFX_REL),
+      );
+      this.safeCopyFile(
+        join(remotionAssetsDir, 'camera_click.mp3'),
+        join(jobDir, REMOTION_CAMERA_CLICK_SFX_REL),
+      );
+
+      // Subscribe clip (only if needed)
+      const hasSubscribeSentence = params.sentences.some(
+        (s) => (s?.text || '').trim() === SUBSCRIBE_SENTENCE,
+      );
+      if (!hasSubscribeSentence) {
+        subscribeVideoSrc = null;
+      } else {
+        this.safeCopyFile(
+          join(remotionAssetsDir, 'subscribe.mp4'),
+          join(jobDir, REMOTION_SUBSCRIBE_VIDEO_REL),
+        );
+      }
+
+      const chromaDownloaded = await this.downloadUrlToBuffer({
+        url: CHROMA_LEAK_SFX_CLOUDINARY_URL,
+        maxBytes: 20 * 1024 * 1024,
+        label: 'chroma leak sfx',
+      });
+      fs.writeFileSync(join(jobDir, REMOTION_CHROMA_LEAK_SFX_REL), chromaDownloaded.buffer);
+
+      const voiceoverAudioSrc = REMOTION_VOICEOVER_REL;
+
+      // Build per-sentence image sources as local files in the job-scoped publicDir.
+      // This avoids streaming from Cloudinary during rendering.
       const imageSrcs: string[] = [];
       const providedUrls = Array.isArray(params.imageUrls)
         ? params.imageUrls
@@ -726,27 +774,25 @@ export class RenderVideosService implements OnModuleInit {
         }
 
         const url = providedUrls ? providedUrls[i] : null;
+        const relBase = `images/scene-${String(i + 1).padStart(3, '0')}`;
+
         if (url) {
           const urlString = String(url);
-          if (this.isCloudinaryUrl(urlString)) {
-            imageSrcs.push(urlString);
-            continue;
-          }
-
-          // Re-host non-Cloudinary URLs on Cloudinary.
           const downloaded = await this.downloadUrlToBuffer({
             url: urlString,
             maxBytes: 12 * 1024 * 1024,
             label: `imageUrl for sentence ${i + 1}`,
           });
 
-          const uploadedImage = await this.uploadBufferToCloudinary({
-            buffer: downloaded.buffer,
-            folder: 'auto-video-generator/render-inputs/images',
-            resource_type: 'image',
+          const ext = this.inferExt({
+            originalName: urlString,
+            mimeType: downloaded.mimeType,
+            fallback: '.png',
           });
 
-          imageSrcs.push(uploadedImage.secure_url);
+          const rel = `${relBase}${ext}`;
+          fs.writeFileSync(join(jobDir, rel), downloaded.buffer);
+          imageSrcs.push(rel);
           continue;
         }
 
@@ -756,12 +802,16 @@ export class RenderVideosService implements OnModuleInit {
             `Missing image upload for sentence ${i + 1} (non-subscribe sentence)`,
           );
         }
-        const uploadedImage = await this.uploadBufferToCloudinary({
-          buffer: file.buffer,
-          folder: 'auto-video-generator/render-inputs/images',
-          resource_type: 'image',
+
+        const ext = this.inferExt({
+          originalName: file.originalName,
+          mimeType: file.mimeType,
+          fallback: '.png',
         });
-        imageSrcs.push(uploadedImage.secure_url);
+
+        const rel = `${relBase}${ext}`;
+        fs.writeFileSync(join(jobDir, rel), file.buffer);
+        imageSrcs.push(rel);
       }
 
       // Align audio with sentences to get per-sentence timings.

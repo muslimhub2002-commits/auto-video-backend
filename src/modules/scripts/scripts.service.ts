@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Script } from './entities/script.entity';
 import { Sentence } from './entities/sentence.entity';
 import { CreateScriptDto } from './dto/create-script.dto';
+import { UpdateScriptDto } from './dto/update-script.dto';
 import { AiService } from '../ai/ai.service';
 
 @Injectable()
@@ -140,5 +141,64 @@ export class ScriptsService {
     }
 
     return script;
+  }
+
+  async update(id: string, userId: string, dto: UpdateScriptDto): Promise<Script> {
+    const script = await this.scriptRepository.findOne({
+      where: { id, user_id: userId },
+      relations: ['sentences'],
+    });
+
+    if (!script) {
+      throw new NotFoundException('Script not found');
+    }
+
+    if (dto.script !== undefined) {
+      const trimmedScript = (dto.script ?? '').trim();
+      script.script = trimmedScript;
+    }
+
+    if (dto.title !== undefined) {
+      const trimmedTitle = (dto.title ?? '').trim();
+      script.title = trimmedTitle ? trimmedTitle : null;
+    }
+
+    if (dto.voice_id !== undefined) {
+      script.voice_id = dto.voice_id ?? null;
+    }
+
+    await this.scriptRepository.save(script);
+
+    if (dto.sentences !== undefined) {
+      await this.sentenceRepository.delete({ script_id: script.id });
+
+      if (dto.sentences.length > 0) {
+        const sentenceEntities = dto.sentences.map((s, index) =>
+          this.sentenceRepository.create({
+            text: s.text,
+            index,
+            script_id: script.id,
+            image_id: s.image_id ?? null,
+          }),
+        );
+        await this.sentenceRepository.save(sentenceEntities);
+      }
+    }
+
+    return this.findOne(id, userId);
+  }
+
+  async remove(id: string, userId: string): Promise<{ deleted: true }> {
+    const existing = await this.scriptRepository.findOne({
+      where: { id, user_id: userId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Script not found');
+    }
+
+    await this.sentenceRepository.delete({ script_id: id });
+    await this.scriptRepository.delete({ id, user_id: userId });
+    return { deleted: true };
   }
 }
