@@ -125,10 +125,10 @@ export class AiController {
     @Body() body: GenerateVoiceDto,
     @Res() res: Response,
   ): Promise<void> {
-    const audioBuffer = await this.aiService.generateVoiceForScript(
-      body.script,
-      body.voiceId,
-    );
+    const hasSentences = Array.isArray(body.sentences) && body.sentences.length > 0;
+    const audioBuffer = hasSentences
+      ? await this.aiService.generateVoiceForSentences(body.sentences!, body.voiceId)
+      : await this.aiService.generateVoiceForScript(body.script, body.voiceId);
 
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader(

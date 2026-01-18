@@ -852,7 +852,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       {timeline.audioSrc && (
         <Html5Audio src={resolveMediaSrc(timeline.audioSrc)} />
       )}
-      <Audio src={resolveMediaSrc(BACKGROUND_MUSIC_SRC)} volume={0.55} />
+      <Audio src={resolveMediaSrc(BACKGROUND_MUSIC_SRC)} volume={0.4} />
 
       {/* Glitch SFX only during image->image cut windows */}
       {timeline.scenes.map((next, idx) => {

@@ -1,9 +1,14 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class GenerateVoiceDto {
   @IsString()
   @IsNotEmpty()
   script!: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  sentences?: string[];
 
   @IsString()
   @IsOptional()

@@ -43,6 +43,9 @@ export class CreateRenderVideoUrlDto {
   @IsOptional()
   enableZoomRotateTransitions?: boolean;
 
+  @IsOptional()
+  isShort?: boolean;
+
   @IsUrl({ require_tld: false })
   audioUrl: string;
 

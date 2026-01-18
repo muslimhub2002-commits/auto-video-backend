@@ -14,6 +14,11 @@ export class CreateRenderVideoDto {
   @IsNotEmpty()
   scriptLength: string;
 
+  // Optional explicit short-form toggle (9:16). Comes from FormData as a string.
+  @IsOptional()
+  @IsString()
+  isShort?: string;
+
   @IsOptional()
   @IsNumberString()
   audioDurationSeconds?: string;

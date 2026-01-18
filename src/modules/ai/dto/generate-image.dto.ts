@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class GenerateImageDto {
   @IsString()
@@ -18,4 +18,10 @@ export class GenerateImageDto {
   @IsString()
   @IsOptional()
   scriptLength?: string;
+
+  // Optional explicit short-form toggle (9:16). If omitted, we fall back
+  // to scriptLength heuristics for backward compatibility.
+  @IsBoolean()
+  @IsOptional()
+  isShort?: boolean;
 }

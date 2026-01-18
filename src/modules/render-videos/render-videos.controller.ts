@@ -55,6 +55,7 @@ export class RenderVideosController {
       imageUrls,
       scriptLength: body.scriptLength,
       audioDurationSeconds: body.audioDurationSeconds,
+      isShort: body.isShort,
       useLowerFps: !!body.useLowerFps,
       useLowerResolution: !!body.useLowerResolution,
       enableGlitchTransitions: !!body.enableGlitchTransitions,
@@ -130,6 +131,8 @@ export class RenderVideosController {
     const useLowerFps = body.useLowerFps === 'true';
     const useLowerResolution = body.useLowerResolution === 'true';
     const enableGlitchTransitions = body.enableGlitchTransitions === 'true';
+    const isShort =
+      typeof body.isShort === 'string' ? body.isShort === 'true' : undefined;
 
     const job = await this.renderVideosService.createJob({
       audioFile: voice
@@ -151,6 +154,7 @@ export class RenderVideosController {
       ),
       scriptLength: body.scriptLength,
       audioDurationSeconds,
+      isShort,
       useLowerFps,
       useLowerResolution,
       enableGlitchTransitions,

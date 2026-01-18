@@ -112,6 +112,7 @@ export class RenderVideosService implements OnModuleInit {
     imageUrls?: Array<string | null> | null;
     scriptLength: string;
     audioDurationSeconds?: number;
+    isShort?: boolean;
     useLowerFps?: boolean;
     useLowerResolution?: boolean;
     enableGlitchTransitions?: boolean;
@@ -194,13 +195,17 @@ export class RenderVideosService implements OnModuleInit {
     audioSrc: string;
     sentenceTimings?: SentenceTiming[];
     subscribeVideoSrc?: string | null;
+    isShort?: boolean;
     useLowerFps?: boolean;
     useLowerResolution?: boolean;
     enableGlitchTransitions?: boolean;
   }) {
     const baseFps = 30;
     const fps = params.useLowerFps ? 24 : baseFps;
-    const isShort = this.isShort(params.scriptLength);
+    const isShort =
+      typeof params.isShort === 'boolean'
+        ? params.isShort
+        : this.isShort(params.scriptLength);
     const width = isShort
       ? params.useLowerResolution
         ? 720
@@ -561,7 +566,7 @@ export class RenderVideosService implements OnModuleInit {
       outputLocation: params.outputFsPath,
       inputProps: { timeline: params.timeline },
       chromiumOptions,
-      concurrency: 1,
+      concurrency: 2,
       timeoutInMilliseconds: 600_000,
     });
   }
@@ -629,6 +634,7 @@ export class RenderVideosService implements OnModuleInit {
       imageUrls?: Array<string | null> | null;
       scriptLength: string;
       audioDurationSeconds?: number;
+      isShort?: boolean;
       useLowerFps?: boolean;
       useLowerResolution?: boolean;
       enableGlitchTransitions?: boolean;
@@ -831,6 +837,7 @@ export class RenderVideosService implements OnModuleInit {
         audioSrc: voiceoverAudioSrc,
         sentenceTimings,
         subscribeVideoSrc,
+        isShort: params.isShort,
         useLowerFps: params.useLowerFps,
         useLowerResolution: params.useLowerResolution,
         enableGlitchTransitions: params.enableGlitchTransitions,

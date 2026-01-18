@@ -15,11 +15,15 @@ import { ImageQuality, ImageSize } from '../images/entities/image.entity';
 export class AiService {
   private readonly client: OpenAI;
   private readonly model: string;
+  private readonly cheapModel: string;
   private readonly imageModel: string;
   private readonly elevenApiKey?: string;
   private readonly elevenDefaultVoiceId: string;
   private readonly leonardoApiKey?: string;
   private readonly leonardoModelId?: string;
+
+  private readonly forbiddenIslamicDepictionRegex =
+    /\b(allah|god|deity|divine\s*being|prophet|messenger\s+of\s+allah|rasul|rasool|muhammad|mohammad|ahmad|isa|jesus|moses|musa|ibrahim|abraham|noah|nuh|yusuf|joseph|yakub|yaqub|jacob|dawud|david|sulayman|solomon|yunus|jonah|aisha|khadija|fatima|abu\s*bakr|umar|u?thman|ali\b|sahaba|companions?|caliphs?|archangel|angel\s+gabriel|jibril|jibreel|quran\s+page|quranic\s+text|quran\s+verse|surah|ayah|arabic\s+text|quranic\s+script|mushaf|quran\s+book)\b/i;
 
   // Narration pacing assumption (words per minute) used to derive strict word-count targets.
   private readonly narrationWpm = 150;
@@ -33,7 +37,9 @@ export class AiService {
     }
 
     this.client = new OpenAI({ apiKey });
-    this.model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+    this.model = process.env.OPENAI_MODEL || 'gpt-5.2';
+    // Used for small classification tasks (cheaper/faster than the main model).
+    this.cheapModel = process.env.OPENAI_CHEAP_MODEL || 'gpt-4o-mini';
     this.imageModel = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
     this.elevenApiKey = process.env.ELEVENLABS_API_KEY;
     this.elevenDefaultVoiceId =
@@ -76,6 +82,146 @@ export class AiService {
     const maxWords = Math.max(minWords + 1, targetWords + tolerance);
 
     return { targetWords, minWords, maxWords };
+  }
+
+  private async containsForbiddenIslamicDepiction(text: string): Promise<boolean> {
+    const s = (text || '').toLowerCase();
+    if (!s) return false;
+
+    // Quick checks first - explicit mentions
+    if (s.includes('prophet') || s.includes('sahaba') || s.includes('companion') || 
+        s.includes('quran page') || s.includes('quranic text') || s.includes('quran verse') ||
+        s.includes('arabic text') || s.includes('surah') || s.includes('ayah') || s.includes('mushaf')) {
+      return true;
+    }
+
+    // Check for explicit forbidden terms
+    const hasExplicitTerms = this.forbiddenIslamicDepictionRegex.test(text);
+    if (hasExplicitTerms) {
+      return true;
+    }
+
+    // Check if text contains pronouns that might refer to forbidden entities
+    const pronounRegex = /\b(he|him|his|himself|they|them|their|themselves)\b/i;
+    const hasPronouns = pronounRegex.test(text);
+    
+    if (!hasPronouns) {
+      return false;
+    }
+
+    // Use LLM to determine if pronouns refer to forbidden entities
+    try {
+      const contextCheck = await this.client.chat.completions.create({
+        model: this.cheapModel,
+        temperature: 0,
+        max_tokens: 3,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are analyzing text for Islamic content rules. ' +
+              'Determine if pronouns (he, him, his, they, them, their) in the text refer to: ' +
+              'Allah/God, any prophet (Muhammad, Moses, Jesus, Abraham, etc.), or any Sahaba/Companion. ' +
+              'Also check if the text mentions showing Quran pages, Quranic text, Arabic verses, or Mushaf. ' +
+              'Respond with ONLY "yes" if pronouns refer to any forbidden entities OR if Quran pages/text are mentioned, or "no" if they refer to regular people or are unclear.',
+          },
+          {
+            role: 'user',
+            content: `Text to analyze: "${text}"\n\nDo the pronouns in this text refer to Allah, a prophet, or Sahaba/Companions?`,
+          },
+        ],
+      });
+
+      const response = contextCheck.choices[0]?.message?.content?.trim().toLowerCase();
+      return response === 'yes';
+    } catch (error) {
+      console.error('Error checking pronoun context:', error);
+      // If LLM check fails, be conservative and return true if there are pronouns
+      // in a potentially religious context
+      const religiousContext = /\b(islam|muslim|quran|hadith|faith|allah|worship|prayer)\b/i.test(text);
+      return religiousContext && hasPronouns;
+    }
+  }
+
+  private stripForbiddenIslamicTerms(text: string): string {
+    const cleaned = (text || '')
+      .replace(this.forbiddenIslamicDepictionRegex, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return cleaned;
+  }
+
+  private async enforceNoIslamicDepictionsInImagePrompt(options: {
+    sentence: string;
+    style: string;
+    prompt: string;
+  }): Promise<string> {
+    const { sentence, style } = options;
+    let prompt = (options.prompt || '').trim();
+
+    if (!prompt) {
+      prompt = sentence;
+    }
+
+    const hasForbidden =
+      (await this.containsForbiddenIslamicDepiction(sentence)) ||
+      (await this.containsForbiddenIslamicDepiction(prompt));
+    if (!hasForbidden) {
+      return prompt;
+    }
+
+    // Try one corrective rewrite pass with explicit forbidden-term constraints.
+    try {
+      const rewrite = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You rewrite image prompts to comply with strict Islamic no-depiction rules. ' +
+              'ABSOLUTE RULE: Do NOT depict God/Allah, any divine being, any prophet, or any of the Sahaba/Companions. ' +
+              'Do NOT show Quran pages, Quranic text, Arabic verses, Mushaf, or any book pages with Arabic script. ' +
+              'Do NOT mention them by name or title. Do NOT imply a prophet/companion as a human figure. ' +
+              'CRITICAL: When the sentence mentions ANY of these forbidden entities (Allah, prophets, Sahaba, Quran pages), you MUST use ONLY symbolic, non-figurative visuals. ' +
+              'ABSOLUTELY NO people, NO faces, NO human figures, NO silhouettes, NO hands, NO bodies of any kind. ' +
+              'Use ONLY: light, shadow, nature, weather, textures, geometry, objects, landscapes, abstract forms. ' +
+              'No religious text or book pages. ' +
+              'Return a single prompt sentence only, visuals only, no quotes, no lists.',
+          },
+          {
+            role: 'user',
+            content:
+              `Original sentence: ${sentence}\n` +
+              `Desired style: ${style}\n` +
+              `Unsafe prompt to rewrite: ${prompt}\n\n` +
+              'Rewrite into a safe prompt that preserves meaning and mood without any depiction or mention of forbidden entities.',
+          },
+        ],
+      });
+
+      const rewritten = rewrite.choices[0]?.message?.content?.trim();
+      if (rewritten) {
+        prompt = rewritten;
+      }
+    } catch {
+      // If rewrite fails, we'll sanitize locally below.
+    }
+
+    // Final local enforcement: strip forbidden terms and human-related terms when forbidden detected
+    if (await this.containsForbiddenIslamicDepiction(prompt)) {
+      prompt = this.stripForbiddenIslamicTerms(prompt);
+      // Also strip any human-related terms to ensure no human figures
+      prompt = prompt
+        .replace(/\b(person|people|man|men|boy|boys|human|humans|figure|figures|silhouette|silhouettes|hand|hands|body|bodies|face|faces)\b/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    }
+
+    const safetySuffix =
+      ' ABSOLUTELY no people, no faces, no human figures, no silhouettes. Symbolic non-figurative scene only with nature, light, objects, geometry.';
+
+    const combined = `${prompt} ${safetySuffix}`.replace(/\s{2,}/g, ' ').trim();
+    return combined;
   }
 
   /**
@@ -158,11 +304,11 @@ export class AiService {
         const writingGoals = haveCustomPrompt
           ? `${customSystemPrompt}\n`
           :
-              `1) Get Straight to the Point/Subject: Hook the viewer within the first 3 seconds. Avoid long intros or fluffy openings.\n` +
-              `2) Curiosity / Open Loops: introduce an unanswered question early and pay it off later.\n` +
-              `3) Story Arc / Micro Narrative: a clear setup → tension/problem → insight/turn → resolution.\n` +
-              `4) Rhythm & Pacing: short punchy lines mixed with a few longer lines; avoid monotone cadence.\n` +
-              `5) Emotional Trigger: open with a strong feeling (awe, hope, urgency, empathy, etc.).\n`;
+          `1) Get Straight to the Point/Subject: Hook the viewer within the first 3 seconds. Avoid long intros or fluffy openings.\n` +
+          `2) Curiosity / Open Loops: introduce an unanswered question early and pay it off later.\n` +
+          `3) Story Arc / Micro Narrative: a clear setup → tension/problem → insight/turn → resolution.\n` +
+          `4) Rhythm & Pacing: short punchy lines mixed with a few longer lines; avoid monotone cadence.\n` +
+          `5) Emotional Trigger: open with a strong feeling (awe, hope, urgency, empathy, etc.).\n`;
 
         messages.push({
           role: 'user',
@@ -212,7 +358,6 @@ export class AiService {
       const requiredSplitterPrompt =
         'You split long scripts into clean sentences. ' +
         'You cannot write any more or less words than the original script. ' +
-        'Ensure each sentence is self-contained and suitable for pairing with a single image. ' +
         'Sentences cannot be too short, it can be long if there is a deep meaning to the sentence. ' +
         'Always respond with pure JSON: an array of strings. No extra text.';
 
@@ -230,7 +375,6 @@ export class AiService {
           {
             role: 'user',
             content:
-              'Split the following script into a list of sentences suitable for individual images. ' +
               'Return ONLY a JSON array of strings, each string being one sentence:\n\n' +
               script,
           },
@@ -248,7 +392,7 @@ export class AiService {
       if (!parsed.sentences || !Array.isArray(parsed.sentences)) {
         throw new Error('Invalid JSON structure for sentences');
       }
-
+      console.log(parsed,'dsadasdasdsadsadas')
       return parsed.sentences.map((s) => s.trim()).filter(Boolean);
     } catch (error) {
       throw new InternalServerErrorException(
@@ -382,14 +526,16 @@ export class AiService {
             'You are an expert YouTube SEO copywriter. ' +
             'Given a video narration script, you produce metadata optimized for search and click-through. ' +
             'Return ONLY valid JSON as: {"title": string, "description": string, "tags": string[]}. ' +
-            'Rules: title <= 100 chars, description <= 5000 chars, tags: 10-20 items, each tag <= 30 chars, no hashtags, no emojis.',
+            'Rules: title <= 100 chars, description <= 5000 chars, tags: 10-20 items, each tag <= 30 chars, no emojis. ' +
+            'This video is a SHORT: the description MUST start with the exact title on its own line, followed by ONE short sentence on the next line. ' +
+            'At the very end of the description, append this exact string: #allah,#islamicShorts,#shorts',
         },
         {
           role: 'user',
           content:
             'Generate YouTube SEO metadata for this video script. ' +
             'The title should be compelling and keyword-rich. ' +
-            'The description should include a strong first 2 lines, a short summary, and relevant keywords naturally. ' +
+            'The description must follow the SHORT format: title line + one short sentence, then end with the required hashtags. ' +
             'Tags should be relevant and specific (mix broad + long-tail).\n\n' +
             trimmed,
         },
@@ -410,8 +556,31 @@ export class AiService {
     }
 
     const title = String(parsed.title ?? '').trim().slice(0, 100);
-    const description = String(parsed.description ?? '').trim().slice(0, 5000);
-    const tags = Array.isArray(parsed.tags)
+
+    const requiredHashtags = '#allah,#shorts,#islamicShorts';
+    const requiredLeadingTags = ['allah', 'islamic shorts','islamicShorts', 'shorts'];
+
+    const pickShortSentence = (raw: string) => {
+      const cleaned = String(raw || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!cleaned) return 'A quick short with a powerful takeaway.';
+
+      // Take the first sentence-like chunk and keep it short.
+      const first = cleaned.split(/(?<=[.!?])\s+/)[0] || cleaned;
+      const normalized = first.replace(/[\n\r]+/g, ' ').trim();
+      if (!normalized) return 'A quick short with a powerful takeaway.';
+      const capped = normalized.length > 140 ? normalized.slice(0, 137).trimEnd() + '...' : normalized;
+      return capped;
+    };
+
+    // Always enforce the shorts description format:
+    // Title on first line, one short sentence on second line, required hashtags at the very end.
+    const modelDesc = String(parsed.description ?? '').trim();
+    const secondLine = pickShortSentence(modelDesc);
+    const description = `${title}\n${secondLine}\n\n${requiredHashtags}`.slice(0, 5000);
+
+    const modelTags = Array.isArray(parsed.tags)
       ? parsed.tags
         .map((t: any) => String(t).trim())
         .filter(Boolean)
@@ -419,6 +588,27 @@ export class AiService {
         .map((t: string) => t.slice(0, 30))
         .slice(0, 25)
       : [];
+
+    const seen = new Set<string>();
+    const tags: string[] = [];
+
+    for (const t of requiredLeadingTags) {
+      const key = t.toLowerCase();
+      if (!seen.has(key)) {
+        tags.push(t);
+        seen.add(key);
+      }
+    }
+
+    for (const t of modelTags) {
+      const cleaned = String(t || '').trim();
+      if (!cleaned) continue;
+      const key = cleaned.toLowerCase();
+      if (seen.has(key)) continue;
+      tags.push(cleaned);
+      seen.add(key);
+      if (tags.length >= 25) break;
+    }
 
     if (!title) {
       throw new InternalServerErrorException('OpenAI returned empty title');
@@ -440,6 +630,8 @@ export class AiService {
     const style =
       dto.style?.trim() || 'Anime style, detailed, vibrant, high quality';
 
+    const isReligiousIslamic = /\bislam\b|religious/i.test(subject);
+
     try {
       // First ask the chat model for a detailed image prompt
       const promptCompletion = await this.client.chat.completions.create({
@@ -449,9 +641,17 @@ export class AiService {
             role: 'system',
             content:
               'You are a visual prompt engineer for image generation models. ' +
-              'Given a narration sentence, you create one detailed, vivid image prompt. ' +
-              'Make the visual gradient, catchy, composition rich, varied, and imaginative with various comforting colors. ' +
-              // 'The scene must not contain any written words, letters, symbols, or text overlays. ' +
+              'Read the sentence and identify the single most dominant emotion and the most dominant object/action/idea. ' +
+              'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
+              'Make the result composition-rich, varied, imaginative, and cinematic (avoid generic defaults unless the sentence truly calls for it). ' +
+              'Focus the prompt around the most important object or action in the sentence. ' +
+              (isReligiousIslamic
+                ? 'ABSOLUTE RULE FOR ISLAMIC CONTENT: Do NOT depict or mention God/Allah, any divine being, any prophet, or any of the Sahaba/Companions. ' +
+                  'Do NOT show Quran pages, Quranic text, Arabic verses, Mushaf, or any book pages with Arabic script. ' +
+                  'CRITICAL: If the sentence mentions ANY forbidden entity (Allah, prophets, Sahaba, Quran), you MUST use ONLY symbolic non-figurative visuals. ' +
+                  'ABSOLUTELY NO people, NO faces, NO human figures, NO silhouettes, NO hands, NO bodies - use ONLY nature, light, objects, geometry, landscapes. ' +
+                  'Otherwise (when NO forbidden entities mentioned), human figures are allowed but MUST be male-only (no females).\n'
+                : '') +
               'Do NOT mention camera settings unless clearly helpful. ' +
               'Respond with a single prompt sentence only, describing visuals only.',
           },
@@ -462,20 +662,28 @@ export class AiService {
               `Desired style: ${style} (anime-style artwork).\n\n` +
               // Safety / theological constraints for religious content
               'Important constraints:\n' +
-              '- The image must not contain any females at all.\n' +
-              '- If the content is religious, especially Islamic, do NOT depict God, any divine being, any prophet, or any of the Sahaba/Companions.\n' +
-              '- If the sentence implies a person/character who is NOT Allah, a prophet, or a Sahabi/Companion, you MAY depict an illustrative human figure(NOT A FEMALE) (anonymous, respectful, non-identifiable, shadow).\n' +
-              '- You may also illustrate the sentence by focusing on the environment and details implied by the sentence (scene location/site, objects, hands/body parts, silhouettes, clothing textures, lighting, atmosphere) to convey meaning without showing a specific identity.\n' +
-              '- Be creative with scenery, nature, architecture, and symbolic elements to convey the message without human figures.\n' +
-              '- The overall look should be consistent with anime-style illustration.\n' +
-              '- Absolutely no visible text, captions, calligraphy phrases, logos, or any readable characters in the scene. Focus purely on graphical and environmental elements.\n\n' +
+              '- The image must not contain any females at all (no women, no girls).\n' +
+              (isReligiousIslamic
+                ? '- Islamic rule: Do NOT depict or mention God/Allah, any divine being, any prophet, or any of the Sahaba/Companions.\n' +
+                  '- Do NOT show Quran pages, Quranic text, Arabic script, Mushaf, or any religious book pages.\n' +
+                  '- CRITICAL: If the sentence mentions ANY forbidden entity or Quran pages/text: ABSOLUTELY NO people, NO faces, NO human figures, NO silhouettes, NO hands, NO bodies whatsoever. Use ONLY symbolic non-figurative elements (nature, light, objects, geometry).\n' +
+                  '- If the sentence does NOT mention any forbidden entity or Quran text: you MAY include male-only humans if it helps express the scene/emotion.\n'
+                : '') +
               'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.',
           },
         ],
       });
 
-      const prompt =
+      let prompt =
         promptCompletion.choices[0]?.message?.content?.trim() || dto.sentence;
+
+      if (isReligiousIslamic) {
+        prompt = await this.enforceNoIslamicDepictionsInImagePrompt({
+          sentence: dto.sentence,
+          style,
+          prompt,
+        });
+      }
 
       // Decide target aspect ratio / dimensions based on script length.
       // For short scripts (e.g. 30 seconds or 1 minute), prefer a
@@ -483,7 +691,9 @@ export class AiService {
       // a landscape 16:9.
       const rawLength = dto.scriptLength?.toLowerCase() ?? '';
       const isShortForm =
-        rawLength.includes('30 second') || rawLength.includes('1 minute');
+        typeof dto.isShort === 'boolean'
+          ? dto.isShort
+          : rawLength.includes('30 second') || rawLength.includes('1 minute');
 
       // Leonardo requires width/height between 512 and 1536 and multiples of 8.
       // Use sensible defaults that fit reels/shorts vs landscape while
@@ -717,6 +927,24 @@ export class AiService {
    * Generates a voice-over audio file for the given script using ElevenLabs TTS.
    * Returns the raw audio bytes (MP3).
    */
+  private mergeSentenceTexts(sentences: string[]): string {
+    return (sentences || [])
+      .map((s) => (s ?? '').trim())
+      .filter(Boolean)
+      .map((s) => (/[^\s][.!?]$/.test(s) ? s : `${s}.`))
+      .join(' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  async generateVoiceForSentences(
+    sentences: string[],
+    voiceId?: string,
+  ): Promise<Buffer> {
+    const merged = this.mergeSentenceTexts(sentences);
+    return this.generateVoiceForScript(merged, voiceId);
+  }
+
   async generateVoiceForScript(
     script: string,
     voiceId?: string,
