@@ -31,6 +31,39 @@ export class VoicesService {
     return this.voicesRepository.save(voice);
   }
 
+  async createFromUrl(params: {
+    voiceUrl: string;
+    user_id: string;
+    voice_type?: string;
+    voice_lang?: string;
+    hash?: string;
+  }): Promise<Voice> {
+    const existing = await this.voicesRepository.findOne({
+      where: params.hash
+        ? { user_id: params.user_id, hash: params.hash }
+        : { user_id: params.user_id, voice: params.voiceUrl },
+    });
+
+    if (existing) {
+      existing.number_of_times_used += 1;
+      if (params.voice_type) existing.voice_type = params.voice_type;
+      if (params.voice_lang) existing.voice_lang = params.voice_lang;
+      if (params.hash && !existing.hash) existing.hash = params.hash;
+      return this.voicesRepository.save(existing);
+    }
+
+    const voiceEntity = this.voicesRepository.create({
+      voice: params.voiceUrl,
+      user_id: params.user_id,
+      voice_type: params.voice_type,
+      voice_lang: params.voice_lang,
+      hash: params.hash ?? null,
+      number_of_times_used: 0,
+    });
+
+    return this.voicesRepository.save(voiceEntity);
+  }
+
   async findAllByUser(
     user_id: string,
     page = 1,
