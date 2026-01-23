@@ -17,7 +17,8 @@ import {
 import type { Timeline, TimelineScene } from './types';
 
 // Linear zoom rate. Example: 0.04 means +4% scale per second.
-const IMAGE_ZOOM_PER_SECOND = 0.008;
+// Set to 0 to avoid any constant “camera motion”.
+const IMAGE_ZOOM_PER_SECOND = 0;
 
 // Transition window: last 4 frames of outgoing image + first 4 frames of incoming image.
 const GLITCH_EDGE_FRAMES = 4;
@@ -81,6 +82,7 @@ const GLITCH_FX_URL = 'sfx/glitch.mp3';
 const WHOOSH_SFX_URL = 'sfx/whoosh.mp3';
 const CAMERA_CLICK_SFX_URL = 'sfx/camera_click.mp3';
 const CHROMA_LEAK_SFX_URL = 'sfx/chroma_leak.mp3';
+const SUSPENSE_GLITCH_SFX_URL = 'sfx/suspense-glitch.mp3';
 
 type TransitionType = 'none' | 'glitch' | 'whip' | 'flash' | 'fade' | 'chromaLeak';
 
@@ -433,6 +435,8 @@ const getChromaParams = (seed: number) => {
   return { dirX, dirY, strength, originX, originY };
 };
 
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
 const Scene: React.FC<{
   scene: TimelineScene;
   fontScale: number;
@@ -459,6 +463,58 @@ const Scene: React.FC<{
   // Inside a <Sequence>, useCurrentFrame() is already relative to the Sequence start.
   // Clamp to 0 to ensure each scene starts at default scale.
   const elapsedSeconds = Math.max(0, frame) / fps;
+
+  const isSuspenseOpening = scene.index === 0 && Boolean(scene.isSuspense);
+  const suspenseFilter = isSuspenseOpening
+    ? 'grayscale(1) contrast(1.38) brightness(0.88)'
+    : undefined;
+
+  // Subtle film flicker for the suspense opening.
+  const suspenseFlicker = isSuspenseOpening
+    ? 0.02 + 0.02 * Math.sin(frame * 0.9) + 0.012 * Math.sin(frame * 2.7)
+    : 0;
+
+  // Occasional scratch "pop" (deterministic) to mimic film damage.
+  const scratchRand = mulberry32((scene.index + 1) * 881 + frame * 131)();
+  const scratchPulse = isSuspenseOpening ? clamp01((scratchRand - 0.92) * 16) : 0;
+  const scratchAlpha = isSuspenseOpening
+    ? clamp01(0.14 + suspenseFlicker + 0.62 * scratchPulse)
+    : 0;
+
+  // Vertical line glitch pulses (deterministic). Two-tier:
+  // - softPulse: common, low-intensity disturbance
+  // - hardPulse: rare, very visible “disturbing” glitch bursts
+  const vRand = mulberry32((scene.index + 1) * 1907 + frame * 73)();
+  // Make lines appear more often by lowering thresholds.
+  const softPulse = isSuspenseOpening ? clamp01((vRand - 0.70) * 3.2) : 0;
+  const hardPulse = isSuspenseOpening ? clamp01((vRand - 0.92) * 22) : 0;
+  const verticalGlitchAlpha = isSuspenseOpening
+    ? clamp01(
+        0.16 +
+          0.18 * suspenseFlicker +
+          0.42 * softPulse +
+          0.55 * hardPulse +
+          0.20 * scratchPulse,
+      )
+    : 0;
+
+  // Add a tiny overlay-only jitter during hard pulses (keeps media still).
+  const jitterSeed = (scene.index + 1) * 7129 + frame * 11;
+  const jitterX = isSuspenseOpening
+    ? (mulberry32(jitterSeed)() * 2 - 1) * 10 * hardPulse
+    : 0;
+
+  // Wide "tear band" parameters (visible + disturbing).
+  const bandSeed = (scene.index + 1) * 9029 + Math.floor(frame / 2) * 37;
+  const bandX = Math.round(mulberry32(bandSeed)() * (width - 40));
+  // Keep the “tear” narrower so it reads like thin line glitches, not a wide wash.
+  const bandW = Math.round(18 + mulberry32(bandSeed ^ 0x9e3779b9)() * 72);
+  const bandOn = isSuspenseOpening && hardPulse > 0.08;
+
+  // A rare, bright “splice” line (static position for a few frames) to sell film damage.
+  const spliceOn = isSuspenseOpening && (hardPulse > 0.35 || scratchPulse > 0.7);
+  const spliceXSeed = (scene.index + 1) * 3331 + Math.floor(frame / 3) * 97;
+  const spliceX = Math.round(mulberry32(spliceXSeed)() * (width - 6));
 
   // Base media layer (effects applied below).
   const backgroundStyle: React.CSSProperties = {
@@ -647,7 +703,7 @@ const Scene: React.FC<{
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
       {scene.videoSrc ? (
-        <AbsoluteFill style={backgroundStyle}>
+        <AbsoluteFill style={{ ...backgroundStyle, filter: suspenseFilter }}>
           <OffthreadVideo
             src={resolveMediaSrc(scene.videoSrc)}
             muted
@@ -657,7 +713,7 @@ const Scene: React.FC<{
         </AbsoluteFill>
       ) : (
         scene.imageSrc && (
-          <AbsoluteFill style={backgroundStyle}>
+          <AbsoluteFill style={{ ...backgroundStyle, filter: suspenseFilter }}>
             <GlitchImage
               src={resolveMediaSrc(scene.imageSrc)}
               style={imageStyle}
@@ -719,6 +775,184 @@ const Scene: React.FC<{
           </AbsoluteFill>
         )
       )}
+
+      {/* Suspense opening: black & white movie overlay */}
+      {isSuspenseOpening ? (
+        <AbsoluteFill style={{ pointerEvents: 'none' }}>
+          {/* Vignette */}
+          <AbsoluteFill
+            style={{
+              background:
+                'radial-gradient(circle at 50% 45%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.78) 100%)',
+              opacity: 0.7,
+            }}
+          />
+
+          {/* Grain */}
+          <AbsoluteFill
+            style={{
+              backgroundImage: `url("data:image/svg+xml;utf8,
+            <svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'>
+              <filter id='n'>
+                <feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4'/>
+                <feColorMatrix type='saturate' values='0'/>
+              </filter>
+              <rect width='100%' height='100%' filter='url(%23n)'/>
+            </svg>")`,
+              opacity: Math.max(0, 0.12 + suspenseFlicker),
+              mixBlendMode: 'overlay',
+            }}
+          />
+
+          {/* Animated scratch shimmer (more "film" than static lines) */}
+          <AbsoluteFill
+            style={{
+              backgroundImage: `url("data:image/svg+xml;utf8,
+            <svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'>
+              <filter id='s'>
+                <feTurbulence type='turbulence' baseFrequency='0.02 0.65' numOctaves='1' seed='7'/>
+                <feColorMatrix type='matrix' values='
+                  1 0 0 0 0
+                  0 1 0 0 0
+                  0 0 1 0 0
+                  0 0 0 2.2 -0.65
+                '/>
+              </filter>
+              <rect width='100%' height='100%' filter='url(%23s)'/>
+            </svg>")`,
+              backgroundSize: '220px 220px',
+              backgroundPosition: `${Math.round(frame * 1.7)}px ${Math.round(frame * 6.5)}px`,
+              opacity: scratchAlpha,
+              mixBlendMode: 'screen',
+              filter: 'contrast(1.15) brightness(1.05)',
+            }}
+          />
+
+          {/* Dense vertical line glitches (multi-layer) */}
+          <AbsoluteFill
+            style={{
+              backgroundImage:
+                // Thinner linework: mostly 1px lines with tighter spacing.
+                'repeating-linear-gradient(to right, rgba(255,255,255,0.14) 0px, rgba(255,255,255,0.14) 1px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 6px),'
+                + 'repeating-linear-gradient(to right, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 1px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 14px),'
+                + 'repeating-linear-gradient(to right, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 28px)',
+              backgroundPosition: `${Math.round(frame * 3.2)}px 0px, ${Math.round(
+                -frame * 1.7,
+              )}px 0px, ${Math.round(frame * 0.6)}px 0px`,
+              opacity: verticalGlitchAlpha,
+              mixBlendMode: 'screen',
+              filter: 'contrast(1.32) brightness(1.10)',
+              transform: `translateX(${jitterX.toFixed(2)}px)`,
+            }}
+          />
+
+          {/* Disturbing tear band (difference blend) */}
+          {bandOn ? (
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: bandX,
+                width: bandW,
+                background:
+                  'linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(255,255,255,0.95) 18%, rgba(255,255,255,0.08) 52%, rgba(255,255,255,0.85) 82%, rgba(0,0,0,0) 100%)',
+                opacity: clamp01(0.18 + 0.65 * hardPulse),
+                mixBlendMode: 'difference',
+                filter: 'blur(0.35px) contrast(1.4)',
+                transform: `translateX(${(jitterX * 1.35).toFixed(2)}px)`,
+              }}
+            />
+          ) : null}
+
+          {/* Occasional extra-bright splice line */}
+          {spliceOn ? (
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: spliceX,
+                width: 2,
+                background:
+                  'linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,0.55) 20%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.55) 80%, rgba(255,255,255,0) 100%)',
+                opacity: clamp01(0.55 + 0.55 * hardPulse + 0.20 * scratchPulse),
+                mixBlendMode: 'screen',
+                filter: 'blur(0.35px) contrast(1.25)',
+              }}
+            />
+          ) : null}
+
+          {/* Vertical scratches */}
+          <AbsoluteFill
+            style={{
+              background:
+                // Multiple vertical line “glitches” (thin + medium + occasional brighter lines)
+                'repeating-linear-gradient(to right, rgba(255,255,255,0.10) 0px, rgba(255,255,255,0.10) 1px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 8px),'
+                + 'repeating-linear-gradient(to right, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 2px, rgba(0,0,0,0) 3px, rgba(0,0,0,0) 22px),'
+                + 'linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.22) 1%, rgba(255,255,255,0) 2%)',
+              backgroundSize: 'auto, auto, 340px 100%',
+              backgroundPosition: `${Math.round(frame * 2.4)}px 0px, ${Math.round(
+                -frame * 1.1,
+              )}px 0px, ${Math.round(80 + (frame * 5.2) % 340)}px 0px`,
+              opacity: clamp01(
+                0.14 + suspenseFlicker * 1.35 + 0.22 * scratchPulse + 0.28 * softPulse + 0.20 * hardPulse,
+              ),
+              mixBlendMode: 'screen',
+              filter: 'contrast(1.12) brightness(1.04)',
+            }}
+          />
+
+          {/* Horizontal dust lines */}
+          <AbsoluteFill
+            style={{
+              background:
+                'repeating-linear-gradient(to bottom, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, rgba(0,0,0,0) 5px, rgba(0,0,0,0) 13px)',
+              opacity: 0.08,
+              mixBlendMode: 'soft-light',
+            }}
+          />
+
+          {/* Dust specks (small, drifting) */}
+          <AbsoluteFill
+            style={{
+              backgroundImage: `url("data:image/svg+xml;utf8,
+            <svg xmlns='http://www.w3.org/2000/svg' width='260' height='260'>
+              <filter id='d'>
+                <feTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' seed='11'/>
+                <feColorMatrix type='matrix' values='
+                  1 0 0 0 0
+                  0 1 0 0 0
+                  0 0 1 0 0
+                  0 0 0 3 -1.4
+                '/>
+              </filter>
+              <rect width='100%' height='100%' filter='url(%23d)'/>
+            </svg>")`,
+              backgroundSize: '260px 260px',
+              backgroundPosition: `${Math.round(-frame * 0.9)}px ${Math.round(frame * 1.4)}px`,
+              opacity: clamp01(0.08 + 0.03 * Math.sin(frame * 0.8) + 0.12 * scratchPulse),
+              mixBlendMode: 'soft-light',
+            }}
+          />
+
+          {/* A few brighter streaks that flicker in and out (film damage) */}
+          <AbsoluteFill
+            style={{
+              background:
+                'linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.14) 8%, rgba(255,255,255,0) 16%),\
+                 linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.10) 6%, rgba(255,255,255,0) 12%)',
+              backgroundSize: '180px 100%, 260px 100%',
+              backgroundPosition: `${Math.round(40 + (frame * 3.3) % 180)}px 0px, ${Math.round(
+                120 + (frame * 2.1) % 260,
+              )}px 0px`,
+              opacity: clamp01(0.06 + 0.25 * scratchPulse),
+              mixBlendMode: 'screen',
+            }}
+          />
+        </AbsoluteFill>
+      ) : null}
+
       <AbsoluteFill
         style={{
           justifyContent: 'flex-end',
@@ -738,7 +972,7 @@ const Scene: React.FC<{
             fontWeight: 700,
             fontFamily: 'Oswald, system-ui, sans-serif',
             lineHeight: 1.15,
-            marginBottom: '125px',
+            marginBottom: '150px',
             textAlign: 'center',
             textShadow: '0 2px 10px rgba(0,0,0,0.55)',
             opacity: 1,
@@ -776,6 +1010,9 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   const isVertical = timeline.height > timeline.width;
   const baseHeight = isVertical ? 1920 : 1080;
   const fontScale = Math.max(0.5, Math.min(1, timeline.height / baseHeight));
+  const voiceOverVolume = 1; // +0.5 louder than the 0.5 background track (max 1.0)
+  const suspenseOpeningScene = timeline.scenes[0];
+  const isSuspenseOpening = Boolean(suspenseOpeningScene?.isSuspense);
   const cutTransitions = React.useMemo(
     () => buildCutTransitions(timeline.scenes),
     [timeline.scenes],
@@ -807,6 +1044,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
     sources.add(resolveMediaSrc(WHOOSH_SFX_URL));
     sources.add(resolveMediaSrc(CHROMA_LEAK_SFX_URL));
     sources.add(resolveMediaSrc(CAMERA_CLICK_SFX_URL));
+    if (isSuspenseOpening) sources.add(resolveMediaSrc(SUSPENSE_GLITCH_SFX_URL));
 
     for (const scene of timeline.scenes) {
       if (scene.imageSrc) sources.add(resolveMediaSrc(scene.imageSrc));
@@ -850,9 +1088,19 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   return (
     <AbsoluteFill>
       {timeline.audioSrc && (
-        <Html5Audio src={resolveMediaSrc(timeline.audioSrc)} />
+        <Html5Audio src={resolveMediaSrc(timeline.audioSrc)} volume={voiceOverVolume} />
       )}
-      <Audio src={resolveMediaSrc(BACKGROUND_MUSIC_SRC)} volume={0.4} />
+      <Audio src={resolveMediaSrc(BACKGROUND_MUSIC_SRC)} volume={0.5} />
+
+      {/* Suspense opening SFX: plays once and stops when audio ends (or at end of scene). */}
+      {isSuspenseOpening && suspenseOpeningScene ? (
+        <Sequence
+          from={suspenseOpeningScene.startFrame}
+          durationInFrames={suspenseOpeningScene.durationFrames}
+        >
+          <Audio src={resolveMediaSrc(SUSPENSE_GLITCH_SFX_URL)} volume={0.2} />
+        </Sequence>
+      ) : null}
 
       {/* Glitch SFX only during image->image cut windows */}
       {timeline.scenes.map((next, idx) => {

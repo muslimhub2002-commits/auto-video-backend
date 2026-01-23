@@ -14,6 +14,7 @@ import { SplitScriptDto } from './dto/split-script.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
 import { GenerateVoiceDto } from './dto/generate-voice.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
+import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
 import { YoutubeSeoDto } from './dto/youtube-seo.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
@@ -99,6 +100,37 @@ export class AiController {
         res.status(HttpStatus.INTERNAL_SERVER_ERROR);
       }
       res.end('\n[Error] Failed to stream enhanced script.');
+    }
+  }
+
+  /**
+   * Enhances a single sentence (rewrite) while preserving meaning.
+   * Streams plain text in small chunks.
+   */
+  @Post('enhance-sentence')
+  @HttpCode(HttpStatus.OK)
+  async enhanceSentence(
+    @Body() body: EnhanceSentenceDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
+    const stream = await this.aiService.createEnhanceSentenceStream(body);
+
+    try {
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          res.write(content);
+        }
+      }
+      res.end();
+    } catch (error) {
+      if (!res.headersSent) {
+        res.status(HttpStatus.INTERNAL_SERVER_ERROR);
+      }
+      res.end('\n[Error] Failed to stream enhanced sentence.');
     }
   }
 

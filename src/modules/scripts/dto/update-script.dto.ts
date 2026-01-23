@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -16,6 +17,10 @@ class UpdateSentenceInput {
   @IsUUID()
   @IsOptional()
   image_id?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isSuspense?: boolean;
 }
 
 export class UpdateScriptDto {

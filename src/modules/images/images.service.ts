@@ -63,6 +63,7 @@ export class ImagesService {
     image_style?: string;
     image_size?: Image['image_size'];
     image_quality?: Image['image_quality'];
+    prompt?: string;
   }): Promise<Image> {
     if (!process.env.TINIFY_KEY) {
       throw new InternalServerErrorException('TINIFY_KEY is not configured');
@@ -100,6 +101,9 @@ export class ImagesService {
       if (existing) {
         // Optionally increment usage count to reflect reuse.
         existing.number_of_times_used += 1;
+        if (typeof params.prompt === 'string' && params.prompt.trim()) {
+          existing.prompt = params.prompt.trim();
+        }
         return this.imagesRepository.save(existing);
       }
 
@@ -123,6 +127,7 @@ export class ImagesService {
 
       const imagePartial: Partial<Image> = {
         image: uploadResult.secure_url,
+        prompt: typeof params.prompt === 'string' ? params.prompt.trim() : null,
         user_id: params.user_id,
         message_id: params.message_id ?? null,
         image_style: params.image_style,
@@ -154,6 +159,7 @@ export class ImagesService {
     image_style?: string;
     image_size?: Image['image_size'];
     image_quality?: Image['image_quality'];
+    prompt?: string;
   }): Promise<Image> {
     if (
       !process.env.CLOUDINARY_CLOUD_NAME ||
@@ -180,6 +186,9 @@ export class ImagesService {
 
       if (existing) {
         existing.number_of_times_used += 1;
+        if (typeof params.prompt === 'string' && params.prompt.trim()) {
+          existing.prompt = params.prompt.trim();
+        }
         return this.imagesRepository.save(existing);
       }
 
@@ -203,6 +212,7 @@ export class ImagesService {
 
       const imagePartial: Partial<Image> = {
         image: uploadResult.secure_url,
+        prompt: typeof params.prompt === 'string' ? params.prompt.trim() : null,
         user_id: params.user_id,
         message_id: params.message_id ?? null,
         image_style: params.image_style,

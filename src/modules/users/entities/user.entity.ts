@@ -11,6 +11,7 @@ import { Voice } from '../../voices/entities/voice.entity';
 import { Video } from '../../videos/entities/video.entity';
 import { Chat } from '../../chats/entities/chat.entity';
 import { Script } from '../../scripts/entities/script.entity';
+import { ScriptTemplate } from '../../scripts/entities/script-template.entity';
 
 @Entity('users')
 export class User {
@@ -67,4 +68,7 @@ export class User {
 
   @OneToMany(() => Script, (script) => script.user)
   scripts: Script[];
+
+  @OneToMany(() => ScriptTemplate, (template) => template.user)
+  script_templates: ScriptTemplate[];
 }

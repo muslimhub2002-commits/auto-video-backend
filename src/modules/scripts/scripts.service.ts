@@ -65,14 +65,20 @@ export class ScriptsService {
         // Replace existing sentences with the new ones
         await this.sentenceRepository.delete({ script_id: updatedScript.id });
 
-        const sentenceEntities = sentences.map((s, index) =>
-          this.sentenceRepository.create({
+        let suspenseAlreadyUsed = false;
+        const sentenceEntities = sentences.map((s, index) => {
+          const wantsSuspense = Boolean(s.isSuspense);
+          const isSuspense = wantsSuspense && !suspenseAlreadyUsed;
+          if (isSuspense) suspenseAlreadyUsed = true;
+
+          return this.sentenceRepository.create({
             text: s.text,
             index,
             script_id: updatedScript.id,
             image_id: s.image_id ?? null,
-          }),
-        );
+            isSuspense,
+          });
+        });
 
         await this.sentenceRepository.save(sentenceEntities);
       }
@@ -95,14 +101,20 @@ export class ScriptsService {
     const savedScript = await this.scriptRepository.save(scriptEntity);
 
     if (sentences && sentences.length > 0) {
-      const sentenceEntities = sentences.map((s, index) =>
-        this.sentenceRepository.create({
+      let suspenseAlreadyUsed = false;
+      const sentenceEntities = sentences.map((s, index) => {
+        const wantsSuspense = Boolean(s.isSuspense);
+        const isSuspense = wantsSuspense && !suspenseAlreadyUsed;
+        if (isSuspense) suspenseAlreadyUsed = true;
+
+        return this.sentenceRepository.create({
           text: s.text,
           index,
           script_id: savedScript.id,
           image_id: s.image_id ?? null,
-        }),
-      );
+          isSuspense,
+        });
+      });
 
       await this.sentenceRepository.save(sentenceEntities);
     }
@@ -173,14 +185,20 @@ export class ScriptsService {
       await this.sentenceRepository.delete({ script_id: script.id });
 
       if (dto.sentences.length > 0) {
-        const sentenceEntities = dto.sentences.map((s, index) =>
-          this.sentenceRepository.create({
+        let suspenseAlreadyUsed = false;
+        const sentenceEntities = dto.sentences.map((s, index) => {
+          const wantsSuspense = Boolean(s.isSuspense);
+          const isSuspense = wantsSuspense && !suspenseAlreadyUsed;
+          if (isSuspense) suspenseAlreadyUsed = true;
+
+          return this.sentenceRepository.create({
             text: s.text,
             index,
             script_id: script.id,
             image_id: s.image_id ?? null,
-          }),
-        );
+            isSuspense,
+          });
+        });
         await this.sentenceRepository.save(sentenceEntities);
       }
     }

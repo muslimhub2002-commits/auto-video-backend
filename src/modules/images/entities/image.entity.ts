@@ -28,6 +28,9 @@ export class Image {
   @Column({ type: 'varchar', length: 255, nullable: false })
   image: string;
 
+  @Column({ type: 'text', nullable: true })
+  prompt: string | null;
+
   @Column({ type: 'uuid', nullable: false })
   user_id: string;
 

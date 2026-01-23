@@ -94,9 +94,9 @@ export class RenderVideosController {
     const voice = files.voiceOver?.[0];
     const images = files.images ?? [];
 
-    let sentences: Array<{ text: string }>;
+    let sentences: Array<{ text: string; isSuspense?: boolean }>;
     try {
-      sentences = JSON.parse(body.sentences) as Array<{ text: string }>;
+      sentences = JSON.parse(body.sentences) as Array<{ text: string; isSuspense?: boolean }>;
     } catch {
       throw new BadRequestException('Invalid `sentences` JSON');
     }

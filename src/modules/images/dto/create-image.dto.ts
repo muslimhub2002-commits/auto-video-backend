@@ -14,6 +14,10 @@ export class CreateImageDto {
   @IsNotEmpty()
   image: string;
 
+  @IsOptional()
+  @IsString()
+  prompt?: string;
+
   @IsUUID()
   @IsNotEmpty()
   user_id: string;

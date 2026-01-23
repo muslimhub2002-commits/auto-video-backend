@@ -5,12 +5,14 @@ import {
   CreateDateColumn,
   ManyToOne,
   OneToMany,
+  ManyToMany,
   JoinColumn,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Message } from '../../messages/entities/message.entity';
 import { Sentence } from './sentence.entity';
 import { Voice } from '../../voices/entities/voice.entity';
+import { ScriptTemplate } from './script-template.entity';
 
 @Entity('scripts')
 export class Script {
@@ -49,4 +51,7 @@ export class Script {
 
   @OneToMany(() => Sentence, (sentence) => sentence.script, { cascade: true })
   sentences: Sentence[];
+
+  @ManyToMany(() => ScriptTemplate, (template) => template.scripts)
+  templates: ScriptTemplate[];
 }

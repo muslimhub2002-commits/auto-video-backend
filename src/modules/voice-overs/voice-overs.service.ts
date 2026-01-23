@@ -129,19 +129,11 @@ export class VoiceOversService {
     }
 
     await this.voiceOverRepository.manager.transaction(async (manager) => {
-      await manager
-        .createQueryBuilder()
-        .update(VoiceOver)
-        .set({ isFavorite: false })
-        .where('isFavorite = :isFavorite', { isFavorite: true })
-        .execute();
+      const repo = manager.getRepository(VoiceOver);
 
-      await manager
-        .createQueryBuilder()
-        .update(VoiceOver)
-        .set({ isFavorite: true })
-        .where('voice_id = :voiceId', { voiceId })
-        .execute();
+      // Use TypeORM metadata-aware updates so column naming/quoting works in Postgres
+      await repo.update({ isFavorite: true }, { isFavorite: false });
+      await repo.update({ voice_id: voiceId }, { isFavorite: true });
     });
 
     const updated = await this.voiceOverRepository.findOne({

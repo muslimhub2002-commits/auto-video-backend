@@ -8,7 +8,7 @@ import * as os from 'os';
 import { v2 as cloudinary } from 'cloudinary';
 import OpenAI from 'openai';
 
-type SentenceInput = { text: string };
+type SentenceInput = { text: string; isSuspense?: boolean };
 
 type UploadedAsset = {
   buffer: Buffer;
@@ -55,6 +55,7 @@ const REMOTION_GLITCH_SFX_REL = 'sfx/glitch.mp3';
 const REMOTION_WHOOSH_SFX_REL = 'sfx/whoosh.mp3';
 const REMOTION_CAMERA_CLICK_SFX_REL = 'sfx/camera_click.mp3';
 const REMOTION_CHROMA_LEAK_SFX_REL = 'sfx/chroma_leak.mp3';
+const REMOTION_SUSPENSE_GLITCH_SFX_REL = 'sfx/suspense-glitch.mp3';
 const REMOTION_SUBSCRIBE_VIDEO_REL = 'videos/subscribe.mp4';
 
 @Injectable()
@@ -269,6 +270,7 @@ export class RenderVideosService implements OnModuleInit {
       return {
         index,
         text: s.text,
+        isSuspense: !!s.isSuspense,
         imageSrc: isSubscribe ? undefined : params.imagePaths[index],
         videoSrc: isSubscribe ? params.subscribeVideoSrc : undefined,
         startFrame,
@@ -736,6 +738,12 @@ export class RenderVideosService implements OnModuleInit {
       this.safeCopyFile(
         join(remotionAssetsDir, 'camera_click.mp3'),
         join(jobDir, REMOTION_CAMERA_CLICK_SFX_REL),
+      );
+
+      // Suspense opening glitch SFX (only used when first scene is suspense).
+      this.safeCopyFile(
+        join(remotionAssetsDir, 'suspense-glitch.mp3'),
+        join(jobDir, REMOTION_SUSPENSE_GLITCH_SFX_REL),
       );
 
       // Subscribe clip (only if needed)

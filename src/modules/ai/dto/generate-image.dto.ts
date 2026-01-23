@@ -5,6 +5,12 @@ export class GenerateImageDto {
   @IsNotEmpty()
   sentence: string;
 
+  // Optional override: if provided, the backend will generate the image directly
+  // from this prompt instead of generating a prompt from the sentence.
+  @IsString()
+  @IsOptional()
+  prompt?: string;
+
   @IsString()
   @IsOptional()
   subject?: string;

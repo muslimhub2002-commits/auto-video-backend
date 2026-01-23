@@ -6,6 +6,7 @@ export type TimelineScene = {
   startFrame: number;
   durationFrames: number;
   useGlitch?: boolean; // Apply glitch transition effect
+  isSuspense?: boolean;
 };
 
 export type Timeline = {

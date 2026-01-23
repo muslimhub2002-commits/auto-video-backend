@@ -1,6 +1,7 @@
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -14,6 +15,10 @@ class SentenceDto {
   @IsString()
   @IsNotEmpty()
   text: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isSuspense?: boolean;
 }
 
 export class CreateRenderVideoUrlDto {

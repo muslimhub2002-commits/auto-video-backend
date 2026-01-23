@@ -25,6 +25,9 @@ export class Sentence {
   @Column({ type: 'uuid', nullable: true })
   image_id: string | null;
 
+  @Column({ type: 'boolean', default: false })
+  isSuspense: boolean;
+
   @ManyToOne(() => Script, (script) => script.sentences, {
     onDelete: 'CASCADE',
   })

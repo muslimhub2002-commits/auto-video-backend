@@ -63,6 +63,7 @@ export class ImagesController {
       image_style: body.image_style,
       image_size: body.image_size,
       image_quality: body.image_quality,
+      prompt: body.prompt,
     });
 
     return image;

@@ -14,6 +14,10 @@ export class UpdateImageDto {
   image?: string;
 
   @IsOptional()
+  @IsString()
+  prompt?: string;
+
+  @IsOptional()
   @IsInt()
   @Min(0)
   number_of_times_used?: number;
