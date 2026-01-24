@@ -613,18 +613,38 @@ export class RenderVideosService implements OnModuleInit {
     timeline: any;
     outputFsPath: string;
   }) {
+    const lambdaClient: any = await import('@remotion/lambda/client');
     const lambda: any = await import('@remotion/lambda');
 
     const region = REMOTION_LAMBDA_TEST_REGION;
-    const functionName = REMOTION_LAMBDA_TEST_FUNCTION_NAME;
+    let functionName = REMOTION_LAMBDA_TEST_FUNCTION_NAME;
     const serveUrl = REMOTION_LAMBDA_TEST_SERVE_URL;
 
-    const start = await lambda.renderMediaOnLambda({
+    // Optionally auto-pick a compatible function for the region.
+    // This matches the Remotion docs flow and is useful if you redeploy functions.
+    if (!functionName || functionName.trim().toLowerCase() === 'auto') {
+      const functions = await lambdaClient.getFunctions({
+        region,
+        compatibleOnly: true,
+      });
+
+      const preferred = functions.find(
+        (f: any) => f?.functionName === REMOTION_LAMBDA_TEST_FUNCTION_NAME,
+      );
+
+      functionName =
+        preferred?.functionName ??
+        functions?.[0]?.functionName ??
+        REMOTION_LAMBDA_TEST_FUNCTION_NAME;
+    }
+
+    const start = await lambdaClient.renderMediaOnLambda({
       region,
       functionName,
       serveUrl,
       composition: 'AutoVideo',
       codec: 'h264',
+      privacy: 'public',
       inputProps: { timeline: params.timeline },
       // Keep defaults unless overridden.
       // framesPerLambda: 20,
@@ -643,7 +663,7 @@ export class RenderVideosService implements OnModuleInit {
     // heartbeat `lastProgressAt` so stale-job logic does not trigger.
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const progress = await lambda.getRenderProgress({
+      const progress = await lambdaClient.getRenderProgress({
         region,
         functionName,
         bucketName,

@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   ServiceUnavailableException,
+  MethodNotAllowedException,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
@@ -22,6 +23,33 @@ const SUBSCRIBE_SENTENCE =
 @Controller('videos')
 export class RenderVideosController {
   constructor(private readonly renderVideosService: RenderVideosService) {}
+
+  @Get()
+  info() {
+    // Many users try to open /videos in the browser.
+    // Rendering is started via POST requests.
+    throw new MethodNotAllowedException({
+      message: 'Use POST /videos (multipart) or POST /videos/url (JSON) to start a render. Use GET /videos/:id to poll status.',
+      endpoints: {
+        createMultipart: {
+          method: 'POST',
+          path: '/videos',
+          contentType: 'multipart/form-data',
+          fields: ['voiceOver (file)', 'images (files)', 'sentences (json string)', 'scriptLength'],
+        },
+        createFromUrls: {
+          method: 'POST',
+          path: '/videos/url',
+          contentType: 'application/json',
+          fields: ['audioUrl', 'imageUrls[]', 'sentences[]', 'scriptLength'],
+        },
+        poll: {
+          method: 'GET',
+          path: '/videos/:id',
+        },
+      },
+    });
+  }
 
   @Post('url')
   async createFromUrls(@Body() body: CreateRenderVideoUrlDto) {
