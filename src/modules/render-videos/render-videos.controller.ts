@@ -61,7 +61,7 @@ export class RenderVideosController {
       enableGlitchTransitions: !!body.enableGlitchTransitions,
     });
 
-    return { id: job.id, status: job.status };
+    return { id: job.id, status: job.status, isShort: body.isShort ?? null };
   }
 
   @Post()
@@ -160,7 +160,7 @@ export class RenderVideosController {
       enableGlitchTransitions,
     });
 
-    return { id: job.id, status: job.status };
+    return { id: job.id, status: job.status, isShort: isShort ?? null };
   }
 
   @Get(':id')
@@ -169,12 +169,19 @@ export class RenderVideosController {
     const job = await this.renderVideosService.getJob(id);
     await this.renderVideosService.failIfStale(job);
     const updated = await this.renderVideosService.getJob(id);
+    const derivedIsShort =
+      updated.timeline &&
+      typeof (updated.timeline as any).width === 'number' &&
+      typeof (updated.timeline as any).height === 'number'
+        ? (updated.timeline as any).height > (updated.timeline as any).width
+        : null;
     return {
       id: updated.id,
       status: updated.status,
       error: updated.error,
       videoUrl: updated.videoPath ? updated.videoPath : null,
       timeline: updated.timeline,
+      isShort: derivedIsShort,
     };
   }
 }

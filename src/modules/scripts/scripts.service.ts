@@ -131,22 +131,38 @@ export class ScriptsService {
     const safeLimit =
       Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
 
-    const [items, total] = await this.scriptRepository.findAndCount({
-      where: { user_id: userId },
-      order: { created_at: 'DESC' },
-      relations: ['sentences', 'sentences.image', 'voice'],
-      skip: (safePage - 1) * safeLimit,
-      take: safeLimit,
-    });
+    // Use an explicit QueryBuilder so we can guarantee selecting `image.prompt`
+    // even if the Image entity later marks it as `select: false`.
+    const items = await this.scriptRepository
+      .createQueryBuilder('script')
+      .leftJoinAndSelect('script.sentences', 'sentence')
+      .leftJoinAndSelect('sentence.image', 'image')
+      .leftJoinAndSelect('script.voice', 'voice')
+      .addSelect('image.prompt')
+      .where('script.user_id = :userId', { userId })
+      .orderBy('script.created_at', 'DESC')
+      .addOrderBy('sentence.index', 'ASC')
+      .skip((safePage - 1) * safeLimit)
+      .take(safeLimit)
+      .getMany();
+
+    // Count without joins to avoid inflated totals from 1:N sentence joins.
+    const total = await this.scriptRepository.count({ where: { user_id: userId } });
 
     return { items, total, page: safePage, limit: safeLimit };
   }
 
   async findOne(id: string, userId: string): Promise<Script> {
-    const script = await this.scriptRepository.findOne({
-      where: { id, user_id: userId },
-      relations: ['sentences', 'sentences.image', 'voice'],
-    });
+    const script = await this.scriptRepository
+      .createQueryBuilder('script')
+      .leftJoinAndSelect('script.sentences', 'sentence')
+      .leftJoinAndSelect('sentence.image', 'image')
+      .leftJoinAndSelect('script.voice', 'voice')
+      .addSelect('image.prompt')
+      .where('script.id = :id', { id })
+      .andWhere('script.user_id = :userId', { userId })
+      .orderBy('sentence.index', 'ASC')
+      .getOne();
 
     if (!script) {
       throw new NotFoundException('Script not found');

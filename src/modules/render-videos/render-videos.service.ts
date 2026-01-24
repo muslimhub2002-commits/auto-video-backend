@@ -48,6 +48,17 @@ const WHOOSH_CLOUDINARY_URL =
 const CHROMA_LEAK_SFX_CLOUDINARY_URL =
   'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768515034/whoosh-end-384629_1_k8lth5.mp3';
 
+// Lambda test-mode (static) configuration.
+// Enable by setting: REMOTION_LAMBDA_TEST_MODE=true
+const REMOTION_LAMBDA_TEST_REGION =
+  (process.env.REMOTION_LAMBDA_TEST_REGION ?? 'us-east-1') as any;
+const REMOTION_LAMBDA_TEST_FUNCTION_NAME =
+  process.env.REMOTION_LAMBDA_TEST_FUNCTION_NAME ??
+  'remotion-render-4-0-409-mem2048mb-disk2048mb-120sec';
+const REMOTION_LAMBDA_TEST_SERVE_URL =
+  process.env.REMOTION_LAMBDA_TEST_SERVE_URL ??
+  'https://remotionlambda-useast1-imtywr9xvj.s3.us-east-1.amazonaws.com/sites/ol6g09ze8m/index.html';
+
 // Remotion publicDir relative paths (these are served via staticFile()).
 const REMOTION_VOICEOVER_REL = 'audio/voiceover.mp3';
 const REMOTION_BACKGROUND_REL = 'audio/background_3.mp3';
@@ -103,6 +114,10 @@ export class RenderVideosService implements OnModuleInit {
 
   private isCloudinaryUrl(url: string): boolean {
     return /^(https?:\/\/)?res\.cloudinary\.com\//i.test(url || '');
+  }
+
+  private useLambdaTestMode(): boolean {
+    return process.env.REMOTION_LAMBDA_TEST_MODE === 'true';
   }
 
   async createJob(params: {
@@ -291,6 +306,16 @@ export class RenderVideosService implements OnModuleInit {
       fps,
       durationInFrames,
       audioSrc: params.audioSrc,
+      assets: {
+        backgroundMusicSrc: BACKGROUND_AUDIO_CLOUDINARY_URL,
+        glitchSfxSrc: GLITCH_FX_CLOUDINARY_URL,
+        whooshSfxSrc: WHOOSH_CLOUDINARY_URL,
+        cameraClickSfxSrc: CAMERA_CLICK_CLOUDINARY_URL,
+        chromaLeakSfxSrc: CHROMA_LEAK_SFX_CLOUDINARY_URL,
+        // Leave unset (or empty) to let the composition fall back to local `staticFile()`.
+        suspenseGlitchSfxSrc: '',
+        subscribeVideoSrc: SUBSCRIBE_VIDEO_CLOUDINARY_URL,
+      },
       scenes,
     };
   }
@@ -508,10 +533,20 @@ export class RenderVideosService implements OnModuleInit {
   }
 
   private async renderWithRemotion(params: {
+    jobId?: string;
     timeline: any;
     outputFsPath: string;
     publicDir: string;
   }) {
+    if (this.useLambdaTestMode()) {
+      await this.renderWithRemotionOnLambda({
+        jobId: params.jobId,
+        timeline: params.timeline,
+        outputFsPath: params.outputFsPath,
+      });
+      return;
+    }
+
     // Dynamic imports so that type checking works even if packages are not installed yet.
     const bundler: any = await import('@remotion/bundler');
     const renderer: any = await import('@remotion/renderer');
@@ -570,6 +605,79 @@ export class RenderVideosService implements OnModuleInit {
       chromiumOptions,
       concurrency: 2,
       timeoutInMilliseconds: 600_000,
+    });
+  }
+
+  private async renderWithRemotionOnLambda(params: {
+    jobId?: string;
+    timeline: any;
+    outputFsPath: string;
+  }) {
+    const lambda: any = await import('@remotion/lambda');
+
+    const region = REMOTION_LAMBDA_TEST_REGION;
+    const functionName = REMOTION_LAMBDA_TEST_FUNCTION_NAME;
+    const serveUrl = REMOTION_LAMBDA_TEST_SERVE_URL;
+
+    const start = await lambda.renderMediaOnLambda({
+      region,
+      functionName,
+      serveUrl,
+      composition: 'AutoVideo',
+      codec: 'h264',
+      inputProps: { timeline: params.timeline },
+      // Keep defaults unless overridden.
+      // framesPerLambda: 20,
+    });
+
+    const renderId: string = start.renderId;
+    const bucketName: string = start.bucketName;
+
+    const pollEveryMsRaw = Number(process.env.REMOTION_LAMBDA_POLL_MS ?? '5000');
+    const pollEveryMs = Number.isFinite(pollEveryMsRaw)
+      ? Math.max(2000, Math.floor(pollEveryMsRaw))
+      : 5000;
+
+    // Poll until done.
+    // Note: we do not currently store progress percentage in DB; we only
+    // heartbeat `lastProgressAt` so stale-job logic does not trigger.
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const progress = await lambda.getRenderProgress({
+        region,
+        functionName,
+        bucketName,
+        renderId,
+      });
+
+      if (params.jobId) {
+        await this.jobsRepo
+          .save({ id: params.jobId, lastProgressAt: new Date() } as any)
+          .catch(() => undefined);
+      }
+
+      if (progress?.fatalErrorEncountered) {
+        const first = Array.isArray(progress?.errors) ? progress.errors[0] : null;
+        const message =
+          (first as any)?.message ||
+          (first as any)?.stack ||
+          'Lambda render failed (fatalErrorEncountered=true)';
+        throw new Error(message);
+      }
+
+      if (progress?.done) {
+        break;
+      }
+
+      await new Promise((r) => setTimeout(r, pollEveryMs));
+    }
+
+    // Download the final artifact locally so the existing Cloudinary upload flow stays the same.
+    await lambda.downloadMedia({
+      region,
+      bucketName,
+      renderId,
+      outPath: params.outputFsPath,
     });
   }
 
@@ -712,120 +820,182 @@ export class RenderVideosService implements OnModuleInit {
           ? params.audioDurationSeconds
           : 1;
 
-      const prepared = this.prepareRemotionPublicDir(jobId);
-      const { publicDir, jobDir } = prepared;
-      let subscribeVideoSrc: string | null = prepared.subscribeVideoSrc;
-      publicDirToClean = jobDir;
+      const useLambdaTestMode = this.useLambdaTestMode();
 
-      // Materialize required Remotion assets into the job-scoped publicDir.
-      // This avoids streaming from Cloudinary during rendering.
-      fs.writeFileSync(join(jobDir, REMOTION_VOICEOVER_REL), audioBuffer);
-
-      // Background + SFX: copy from remotion/public so everything is local.
-      const remotionAssetsDir = this.getRemotionPublicAssetsDir();
-      this.safeCopyFile(
-        join(remotionAssetsDir, 'background_3.mp3'),
-        join(jobDir, REMOTION_BACKGROUND_REL),
-      );
-      this.safeCopyFile(
-        join(remotionAssetsDir, 'glitch-fx.mp3'),
-        join(jobDir, REMOTION_GLITCH_SFX_REL),
-      );
-      this.safeCopyFile(
-        join(remotionAssetsDir, 'whoosh.mp3'),
-        join(jobDir, REMOTION_WHOOSH_SFX_REL),
-      );
-      this.safeCopyFile(
-        join(remotionAssetsDir, 'camera_click.mp3'),
-        join(jobDir, REMOTION_CAMERA_CLICK_SFX_REL),
-      );
-
-      // Suspense opening glitch SFX (only used when first scene is suspense).
-      this.safeCopyFile(
-        join(remotionAssetsDir, 'suspense-glitch.mp3'),
-        join(jobDir, REMOTION_SUSPENSE_GLITCH_SFX_REL),
-      );
-
-      // Subscribe clip (only if needed)
-      const hasSubscribeSentence = params.sentences.some(
-        (s) => (s?.text || '').trim() === SUBSCRIBE_SENTENCE,
-      );
-      if (!hasSubscribeSentence) {
-        subscribeVideoSrc = null;
-      } else {
-        this.safeCopyFile(
-          join(remotionAssetsDir, 'subscribe.mp4'),
-          join(jobDir, REMOTION_SUBSCRIBE_VIDEO_REL),
-        );
-      }
-
-      const chromaDownloaded = await this.downloadUrlToBuffer({
-        url: CHROMA_LEAK_SFX_CLOUDINARY_URL,
-        maxBytes: 20 * 1024 * 1024,
-        label: 'chroma leak sfx',
-      });
-      fs.writeFileSync(join(jobDir, REMOTION_CHROMA_LEAK_SFX_REL), chromaDownloaded.buffer);
-
-      const voiceoverAudioSrc = REMOTION_VOICEOVER_REL;
-
-      // Build per-sentence image sources as local files in the job-scoped publicDir.
-      // This avoids streaming from Cloudinary during rendering.
+      // In Lambda test-mode, we must use public URLs (Lambda can't access our local filesystem).
+      // In local mode, we keep the job-scoped publicDir approach.
+      let publicDir = '';
+      let subscribeVideoSrc: string | null = null;
+      let voiceoverAudioSrc = '';
       const imageSrcs: string[] = [];
-      const providedUrls = Array.isArray(params.imageUrls)
-        ? params.imageUrls
-        : null;
 
+      const providedUrls = Array.isArray(params.imageUrls) ? params.imageUrls : null;
       if (providedUrls && providedUrls.length !== params.sentences.length) {
         throw new Error('imageUrls length must match sentences length');
       }
 
-      for (let i = 0; i < params.sentences.length; i += 1) {
-        const sentenceText = (params.sentences[i]?.text || '').trim();
-        const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
-        if (isSubscribe) {
-          imageSrcs.push('');
-          continue;
+      const hasSubscribeSentence = params.sentences.some(
+        (s) => (s?.text || '').trim() === SUBSCRIBE_SENTENCE,
+      );
+
+      if (useLambdaTestMode) {
+        // Voiceover: always Cloudinary URL
+        if (!job.audioPath) {
+          throw new Error('audioPath missing after Cloudinary upload');
         }
+        voiceoverAudioSrc = job.audioPath;
 
-        const url = providedUrls ? providedUrls[i] : null;
-        const relBase = `images/scene-${String(i + 1).padStart(3, '0')}`;
+        subscribeVideoSrc = hasSubscribeSentence
+          ? SUBSCRIBE_VIDEO_CLOUDINARY_URL
+          : null;
 
-        if (url) {
-          const urlString = String(url);
-          const downloaded = await this.downloadUrlToBuffer({
-            url: urlString,
-            maxBytes: 12 * 1024 * 1024,
-            label: `imageUrl for sentence ${i + 1}`,
+        for (let i = 0; i < params.sentences.length; i += 1) {
+          const sentenceText = (params.sentences[i]?.text || '').trim();
+          const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
+          if (isSubscribe) {
+            imageSrcs.push('');
+            continue;
+          }
+
+          const url = providedUrls ? providedUrls[i] : null;
+          if (url) {
+            const urlString = String(url);
+            if (this.isCloudinaryUrl(urlString)) {
+              imageSrcs.push(urlString);
+              continue;
+            }
+
+            // Re-host non-Cloudinary URLs to reduce risk of hotlinking issues during Lambda render.
+            const downloaded = await this.downloadUrlToBuffer({
+              url: urlString,
+              maxBytes: 12 * 1024 * 1024,
+              label: `imageUrl for sentence ${i + 1}`,
+            });
+
+            const uploaded = await this.uploadBufferToCloudinary({
+              buffer: downloaded.buffer,
+              folder: 'auto-video-generator/render-inputs/images',
+              resource_type: 'image',
+            });
+
+            imageSrcs.push(uploaded.secure_url);
+            continue;
+          }
+
+          const file = params.imageFiles[i];
+          if (!file?.buffer) {
+            throw new Error(
+              `Missing image upload for sentence ${i + 1} (non-subscribe sentence)`,
+            );
+          }
+
+          const uploaded = await this.uploadBufferToCloudinary({
+            buffer: file.buffer,
+            folder: 'auto-video-generator/render-inputs/images',
+            resource_type: 'image',
           });
 
+          imageSrcs.push(uploaded.secure_url);
+        }
+      } else {
+        const prepared = this.prepareRemotionPublicDir(jobId);
+        const jobDir = prepared.jobDir;
+        publicDir = prepared.publicDir;
+        subscribeVideoSrc = hasSubscribeSentence ? prepared.subscribeVideoSrc : null;
+        publicDirToClean = jobDir;
+
+        // Materialize required Remotion assets into the job-scoped publicDir.
+        fs.writeFileSync(join(jobDir, REMOTION_VOICEOVER_REL), audioBuffer);
+
+        const remotionAssetsDir = this.getRemotionPublicAssetsDir();
+        this.safeCopyFile(
+          join(remotionAssetsDir, 'background_3.mp3'),
+          join(jobDir, REMOTION_BACKGROUND_REL),
+        );
+        this.safeCopyFile(
+          join(remotionAssetsDir, 'glitch-fx.mp3'),
+          join(jobDir, REMOTION_GLITCH_SFX_REL),
+        );
+        this.safeCopyFile(
+          join(remotionAssetsDir, 'whoosh.mp3'),
+          join(jobDir, REMOTION_WHOOSH_SFX_REL),
+        );
+        this.safeCopyFile(
+          join(remotionAssetsDir, 'camera_click.mp3'),
+          join(jobDir, REMOTION_CAMERA_CLICK_SFX_REL),
+        );
+        this.safeCopyFile(
+          join(remotionAssetsDir, 'suspense-glitch.mp3'),
+          join(jobDir, REMOTION_SUSPENSE_GLITCH_SFX_REL),
+        );
+
+        if (hasSubscribeSentence) {
+          this.safeCopyFile(
+            join(remotionAssetsDir, 'subscribe.mp4'),
+            join(jobDir, REMOTION_SUBSCRIBE_VIDEO_REL),
+          );
+        }
+
+        const chromaDownloaded = await this.downloadUrlToBuffer({
+          url: CHROMA_LEAK_SFX_CLOUDINARY_URL,
+          maxBytes: 20 * 1024 * 1024,
+          label: 'chroma leak sfx',
+        });
+        fs.writeFileSync(
+          join(jobDir, REMOTION_CHROMA_LEAK_SFX_REL),
+          chromaDownloaded.buffer,
+        );
+
+        voiceoverAudioSrc = REMOTION_VOICEOVER_REL;
+
+        for (let i = 0; i < params.sentences.length; i += 1) {
+          const sentenceText = (params.sentences[i]?.text || '').trim();
+          const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
+          if (isSubscribe) {
+            imageSrcs.push('');
+            continue;
+          }
+
+          const url = providedUrls ? providedUrls[i] : null;
+          const relBase = `images/scene-${String(i + 1).padStart(3, '0')}`;
+
+          if (url) {
+            const urlString = String(url);
+            const downloaded = await this.downloadUrlToBuffer({
+              url: urlString,
+              maxBytes: 12 * 1024 * 1024,
+              label: `imageUrl for sentence ${i + 1}`,
+            });
+
+            const ext = this.inferExt({
+              originalName: urlString,
+              mimeType: downloaded.mimeType,
+              fallback: '.png',
+            });
+
+            const rel = `${relBase}${ext}`;
+            fs.writeFileSync(join(jobDir, rel), downloaded.buffer);
+            imageSrcs.push(rel);
+            continue;
+          }
+
+          const file = params.imageFiles[i];
+          if (!file?.buffer) {
+            throw new Error(
+              `Missing image upload for sentence ${i + 1} (non-subscribe sentence)`,
+            );
+          }
+
           const ext = this.inferExt({
-            originalName: urlString,
-            mimeType: downloaded.mimeType,
+            originalName: file.originalName,
+            mimeType: file.mimeType,
             fallback: '.png',
           });
 
           const rel = `${relBase}${ext}`;
-          fs.writeFileSync(join(jobDir, rel), downloaded.buffer);
+          fs.writeFileSync(join(jobDir, rel), file.buffer);
           imageSrcs.push(rel);
-          continue;
         }
-
-        const file = params.imageFiles[i];
-        if (!file?.buffer) {
-          throw new Error(
-            `Missing image upload for sentence ${i + 1} (non-subscribe sentence)`,
-          );
-        }
-
-        const ext = this.inferExt({
-          originalName: file.originalName,
-          mimeType: file.mimeType,
-          fallback: '.png',
-        });
-
-        const rel = `${relBase}${ext}`;
-        fs.writeFileSync(join(jobDir, rel), file.buffer);
-        imageSrcs.push(rel);
       }
 
       // Align audio with sentences to get per-sentence timings.
@@ -858,7 +1028,7 @@ export class RenderVideosService implements OnModuleInit {
 
       const outputFsPath = this.getVideoFsPath(jobId);
       await this.withTimeout(
-        this.renderWithRemotion({ timeline, outputFsPath, publicDir }),
+        this.renderWithRemotion({ jobId, timeline, outputFsPath, publicDir }),
         20 * 60_000,
         'Remotion render',
       );

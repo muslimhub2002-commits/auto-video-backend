@@ -76,13 +76,14 @@ const preloadVideo = (src: string) =>
     video.load();
   });
 
-// These assets are expected to be present in the Remotion `publicDir` (downloaded by backend).
-const BACKGROUND_MUSIC_SRC = 'audio/background_3.mp3';
-const GLITCH_FX_URL = 'sfx/glitch.mp3';
-const WHOOSH_SFX_URL = 'sfx/whoosh.mp3';
-const CAMERA_CLICK_SFX_URL = 'sfx/camera_click.mp3';
-const CHROMA_LEAK_SFX_URL = 'sfx/chroma_leak.mp3';
-const SUSPENSE_GLITCH_SFX_URL = 'sfx/suspense-glitch.mp3';
+// Production note:
+// In production (Remotion Lambda), prefer passing CDN/Cloudinary/S3 URLs via `timeline.assets`.
+// If not provided, we fall back to local `staticFile()` assets in `remotion/public`.
+const DEFAULT_BACKGROUND_MUSIC_SRC = 'background_3.mp3';
+const DEFAULT_GLITCH_FX_URL = 'glitch-fx.mp3';
+const DEFAULT_WHOOSH_SFX_URL = 'whoosh.mp3';
+const DEFAULT_CAMERA_CLICK_SFX_URL = 'camera_click.mp3';
+const DEFAULT_SUSPENSE_GLITCH_SFX_URL = 'suspense-glitch.mp3';
 
 type TransitionType = 'none' | 'glitch' | 'whip' | 'flash' | 'fade' | 'chromaLeak';
 
@@ -1007,6 +1008,16 @@ const Scene: React.FC<{
 };
 
 export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
+  const backgroundMusicSrc =
+    timeline.assets?.backgroundMusicSrc ?? DEFAULT_BACKGROUND_MUSIC_SRC;
+  const glitchSfxSrc = timeline.assets?.glitchSfxSrc ?? DEFAULT_GLITCH_FX_URL;
+  const whooshSfxSrc = timeline.assets?.whooshSfxSrc ?? DEFAULT_WHOOSH_SFX_URL;
+  const cameraClickSfxSrc =
+    timeline.assets?.cameraClickSfxSrc ?? DEFAULT_CAMERA_CLICK_SFX_URL;
+  const chromaLeakSfxSrc = timeline.assets?.chromaLeakSfxSrc ?? '';
+  const suspenseGlitchSfxSrc =
+    timeline.assets?.suspenseGlitchSfxSrc ?? DEFAULT_SUSPENSE_GLITCH_SFX_URL;
+
   const isVertical = timeline.height > timeline.width;
   const baseHeight = isVertical ? 1920 : 1080;
   const fontScale = Math.max(0.5, Math.min(1, timeline.height / baseHeight));
@@ -1038,13 +1049,15 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
 
     if (timeline.audioSrc) sources.add(resolveMediaSrc(timeline.audioSrc));
 
-    // Global background music + transition SFX (served locally via staticFile()).
-    sources.add(resolveMediaSrc(BACKGROUND_MUSIC_SRC));
-    sources.add(resolveMediaSrc(GLITCH_FX_URL));
-    sources.add(resolveMediaSrc(WHOOSH_SFX_URL));
-    sources.add(resolveMediaSrc(CHROMA_LEAK_SFX_URL));
-    sources.add(resolveMediaSrc(CAMERA_CLICK_SFX_URL));
-    if (isSuspenseOpening) sources.add(resolveMediaSrc(SUSPENSE_GLITCH_SFX_URL));
+    // Global background music + transition SFX (either remote URLs or staticFile()).
+    if (backgroundMusicSrc) sources.add(resolveMediaSrc(backgroundMusicSrc));
+    if (glitchSfxSrc) sources.add(resolveMediaSrc(glitchSfxSrc));
+    if (whooshSfxSrc) sources.add(resolveMediaSrc(whooshSfxSrc));
+    if (chromaLeakSfxSrc) sources.add(resolveMediaSrc(chromaLeakSfxSrc));
+    if (cameraClickSfxSrc) sources.add(resolveMediaSrc(cameraClickSfxSrc));
+    if (isSuspenseOpening && suspenseGlitchSfxSrc) {
+      sources.add(resolveMediaSrc(suspenseGlitchSfxSrc));
+    }
 
     for (const scene of timeline.scenes) {
       if (scene.imageSrc) sources.add(resolveMediaSrc(scene.imageSrc));
@@ -1090,7 +1103,9 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       {timeline.audioSrc && (
         <Html5Audio src={resolveMediaSrc(timeline.audioSrc)} volume={voiceOverVolume} />
       )}
-      <Audio src={resolveMediaSrc(BACKGROUND_MUSIC_SRC)} volume={0.5} />
+      {backgroundMusicSrc ? (
+        <Audio src={resolveMediaSrc(backgroundMusicSrc)} volume={0.5} />
+      ) : null}
 
       {/* Suspense opening SFX: plays once and stops when audio ends (or at end of scene). */}
       {isSuspenseOpening && suspenseOpeningScene ? (
@@ -1098,7 +1113,9 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
           from={suspenseOpeningScene.startFrame}
           durationInFrames={suspenseOpeningScene.durationFrames}
         >
-          <Audio src={resolveMediaSrc(SUSPENSE_GLITCH_SFX_URL)} volume={0.2} />
+          {suspenseGlitchSfxSrc ? (
+            <Audio src={resolveMediaSrc(suspenseGlitchSfxSrc)} volume={0.2} />
+          ) : null}
         </Sequence>
       ) : null}
 
@@ -1108,6 +1125,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         const prevIndex = timeline.scenes[idx - 1].index;
         const transition = cutTransitions[idx] ?? 'none';
         if (transition !== 'glitch') return null;
+        if (!glitchSfxSrc) return null;
 
         const from = Math.max(0, next.startFrame - GLITCH_EDGE_FRAMES);
 
@@ -1116,7 +1134,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`glitch-sfx-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio src={resolveMediaSrc(GLITCH_FX_URL)} volume={0.9} />
+            <Audio src={resolveMediaSrc(glitchSfxSrc)} volume={0.9} />
           </Sequence>
         );
       })}
@@ -1127,6 +1145,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         const prevIndex = timeline.scenes[idx - 1].index;
         const transition = cutTransitions[idx] ?? 'none';
         if (transition !== 'whip') return null;
+        if (!whooshSfxSrc) return null;
 
         const from = Math.max(0, next.startFrame - WHIP_EDGE_FRAMES - 10);
 
@@ -1135,7 +1154,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`whoosh-sfx-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio src={resolveMediaSrc(WHOOSH_SFX_URL)} volume={0.85} />
+            <Audio src={resolveMediaSrc(whooshSfxSrc)} volume={0.85} />
           </Sequence>
         );
       })}
@@ -1146,6 +1165,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         const prevIndex = timeline.scenes[idx - 1].index;
         const transition = cutTransitions[idx] ?? 'none';
         if (transition !== 'flash') return null;
+        if (!cameraClickSfxSrc) return null;
 
         // Trigger right on the cut.
         const from = Math.max(0, next.startFrame - 8);
@@ -1155,7 +1175,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`flash-sfx-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio src={resolveMediaSrc(CAMERA_CLICK_SFX_URL)} volume={0.9} />
+            <Audio src={resolveMediaSrc(cameraClickSfxSrc)} volume={0.9} />
           </Sequence>
         );
       })}
@@ -1166,12 +1186,13 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         const prevIndex = timeline.scenes[idx - 1].index;
         const transition = cutTransitions[idx] ?? 'none';
         if (transition !== 'chromaLeak') return null;
+        if (!chromaLeakSfxSrc) return null;
 
         const from = Math.max(0, next.startFrame - CHROMA_EDGE_FRAMES - 8);
 
         return (
           <Sequence key={`chroma-sfx-${prevIndex}-${next.index}`} from={from}>
-            <Audio src={resolveMediaSrc(CHROMA_LEAK_SFX_URL)} volume={0.9} />
+            <Audio src={resolveMediaSrc(chromaLeakSfxSrc)} volume={0.9} />
           </Sequence>
         );
       })}
