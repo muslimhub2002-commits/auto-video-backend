@@ -48,16 +48,28 @@ const WHOOSH_CLOUDINARY_URL =
 const CHROMA_LEAK_SFX_CLOUDINARY_URL =
   'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768515034/whoosh-end-384629_1_k8lth5.mp3';
 
-// Lambda test-mode (static) configuration.
-// Enable by setting: REMOTION_LAMBDA_TEST_MODE=true
-const REMOTION_LAMBDA_TEST_REGION =
-  (process.env.REMOTION_LAMBDA_TEST_REGION ?? 'us-east-1') as any;
-const REMOTION_LAMBDA_TEST_FUNCTION_NAME =
+// Remotion Lambda rendering configuration.
+// Prefer the non-"TEST" env vars for production, but keep backwards compatibility.
+//
+// Enable Lambda rendering by setting either:
+// - REMOTION_RENDER_PROVIDER=lambda
+// - REMOTION_LAMBDA_TEST_MODE=true (legacy)
+const REMOTION_RENDER_PROVIDER = (process.env.REMOTION_RENDER_PROVIDER ?? '').trim().toLowerCase();
+
+const REMOTION_LAMBDA_REGION =
+  (process.env.REMOTION_LAMBDA_REGION ??
+    process.env.REMOTION_LAMBDA_TEST_REGION ??
+    'us-east-1') as any;
+
+const REMOTION_LAMBDA_FUNCTION_NAME =
+  process.env.REMOTION_LAMBDA_FUNCTION_NAME ??
   process.env.REMOTION_LAMBDA_TEST_FUNCTION_NAME ??
-  'remotion-render-4-0-409-mem2048mb-disk2048mb-120sec';
-const REMOTION_LAMBDA_TEST_SERVE_URL =
+  '';
+
+const REMOTION_LAMBDA_SERVE_URL =
+  process.env.REMOTION_LAMBDA_SERVE_URL ??
   process.env.REMOTION_LAMBDA_TEST_SERVE_URL ??
-  'https://remotionlambda-useast1-imtywr9xvj.s3.us-east-1.amazonaws.com/sites/ol6g09ze8m/index.html';
+  '';
 
 // Remotion publicDir relative paths (these are served via staticFile()).
 const REMOTION_VOICEOVER_REL = 'audio/voiceover.mp3';
@@ -117,7 +129,9 @@ export class RenderVideosService implements OnModuleInit {
   }
 
   private useLambdaTestMode(): boolean {
-    return process.env.REMOTION_LAMBDA_TEST_MODE === 'true';
+    // Legacy name kept for backwards compatibility.
+    if (process.env.REMOTION_LAMBDA_TEST_MODE === 'true') return true;
+    return REMOTION_RENDER_PROVIDER === 'lambda';
   }
 
   async createJob(params: {
@@ -616,9 +630,15 @@ export class RenderVideosService implements OnModuleInit {
     const lambdaClient: any = await import('@remotion/lambda/client');
     const lambda: any = await import('@remotion/lambda');
 
-    const region = REMOTION_LAMBDA_TEST_REGION;
-    let functionName = REMOTION_LAMBDA_TEST_FUNCTION_NAME;
-    const serveUrl = REMOTION_LAMBDA_TEST_SERVE_URL;
+    const region = REMOTION_LAMBDA_REGION;
+    let functionName = REMOTION_LAMBDA_FUNCTION_NAME;
+    const serveUrl = REMOTION_LAMBDA_SERVE_URL;
+
+    if (!serveUrl) {
+      throw new Error(
+        'Remotion Lambda is enabled but REMOTION_LAMBDA_SERVE_URL is not set. Deploy a Remotion site to S3 and set REMOTION_LAMBDA_SERVE_URL (or legacy REMOTION_LAMBDA_TEST_SERVE_URL).',
+      );
+    }
 
     // Optionally auto-pick a compatible function for the region.
     // This matches the Remotion docs flow and is useful if you redeploy functions.
@@ -629,13 +649,19 @@ export class RenderVideosService implements OnModuleInit {
       });
 
       const preferred = functions.find(
-        (f: any) => f?.functionName === REMOTION_LAMBDA_TEST_FUNCTION_NAME,
+        (f: any) => f?.functionName === REMOTION_LAMBDA_FUNCTION_NAME,
       );
 
       functionName =
         preferred?.functionName ??
         functions?.[0]?.functionName ??
-        REMOTION_LAMBDA_TEST_FUNCTION_NAME;
+        REMOTION_LAMBDA_FUNCTION_NAME;
+    }
+
+    if (!functionName) {
+      throw new Error(
+        'Remotion Lambda is enabled but no function name was resolved. Set REMOTION_LAMBDA_FUNCTION_NAME (or set it to "auto" to pick the first compatible function).',
+      );
     }
 
     const start = await lambdaClient.renderMediaOnLambda({
