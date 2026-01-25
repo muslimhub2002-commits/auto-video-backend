@@ -8,86 +8,38 @@ import * as os from 'os';
 import { v2 as cloudinary } from 'cloudinary';
 import OpenAI from 'openai';
 
-type SentenceInput = { text: string; isSuspense?: boolean };
+import type { SentenceInput, SentenceTiming, UploadedAsset } from './render-videos.types';
+import {
+  CHROMA_LEAK_SFX_CLOUDINARY_URL,
+  SUBSCRIBE_SENTENCE,
+  SUBSCRIBE_VIDEO_CLOUDINARY_URL,
+} from './render-videos.constants';
+import { buildTimeline as buildTimelineExternal, isShortScript } from './timeline.builder';
+import { alignAudioToSentences as alignAudioToSentencesExternal } from './alignment/audio-alignment';
+import { downloadUrlToBuffer as downloadUrlToBufferExternal } from './utils/net.utils';
+import { inferExt as inferExtExternal } from './utils/mime.utils';
+import { isCloudinaryUrl as isCloudinaryUrlExternal, isServerlessRuntime } from './utils/runtime.utils';
+import { withTimeout as withTimeoutExternal } from './utils/promise.utils';
+import {
+  REMOTION_BACKGROUND_REL,
+  REMOTION_CAMERA_CLICK_SFX_REL,
+  REMOTION_CHROMA_LEAK_SFX_REL,
+  REMOTION_GLITCH_SFX_REL,
+  REMOTION_SUBSCRIBE_VIDEO_REL,
+  REMOTION_SUSPENSE_GLITCH_SFX_REL,
+  REMOTION_VOICEOVER_REL,
+  REMOTION_WHOOSH_SFX_REL,
+  shouldUseRemotionLambda,
+} from './remotion/remotion.config';
+import {
+  renderWithRemotionLocal as renderWithRemotionLocalExternal,
+  renderWithRemotionOnLambda as renderWithRemotionOnLambdaExternal,
+} from './remotion/remotion-render';
 
-type UploadedAsset = {
-  buffer: Buffer;
-  originalName: string;
-  mimeType?: string;
-};
-
-type UrlAsset = {
-  url: string;
-};
-
-type SentenceTiming = {
-  index: number;
-  text: string;
-  startSeconds: number;
-  endSeconds: number;
-};
-
-const SUBSCRIBE_SENTENCE =
-  'Please Subscribe & Help us reach out to more people';
-
-const SUBSCRIBE_VIDEO_CLOUDINARY_URL =
-  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768053443/subscribe_ejq4q9.mp4';
-
-const BACKGROUND_AUDIO_CLOUDINARY_URL =
-  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057652/background_ny4lml.mp3';
-
-const GLITCH_FX_CLOUDINARY_URL =
-  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057729/glitch-fx_xkpwzq.mp3';
-
-const CAMERA_CLICK_CLOUDINARY_URL =
-  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057799/camera_click_mziq08.mp3';
-
-const WHOOSH_CLOUDINARY_URL =
-  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768057829/whoosh_ioio4g.mp3';
-
-const CHROMA_LEAK_SFX_CLOUDINARY_URL =
-  'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768515034/whoosh-end-384629_1_k8lth5.mp3';
-
-// Remotion Lambda rendering configuration.
-// Prefer the non-"TEST" env vars for production, but keep backwards compatibility.
-//
-// Enable Lambda rendering by setting either:
-// - REMOTION_RENDER_PROVIDER=lambda
-// - REMOTION_LAMBDA_TEST_MODE=true (legacy)
-const REMOTION_RENDER_PROVIDER = (process.env.REMOTION_RENDER_PROVIDER ?? '').trim().toLowerCase();
-
-const REMOTION_LAMBDA_REGION =
-  (process.env.REMOTION_LAMBDA_REGION ??
-    process.env.REMOTION_LAMBDA_TEST_REGION ??
-    'us-east-1') as any;
-
-const REMOTION_LAMBDA_FUNCTION_NAME =
-  process.env.REMOTION_LAMBDA_FUNCTION_NAME ??
-  process.env.REMOTION_LAMBDA_TEST_FUNCTION_NAME ??
-  '';
-
-const REMOTION_LAMBDA_SERVE_URL =
-  process.env.REMOTION_LAMBDA_SERVE_URL ??
-  process.env.REMOTION_LAMBDA_TEST_SERVE_URL ??
-  '';
-
-// Remotion publicDir relative paths (these are served via staticFile()).
-const REMOTION_VOICEOVER_REL = 'audio/voiceover.mp3';
-const REMOTION_BACKGROUND_REL = 'audio/background_3.mp3';
-const REMOTION_GLITCH_SFX_REL = 'sfx/glitch.mp3';
-const REMOTION_WHOOSH_SFX_REL = 'sfx/whoosh.mp3';
-const REMOTION_CAMERA_CLICK_SFX_REL = 'sfx/camera_click.mp3';
-const REMOTION_CHROMA_LEAK_SFX_REL = 'sfx/chroma_leak.mp3';
-const REMOTION_SUSPENSE_GLITCH_SFX_REL = 'sfx/suspense-glitch.mp3';
-const REMOTION_SUBSCRIBE_VIDEO_REL = 'videos/subscribe.mp4';
 
 @Injectable()
 export class RenderVideosService implements OnModuleInit {
   private readonly openai: OpenAI | null;
-
-  private static remotionServeUrlPromise: Promise<string> | null = null;
-  private static remotionServeUrl: string | null = null;
-  private static remotionServeUrlPublicDir: string | null = null;
 
   constructor(
     @InjectDataSource()
@@ -125,13 +77,12 @@ export class RenderVideosService implements OnModuleInit {
   }
 
   private isCloudinaryUrl(url: string): boolean {
-    return /^(https?:\/\/)?res\.cloudinary\.com\//i.test(url || '');
+    return isCloudinaryUrlExternal(url);
   }
 
   private useLambdaTestMode(): boolean {
     // Legacy name kept for backwards compatibility.
-    if (process.env.REMOTION_LAMBDA_TEST_MODE === 'true') return true;
-    return REMOTION_RENDER_PROVIDER === 'lambda';
+    return shouldUseRemotionLambda();
   }
 
   async createJob(params: {
@@ -170,7 +121,7 @@ export class RenderVideosService implements OnModuleInit {
   }
 
   private isShort(scriptLength: string) {
-    return scriptLength.trim().toLowerCase().startsWith('30');
+    return isShortScript(scriptLength);
   }
 
   private async downloadUrlToBuffer(params: {
@@ -178,43 +129,7 @@ export class RenderVideosService implements OnModuleInit {
     maxBytes: number;
     label: string;
   }): Promise<{ buffer: Buffer; mimeType?: string }> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60_000);
-    try {
-      const res = await fetch(params.url, {
-        method: 'GET',
-        redirect: 'follow',
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        throw new Error(
-          `Failed to download ${params.label} (${res.status}): ${res.statusText}`,
-        );
-      }
-
-      const contentLength = res.headers.get('content-length');
-      if (contentLength) {
-        const bytes = Number(contentLength);
-        if (Number.isFinite(bytes) && bytes > params.maxBytes) {
-          throw new Error(
-            `Downloaded ${params.label} is too large (${bytes} bytes)`,
-          );
-        }
-      }
-
-      const arrayBuffer = await res.arrayBuffer();
-      if (arrayBuffer.byteLength > params.maxBytes) {
-        throw new Error(
-          `Downloaded ${params.label} is too large (${arrayBuffer.byteLength} bytes)`,
-        );
-      }
-
-      const mimeType = res.headers.get('content-type') ?? undefined;
-      return { buffer: Buffer.from(arrayBuffer), mimeType };
-    } finally {
-      clearTimeout(timeout);
-    }
+    return downloadUrlToBufferExternal(params);
   }
 
   private buildTimeline(params: {
@@ -230,108 +145,7 @@ export class RenderVideosService implements OnModuleInit {
     useLowerResolution?: boolean;
     enableGlitchTransitions?: boolean;
   }) {
-    const baseFps = 30;
-    const fps = params.useLowerFps ? 24 : baseFps;
-    const isShort =
-      typeof params.isShort === 'boolean'
-        ? params.isShort
-        : this.isShort(params.scriptLength);
-    const width = isShort
-      ? params.useLowerResolution
-        ? 720
-        : 1080
-      : params.useLowerResolution
-        ? 1280
-        : 1920;
-    const height = isShort
-      ? params.useLowerResolution
-        ? 1280
-        : 1920
-      : params.useLowerResolution
-        ? 720
-        : 1080;
-
-    const T = Math.max(1, params.audioDurationSeconds || 1);
-    const N = Math.max(1, params.sentences.length || 1);
-    const glitchSceneIndex = params.enableGlitchTransitions
-      ? Math.floor(N / 2)
-      : -1;
-
-    const nominalEndFrames: number[] = params.sentences.map((s, index) => {
-      const timing = params.sentenceTimings?.[index];
-      const nextTiming =
-        index + 1 < N ? params.sentenceTimings?.[index + 1] : undefined;
-
-      const startSeconds =
-        timing && typeof timing.startSeconds === 'number'
-          ? Math.max(0, Math.min(timing.startSeconds, T))
-          : (T * index) / N;
-
-      const rawEndSeconds =
-        timing && typeof timing.endSeconds === 'number'
-          ? timing.endSeconds
-          : nextTiming && typeof nextTiming.startSeconds === 'number'
-            ? nextTiming.startSeconds
-            : (T * (index + 1)) / N;
-
-      const endSeconds = Math.max(
-        startSeconds + 1 / fps,
-        Math.min(Math.max(0, rawEndSeconds), T),
-      );
-
-      // Use ceil for the end to avoid truncating away the last visible frame.
-      return Math.ceil(endSeconds * fps);
-    });
-
-    let cursor = 0;
-    const scenes = params.sentences.map((s, index) => {
-      const isSubscribe =
-        (s.text || '').trim() === SUBSCRIBE_SENTENCE &&
-        !!params.subscribeVideoSrc;
-
-      // Critical: ensure scenes are frame-contiguous.
-      // Any gap from rounding would otherwise show as black in Remotion.
-      const startFrame = index === 0 ? 0 : cursor;
-      const endFrame = Math.max(startFrame + 1, nominalEndFrames[index] ?? startFrame + 1);
-      const durationFrames = endFrame - startFrame;
-      cursor = endFrame;
-
-      return {
-        index,
-        text: s.text,
-        isSuspense: !!s.isSuspense,
-        imageSrc: isSubscribe ? undefined : params.imagePaths[index],
-        videoSrc: isSubscribe ? params.subscribeVideoSrc : undefined,
-        startFrame,
-        durationFrames,
-        useGlitch: index === glitchSceneIndex,
-      };
-    });
-
-    const durationInFrames =
-      scenes.length > 0
-        ? scenes[scenes.length - 1].startFrame +
-        scenes[scenes.length - 1].durationFrames
-        : Math.ceil(T * fps);
-
-    return {
-      width,
-      height,
-      fps,
-      durationInFrames,
-      audioSrc: params.audioSrc,
-      assets: {
-        backgroundMusicSrc: BACKGROUND_AUDIO_CLOUDINARY_URL,
-        glitchSfxSrc: GLITCH_FX_CLOUDINARY_URL,
-        whooshSfxSrc: WHOOSH_CLOUDINARY_URL,
-        cameraClickSfxSrc: CAMERA_CLICK_CLOUDINARY_URL,
-        chromaLeakSfxSrc: CHROMA_LEAK_SFX_CLOUDINARY_URL,
-        // Leave unset (or empty) to let the composition fall back to local `staticFile()`.
-        suspenseGlitchSfxSrc: '',
-        subscribeVideoSrc: SUBSCRIBE_VIDEO_CLOUDINARY_URL,
-      },
-      scenes,
-    };
+    return buildTimelineExternal(params);
   }
 
   private getStorageRoot() {
@@ -348,12 +162,7 @@ export class RenderVideosService implements OnModuleInit {
   }
 
   isServerlessRuntime() {
-    return (
-      !!process.env.VERCEL ||
-      !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
-      !!process.env.LAMBDA_TASK_ROOT ||
-      (process.env.AWS_EXECUTION_ENV ?? '').toLowerCase().includes('lambda')
-    );
+    return isServerlessRuntime();
   }
 
   private startHeartbeat(jobId: string, intervalMs = 30_000) {
@@ -413,18 +222,7 @@ export class RenderVideosService implements OnModuleInit {
     mimeType?: string;
     fallback: string;
   }) {
-    const fromName = params.originalName ? extname(params.originalName) : '';
-    if (fromName) return fromName;
-
-    const mt = (params.mimeType ?? '').toLowerCase();
-    if (mt.includes('png')) return '.png';
-    if (mt.includes('jpeg') || mt.includes('jpg')) return '.jpg';
-    if (mt.includes('webp')) return '.webp';
-    if (mt.includes('gif')) return '.gif';
-    if (mt.includes('mp3')) return '.mp3';
-    if (mt.includes('wav')) return '.wav';
-    if (mt.includes('mpeg')) return '.mp3';
-    return params.fallback;
+    return inferExtExternal(params);
   }
 
   private getRemotionPublicRootDir() {
@@ -439,18 +237,7 @@ export class RenderVideosService implements OnModuleInit {
     ms: number,
     label: string,
   ): Promise<T> {
-    let timeoutId: NodeJS.Timeout | null = null;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => {
-        reject(new Error(`${label} timed out after ${ms}ms`));
-      }, ms);
-    });
-
-    try {
-      return await Promise.race([promise, timeoutPromise]);
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
-    }
+    return withTimeoutExternal(promise, ms, label);
   }
 
   private ensureCloudinaryConfigured() {
@@ -552,215 +339,27 @@ export class RenderVideosService implements OnModuleInit {
     outputFsPath: string;
     publicDir: string;
   }) {
-    if (this.useLambdaTestMode()) {
-      await this.renderWithRemotionOnLambda({
+    if (shouldUseRemotionLambda()) {
+      await renderWithRemotionOnLambdaExternal({
         jobId: params.jobId,
         timeline: params.timeline,
         outputFsPath: params.outputFsPath,
+        onProgress: params.jobId
+          ? async () => {
+              await this.jobsRepo
+                .save({ id: params.jobId, lastProgressAt: new Date() } as any)
+                .catch(() => undefined);
+            }
+          : undefined,
       });
       return;
     }
 
-    // Dynamic imports so that type checking works even if packages are not installed yet.
-    const bundler: any = await import('@remotion/bundler');
-    const renderer: any = await import('@remotion/renderer');
-
-    const entryPoint = join(process.cwd(), 'remotion', 'src', 'index.tsx');
-
-    const concurrencyRaw = Number(process.env.REMOTION_CONCURRENCY ?? '');
-    const defaultConcurrency = Math.min(2, Math.max(1, os.cpus().length));
-    const concurrency = Number.isFinite(concurrencyRaw) && concurrencyRaw > 0
-      ? Math.max(1, Math.floor(concurrencyRaw))
-      : defaultConcurrency;
-
-    const chromiumOptions: any = {
-      // Helpful on constrained Linux environments.
-      disableWebSecurity: true,
-      // Remotion will pass these through to Chromium.
-      // Keep it minimal to reduce surprises.
-      // If you still hit crashes, consider setting:
-      // REMOTION_CHROMIUM_DISABLE_SANDBOX=true
-    };
-
-    if (process.env.REMOTION_CHROMIUM_DISABLE_SANDBOX === 'true') {
-      chromiumOptions.disableSandbox = true;
-    }
-
-    const serveUrl = await this.getOrCreateRemotionServeUrl({
-      bundler,
-      entryPoint,
+    await renderWithRemotionLocalExternal({
+      timeline: params.timeline,
+      outputFsPath: params.outputFsPath,
       publicDir: params.publicDir,
     });
-
-    const compositions = await renderer.getCompositions(serveUrl, {
-      inputProps: { timeline: params.timeline },
-      chromiumOptions,
-    });
-    const composition = compositions.find((c: any) => c.id === 'AutoVideo') ?? {
-      id: 'AutoVideo',
-      width: params.timeline.width,
-      height: params.timeline.height,
-      fps: params.timeline.fps,
-      durationInFrames: params.timeline.durationInFrames,
-    };
-
-    await renderer.renderMedia({
-      composition: {
-        ...composition,
-        width: params.timeline.width,
-        height: params.timeline.height,
-        fps: params.timeline.fps,
-        durationInFrames: params.timeline.durationInFrames,
-      },
-      serveUrl,
-      codec: 'h264',
-      outputLocation: params.outputFsPath,
-      inputProps: { timeline: params.timeline },
-      chromiumOptions,
-      concurrency: 2,
-      timeoutInMilliseconds: 600_000,
-    });
-  }
-
-  private async renderWithRemotionOnLambda(params: {
-    jobId?: string;
-    timeline: any;
-    outputFsPath: string;
-  }) {
-    const lambdaClient: any = await import('@remotion/lambda/client');
-    const lambda: any = await import('@remotion/lambda');
-
-    const region = REMOTION_LAMBDA_REGION;
-    let functionName = REMOTION_LAMBDA_FUNCTION_NAME;
-    const serveUrl = REMOTION_LAMBDA_SERVE_URL;
-
-    if (!serveUrl) {
-      throw new Error(
-        'Remotion Lambda is enabled but REMOTION_LAMBDA_SERVE_URL is not set. Deploy a Remotion site to S3 and set REMOTION_LAMBDA_SERVE_URL (or legacy REMOTION_LAMBDA_TEST_SERVE_URL).',
-      );
-    }
-
-    // Optionally auto-pick a compatible function for the region.
-    // This matches the Remotion docs flow and is useful if you redeploy functions.
-    if (!functionName || functionName.trim().toLowerCase() === 'auto') {
-      const functions = await lambdaClient.getFunctions({
-        region,
-        compatibleOnly: true,
-      });
-
-      const preferred = functions.find(
-        (f: any) => f?.functionName === REMOTION_LAMBDA_FUNCTION_NAME,
-      );
-
-      functionName =
-        preferred?.functionName ??
-        functions?.[0]?.functionName ??
-        REMOTION_LAMBDA_FUNCTION_NAME;
-    }
-
-    if (!functionName) {
-      throw new Error(
-        'Remotion Lambda is enabled but no function name was resolved. Set REMOTION_LAMBDA_FUNCTION_NAME (or set it to "auto" to pick the first compatible function).',
-      );
-    }
-
-    const start = await lambdaClient.renderMediaOnLambda({
-      region,
-      functionName,
-      serveUrl,
-      composition: 'AutoVideo',
-      codec: 'h264',
-      privacy: 'public',
-      inputProps: { timeline: params.timeline },
-      // Keep defaults unless overridden.
-      // framesPerLambda: 20,
-    });
-
-    const renderId: string = start.renderId;
-    const bucketName: string = start.bucketName;
-
-    const pollEveryMsRaw = Number(process.env.REMOTION_LAMBDA_POLL_MS ?? '5000');
-    const pollEveryMs = Number.isFinite(pollEveryMsRaw)
-      ? Math.max(2000, Math.floor(pollEveryMsRaw))
-      : 5000;
-
-    // Poll until done.
-    // Note: we do not currently store progress percentage in DB; we only
-    // heartbeat `lastProgressAt` so stale-job logic does not trigger.
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const progress = await lambdaClient.getRenderProgress({
-        region,
-        functionName,
-        bucketName,
-        renderId,
-      });
-
-      if (params.jobId) {
-        await this.jobsRepo
-          .save({ id: params.jobId, lastProgressAt: new Date() } as any)
-          .catch(() => undefined);
-      }
-
-      if (progress?.fatalErrorEncountered) {
-        const first = Array.isArray(progress?.errors) ? progress.errors[0] : null;
-        const message =
-          (first as any)?.message ||
-          (first as any)?.stack ||
-          'Lambda render failed (fatalErrorEncountered=true)';
-        throw new Error(message);
-      }
-
-      if (progress?.done) {
-        break;
-      }
-
-      await new Promise((r) => setTimeout(r, pollEveryMs));
-    }
-
-    // Download the final artifact locally so the existing Cloudinary upload flow stays the same.
-    await lambda.downloadMedia({
-      region,
-      bucketName,
-      renderId,
-      outPath: params.outputFsPath,
-    });
-  }
-
-  private async getOrCreateRemotionServeUrl(params: {
-    bundler: any;
-    entryPoint: string;
-    publicDir: string;
-  }) {
-    if (
-      RenderVideosService.remotionServeUrl &&
-      RenderVideosService.remotionServeUrlPublicDir === params.publicDir
-    ) {
-      return RenderVideosService.remotionServeUrl;
-    }
-
-    if (
-      RenderVideosService.remotionServeUrlPromise &&
-      RenderVideosService.remotionServeUrlPublicDir === params.publicDir
-    ) {
-      return RenderVideosService.remotionServeUrlPromise;
-    }
-
-    RenderVideosService.remotionServeUrlPublicDir = params.publicDir;
-    RenderVideosService.remotionServeUrlPromise = params.bundler
-      .bundle({
-        entryPoint: params.entryPoint,
-        publicDir: params.publicDir,
-      })
-      .then((url: string) => {
-        RenderVideosService.remotionServeUrl = url;
-        return url;
-      })
-      .finally(() => {
-        RenderVideosService.remotionServeUrlPromise = null;
-      });
-
-    return RenderVideosService.remotionServeUrlPromise;
   }
 
   private prepareRemotionPublicDir(jobId: string) {
@@ -1133,497 +732,12 @@ export class RenderVideosService implements OnModuleInit {
     sentences: SentenceInput[],
     audioDurationSeconds: number,
   ): Promise<SentenceTiming[]> {
-    const fallback = () =>
-      this.alignByVoiceActivity(audioPath, sentences, audioDurationSeconds);
-
-    // Debug logging to inspect whether OpenAI-based alignment is used.
-
-    console.log('[RenderVideosService] alignAudioToSentences called', {
+    return alignAudioToSentencesExternal({
+      openai: this.openai,
       audioPath,
+      sentences,
       audioDurationSeconds,
-      sentenceCount: sentences.length,
-      hasOpenAI: !!this.openai,
+      withTimeout: withTimeoutExternal,
     });
-
-    if (!this.openai) {
-      console.log(
-        '[RenderVideosService] OpenAI client not configured, using fallback alignment',
-      );
-      return fallback();
-    }
-
-    if (!fs.existsSync(audioPath)) {
-      console.warn('[RenderVideosService] Audio file not found for alignment', {
-        audioPath,
-      });
-      return fallback();
-    }
-
-    try {
-      const model = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe';
-      // Newer GPT-4o-based transcription models only support 'json' or 'text'.
-      const responseFormat = model.startsWith('gpt-4o')
-        ? 'json'
-        : 'verbose_json';
-
-      console.log(
-        '[RenderVideosService] Calling OpenAI audio.transcriptions.create',
-        {
-          model,
-          responseFormat,
-        },
-      );
-
-      const transcription: any = await this.withTimeout(
-        this.openai.audio.transcriptions.create({
-          file: fs.createReadStream(audioPath),
-          model,
-          response_format: responseFormat as any,
-        } as any),
-        Number(process.env.OPENAI_TRANSCRIBE_TIMEOUT_MS ?? '120000'),
-        'OpenAI transcription',
-      );
-
-      let segments: any[] = Array.isArray(transcription?.segments)
-        ? transcription.segments
-        : [];
-
-      console.log('[RenderVideosService] OpenAI transcription result', {
-        hasSegments: Array.isArray(transcription?.segments),
-        segmentCount: segments.length,
-      });
-
-      if (!segments.length) {
-        // If the chosen model (e.g. gpt-4o-transcribe) does not return
-        // word-level segments, fall back to Whisper, which does.
-        const whisperModel = 'whisper-1';
-
-        console.warn(
-          '[RenderVideosService] Primary transcription model returned no segments; retrying with Whisper',
-          { primaryModel: model, whisperModel },
-        );
-
-        const whisperTranscription: any = await this.withTimeout(
-          this.openai.audio.transcriptions.create({
-            file: fs.createReadStream(audioPath),
-            model: whisperModel,
-            response_format: 'verbose_json' as any,
-          } as any),
-          Number(process.env.OPENAI_TRANSCRIBE_TIMEOUT_MS ?? '120000'),
-          'OpenAI Whisper transcription',
-        );
-
-        segments = Array.isArray(whisperTranscription?.segments)
-          ? whisperTranscription.segments
-          : [];
-
-        console.log('[RenderVideosService] Whisper transcription result', {
-          hasSegments: Array.isArray(whisperTranscription?.segments),
-          segmentCount: segments.length,
-        });
-
-        if (!segments.length) {
-          console.warn(
-            '[RenderVideosService] Whisper also returned no segments, using fallback alignment',
-          );
-          return fallback();
-        }
-      }
-
-      const normalizeWord = (raw: string) =>
-        raw
-          .toString()
-          .toLowerCase()
-          // Trim leading/trailing punctuation so "world!" matches "world".
-          .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
-
-      type WordTiming = {
-        token: string;
-        startSeconds: number;
-        endSeconds: number;
-      };
-      const wordsTimeline: WordTiming[] = [];
-
-      for (const seg of segments) {
-        const segStartRaw = seg.start;
-        const segEndRaw = seg.end;
-        const segStart =
-          typeof segStartRaw === 'number'
-            ? segStartRaw
-            : parseFloat(segStartRaw);
-        const segEnd =
-          typeof segEndRaw === 'number' ? segEndRaw : parseFloat(segEndRaw);
-
-        if (!Number.isFinite(segStart) || !Number.isFinite(segEnd)) continue;
-        if (segEnd <= segStart) continue;
-
-        const rawText = seg.text ?? '';
-        const text = rawText.toString().trim();
-        if (!text) continue;
-
-        const tokens = text.split(/\s+/u).filter(Boolean);
-        const span = segEnd - segStart;
-        const count = tokens.length || 1;
-
-        for (let i = 0; i < count; i += 1) {
-          const wStart = segStart + (span * i) / count;
-          const wEnd = segStart + (span * (i + 1)) / count;
-          const token = normalizeWord(tokens[i] ?? '');
-          if (!token) {
-            continue;
-          }
-          wordsTimeline.push({ token, startSeconds: wStart, endSeconds: wEnd });
-        }
-      }
-
-      if (!wordsTimeline.length) {
-        console.warn(
-          '[RenderVideosService] No wordsTimeline built from transcription, using fallback alignment',
-        );
-        return fallback();
-      }
-
-      const timings: SentenceTiming[] = [];
-      let wordIndex = 0;
-
-      const lastWordEnd =
-        (wordsTimeline[wordsTimeline.length - 1]?.endSeconds ??
-          audioDurationSeconds) ||
-        1;
-      const T = Math.max(1, lastWordEnd);
-
-      const cleaned = sentences.map((s) => (s.text || '').trim());
-      const transcriptTokens = wordsTimeline.map((w) => w.token);
-
-      const findBestMatch = (
-        startFrom: number,
-        sentenceTokens: string[],
-      ): { start: number; end: number } | null => {
-        if (!sentenceTokens.length) return null;
-
-        const maxStart = transcriptTokens.length - sentenceTokens.length;
-        if (maxStart < startFrom) return null;
-
-        let bestScore = 0;
-        let best: { start: number; end: number } | null = null;
-
-        for (let i = startFrom; i <= maxStart; i += 1) {
-          let matches = 0;
-          for (let j = 0; j < sentenceTokens.length; j += 1) {
-            if (transcriptTokens[i + j] === sentenceTokens[j]) {
-              matches += 1;
-            }
-          }
-
-          const score = matches / sentenceTokens.length;
-          if (score > bestScore && score >= 0.5) {
-            bestScore = score;
-            best = { start: i, end: i + sentenceTokens.length - 1 };
-          }
-        }
-
-        return best;
-      };
-
-      for (let i = 0; i < cleaned.length; i += 1) {
-        const text = cleaned[i];
-        if (!text) {
-          const prevEnd = i > 0 ? timings[i - 1].endSeconds : 0;
-          const endSeconds = Math.min(T, prevEnd + 0.1);
-          timings.push({
-            index: i,
-            text,
-            startSeconds: prevEnd,
-            endSeconds,
-          });
-          continue;
-        }
-
-        const sentenceTokens = text
-          .split(/\s+/u)
-          .filter(Boolean)
-          .map((t) => normalizeWord(t))
-          .filter(Boolean);
-
-        if (!sentenceTokens.length) {
-          const prevEnd = i > 0 ? timings[i - 1].endSeconds : 0;
-          const endSeconds = Math.min(T, prevEnd + 0.1);
-          timings.push({
-            index: i,
-            text,
-            startSeconds: prevEnd,
-            endSeconds,
-          });
-          continue;
-        }
-
-        const match = findBestMatch(wordIndex, sentenceTokens);
-
-        if (!match) {
-          const prevEnd = timings.length
-            ? timings[timings.length - 1].endSeconds
-            : 0;
-          const remainingDuration = Math.max(0.1, T - prevEnd);
-          const remaining = this.alignByWordCount(
-            sentences.slice(i),
-            remainingDuration,
-          );
-
-          for (const r of remaining) {
-            timings.push({
-              index: i + r.index,
-              text: r.text,
-              startSeconds: prevEnd + r.startSeconds,
-              endSeconds: prevEnd + r.endSeconds,
-            });
-          }
-
-          break;
-        }
-
-        const firstWord = wordsTimeline[match.start];
-        const lastWord = wordsTimeline[match.end];
-
-        let startSeconds = firstWord.startSeconds;
-        let endSeconds = lastWord.endSeconds;
-
-        if (!Number.isFinite(startSeconds)) {
-          startSeconds = 0;
-        }
-        if (!Number.isFinite(endSeconds) || endSeconds <= startSeconds) {
-          endSeconds = startSeconds + 0.1;
-        }
-
-        startSeconds = Math.max(0, Math.min(startSeconds, T));
-        endSeconds = Math.max(startSeconds + 0.05, Math.min(endSeconds, T));
-
-        timings.push({
-          index: i,
-          text,
-          startSeconds,
-          endSeconds,
-        });
-
-        wordIndex = match.end + 1;
-      }
-
-      if (timings.length) {
-        const last = timings[timings.length - 1];
-        if (last.endSeconds < T) {
-          last.endSeconds = T;
-        }
-      }
-
-      console.log(
-        '[RenderVideosService] OpenAI-based alignment produced timings',
-        {
-          timingCount: timings.length,
-        },
-      );
-
-      return timings;
-    } catch (err) {
-      console.error(
-        '[RenderVideosService] Error during OpenAI alignment, using fallback',
-        {
-          message: err?.message,
-        },
-      );
-      return fallback();
-    }
-  }
-
-  private async alignByVoiceActivity(
-    audioPath: string,
-    sentences: SentenceInput[],
-    audioDurationSeconds: number,
-  ): Promise<SentenceTiming[]> {
-    try {
-      // Use Remotion's audio analysis to detect silent and audible parts
-      // so that pauses in the voice-over are reflected in the timing.
-      const { getSilentParts } = await import('@remotion/renderer');
-      const result: any = await getSilentParts({
-        src: audioPath,
-        // Ignore very short gaps; treat longer gaps as real pauses.
-        minDurationInSeconds: 0.2,
-        noiseThresholdInDecibels: -35,
-      });
-
-      const audible = Array.isArray(result?.audibleParts)
-        ? result.audibleParts
-        : [];
-
-      if (!audible.length) {
-        return this.alignByWordCount(sentences, audioDurationSeconds);
-      }
-
-      const segments = audible
-        .map((p: any) => ({
-          start: Number(p.startInSeconds),
-          end: Number(p.endInSeconds),
-        }))
-        .filter(
-          (p) =>
-            Number.isFinite(p.start) &&
-            Number.isFinite(p.end) &&
-            p.end > p.start,
-        )
-        .sort((a, b) => a.start - b.start);
-
-      if (!segments.length) {
-        return this.alignByWordCount(sentences, audioDurationSeconds);
-      }
-
-      const voicedDuration = segments.reduce(
-        (sum, s) => sum + (s.end - s.start),
-        0,
-      );
-
-      if (!Number.isFinite(voicedDuration) || voicedDuration <= 0) {
-        return this.alignByWordCount(sentences, audioDurationSeconds);
-      }
-
-      // First, compute timings on a "compressed" timeline that only
-      // contains the voiced parts (no silences) so that sentences are
-      // distributed proportionally by word count over spoken time only.
-      const compressedTimings = this.alignByWordCount(
-        sentences,
-        voicedDuration,
-      );
-
-      // Build a mapping from compressed time -> real time that inserts
-      // back all the silent gaps between voiced segments.
-      type SegmentMap = {
-        realStart: number;
-        realEnd: number;
-        compressedStart: number;
-        compressedEnd: number;
-      };
-
-      const segmentMaps: SegmentMap[] = [];
-      let compressedCursor = 0;
-      for (const seg of segments) {
-        const length = seg.end - seg.start;
-        const mapped: SegmentMap = {
-          realStart: seg.start,
-          realEnd: seg.end,
-          compressedStart: compressedCursor,
-          compressedEnd: compressedCursor + length,
-        };
-        segmentMaps.push(mapped);
-        compressedCursor += length;
-      }
-
-      const mapTime = (tCompressed: number): number => {
-        if (!Number.isFinite(tCompressed) || tCompressed <= 0) {
-          return segments[0].start;
-        }
-
-        const lastSeg = segmentMaps[segmentMaps.length - 1];
-        if (tCompressed >= lastSeg.compressedEnd) {
-          return lastSeg.realEnd;
-        }
-
-        for (const seg of segmentMaps) {
-          if (
-            tCompressed >= seg.compressedStart &&
-            tCompressed <= seg.compressedEnd
-          ) {
-            const within = tCompressed - seg.compressedStart;
-            return seg.realStart + within;
-          }
-        }
-
-        return lastSeg.realEnd;
-      };
-
-      const mappedTimings: SentenceTiming[] = compressedTimings.map((t) => {
-        const realStart = mapTime(t.startSeconds);
-        const realEnd = Math.max(realStart + 0.05, mapTime(t.endSeconds));
-
-        return {
-          index: t.index,
-          text: t.text,
-          startSeconds: realStart,
-          endSeconds: realEnd,
-        };
-      });
-
-      const realDuration =
-        Number(result?.durationInSeconds) || audioDurationSeconds || 1;
-      const T = Math.max(1, realDuration);
-
-      // Clamp everything to the actual audio duration and ensure
-      // the last sentence ends exactly at T.
-      for (const t of mappedTimings) {
-        if (!Number.isFinite(t.startSeconds) || t.startSeconds < 0) {
-          t.startSeconds = 0;
-        }
-        if (!Number.isFinite(t.endSeconds) || t.endSeconds <= t.startSeconds) {
-          t.endSeconds = t.startSeconds + 0.1;
-        }
-        t.startSeconds = Math.max(0, Math.min(t.startSeconds, T));
-        t.endSeconds = Math.max(
-          t.startSeconds + 0.05,
-          Math.min(t.endSeconds, T),
-        );
-      }
-
-      if (mappedTimings.length) {
-        const last = mappedTimings[mappedTimings.length - 1];
-        if (last.endSeconds < T) {
-          last.endSeconds = T;
-        }
-      }
-
-      return mappedTimings;
-    } catch {
-      // If audio analysis fails for any reason, fall back to
-      // simple proportional alignment.
-      return this.alignByWordCount(sentences, audioDurationSeconds);
-    }
-  }
-
-  private alignByWordCount(
-    sentences: SentenceInput[],
-    audioDurationSeconds: number,
-  ): SentenceTiming[] {
-    const T = Math.max(1, audioDurationSeconds || 1);
-    const cleaned = sentences.map((s) => (s.text || '').trim());
-
-    // Compute a simple weight per sentence based on word count, with a
-    // small floor so very short sentences still receive some time.
-    const rawWeights = cleaned.map((text) => {
-      if (!text) return 1;
-      const words = text.split(/\s+/).filter(Boolean);
-      return Math.max(1, words.length);
-    });
-
-    const totalWeight = rawWeights.reduce((sum, w) => sum + w, 0) || 1;
-
-    let accumulatedWeight = 0;
-    const timings: SentenceTiming[] = rawWeights.map((weight, index) => {
-      const startRatio = accumulatedWeight / totalWeight;
-      accumulatedWeight += weight;
-      let endRatio = accumulatedWeight / totalWeight;
-
-      // Ensure the very last sentence ends exactly at T to avoid small gaps
-      // or overshoots due to rounding.
-      if (index === rawWeights.length - 1) {
-        endRatio = 1;
-      }
-
-      const startSeconds = startRatio * T;
-      const endSeconds = Math.max(startSeconds + 0.1, endRatio * T);
-
-      return {
-        index,
-        text: cleaned[index],
-        startSeconds,
-        endSeconds,
-      };
-    });
-
-    return timings;
   }
 }
