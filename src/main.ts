@@ -33,7 +33,6 @@ async function bootstrap() {
       'http://localhost:3001',
       'http://localhost:3000',
       'https://auto-video-frontend.vercel.app',
-      'https://auto-video-backend.railway.internal',
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true,
