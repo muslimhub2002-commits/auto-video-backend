@@ -47,6 +47,17 @@ Set these env vars on your deployed backend (Render/Fly/AWS/etc):
 - `REMOTION_LAMBDA_FUNCTION_NAME=...`
 - `REMOTION_LAMBDA_SERVE_URL=...`
 
+### Serve URL requirements (plain S3)
+
+For stability, the `REMOTION_LAMBDA_SERVE_URL` must point to a **static Remotion site hosted on S3** (the output of `deploySite()`), not your Vercel app.
+
+- ✅ Correct: use the **exact** `site.serveUrl` printed by `npm run remotion:lambda:deploy`
+  - It usually looks like: `https://<bucket>.s3.<region>.amazonaws.com/sites/<siteName>/index.html`
+- ❌ Incorrect: pointing to a Vercel/Next.js URL (Lambda needs a static Remotion bundle)
+- ❌ Incorrect: using the bucket root like `https://<bucket>.s3.amazonaws.com/` (must end in `index.html`)
+
+If you accidentally set a bad URL, the backend will now fail fast with a clear error.
+
 Optional:
 
 - `REMOTION_LAMBDA_POLL_MS=5000`

@@ -76,6 +76,9 @@ async function main() {
   console.log(`REMOTION_LAMBDA_REGION=${region}`);
   console.log(`REMOTION_LAMBDA_FUNCTION_NAME=${fn.functionName}`);
   console.log(`REMOTION_LAMBDA_SERVE_URL=${site.serveUrl}`);
+  console.log(
+    '\nNOTE: REMOTION_LAMBDA_SERVE_URL must be the static Remotion site URL (deploySite() output, usually ends with /sites/<siteName>/index.html). Do not point it at your Vercel app or at the S3 bucket root.',
+  );
   console.log('\nOptional (polling interval ms):');
   console.log('REMOTION_LAMBDA_POLL_MS=5000');
 }

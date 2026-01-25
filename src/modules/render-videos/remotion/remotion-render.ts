@@ -7,6 +7,69 @@ import {
   REMOTION_LAMBDA_SERVE_URL,
 } from './remotion.config';
 
+const getPositiveIntOrNull = (value: unknown) => {
+  const num = typeof value === 'string' ? Number.parseInt(value, 10) : Number.NaN;
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.floor(num);
+};
+
+const normalizeAndValidateLambdaServeUrl = (raw: string) => {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) {
+    throw new Error(
+      'Remotion Lambda is enabled but REMOTION_LAMBDA_SERVE_URL is not set. Deploy a Remotion site to S3 and set REMOTION_LAMBDA_SERVE_URL (or legacy REMOTION_LAMBDA_TEST_SERVE_URL).',
+    );
+  }
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error(
+      `Invalid REMOTION_LAMBDA_SERVE_URL: "${trimmed}". Expected an https URL to the Remotion site index.html on S3 (deploySite() output).`,
+    );
+  }
+
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error(
+      `Invalid REMOTION_LAMBDA_SERVE_URL protocol: "${url.protocol}". Expected https (or http for local testing).`,
+    );
+  }
+
+  const host = url.hostname.toLowerCase();
+  if (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.vercel.app') ||
+    host.includes('vercel.app')
+  ) {
+    throw new Error(
+      `REMOTION_LAMBDA_SERVE_URL must point to a Remotion bundle hosted on S3 (or CloudFront), not "${url.hostname}". Use the exact site.serveUrl printed by the deploy script (usually .../sites/<siteName>/index.html).`,
+    );
+  }
+
+  // For Remotion deploySite(), the serveUrl typically ends with /sites/<siteName>/index.html.
+  // Normalize common mistakes like providing the directory instead of index.html.
+  if (url.pathname.endsWith('/')) {
+    url.pathname = `${url.pathname}index.html`;
+  }
+
+  if (!url.pathname.toLowerCase().endsWith('index.html')) {
+    // If the user provided bucket root, this is almost certainly wrong.
+    throw new Error(
+      `REMOTION_LAMBDA_SERVE_URL must end with "index.html" (the Remotion site entry). Got path: "${url.pathname}". Use the exact site.serveUrl printed by the deploy script (deploySite()).`,
+    );
+  }
+
+  if (!url.pathname.includes('/sites/')) {
+    throw new Error(
+      `REMOTION_LAMBDA_SERVE_URL does not look like a Remotion deploySite() URL (missing "/sites/"). Got: "${url.toString()}". Use the exact site.serveUrl printed by the deploy script.`,
+    );
+  }
+
+  return url.toString();
+};
+
 let remotionServeUrlPromise: Promise<string> | null = null;
 let remotionServeUrl: string | null = null;
 let remotionServeUrlPublicDir: string | null = null;
@@ -117,13 +180,7 @@ export const renderWithRemotionOnLambda = async (params: {
 
   const region = REMOTION_LAMBDA_REGION;
   let functionName = REMOTION_LAMBDA_FUNCTION_NAME;
-  const serveUrl = REMOTION_LAMBDA_SERVE_URL;
-
-  if (!serveUrl) {
-    throw new Error(
-      'Remotion Lambda is enabled but REMOTION_LAMBDA_SERVE_URL is not set. Deploy a Remotion site to S3 and set REMOTION_LAMBDA_SERVE_URL (or legacy REMOTION_LAMBDA_TEST_SERVE_URL).',
-    );
-  }
+  const serveUrl = normalizeAndValidateLambdaServeUrl(REMOTION_LAMBDA_SERVE_URL);
 
   if (!functionName || functionName.trim().toLowerCase() === 'auto') {
     const functions = await lambdaClient.getFunctions({
@@ -145,9 +202,21 @@ export const renderWithRemotionOnLambda = async (params: {
     );
   }
 
+  // Allow tuning render sizing/timeouts via env vars (same names as deploy script).
+  const envMemory =
+    getPositiveIntOrNull(process.env.REMOTION_LAMBDA_MEMORY_MB) ??
+    getPositiveIntOrNull(process.env.REMOTION_LAMBDA_TEST_MEMORY_MB);
+
+  const envTimeout =
+    getPositiveIntOrNull(process.env.REMOTION_LAMBDA_TIMEOUT_SECONDS) ??
+    getPositiveIntOrNull(process.env.REMOTION_LAMBDA_TEST_TIMEOUT_SECONDS);
+
+  const memorySizeInMb = envMemory ?? 10240;
+  const timeoutInSeconds = envTimeout ?? 900;
+
   const start = await lambdaClient.renderMediaOnLambda({
-    memorySizeInMb: 8192, // or 10240
-    timeoutInSeconds: 900,
+    memorySizeInMb,
+    timeoutInSeconds,
     region,
     functionName,
     serveUrl,
