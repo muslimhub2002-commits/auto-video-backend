@@ -2,10 +2,9 @@ import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { RenderJob } from './entities/render-job.entity';
-import { join, extname, dirname } from 'path';
+import { join, extname } from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { v2 as cloudinary } from 'cloudinary';
 import OpenAI from 'openai';
 
 import type { SentenceInput, SentenceTiming, UploadedAsset } from './render-videos.types';
@@ -20,6 +19,16 @@ import { downloadUrlToBuffer as downloadUrlToBufferExternal } from './utils/net.
 import { inferExt as inferExtExternal } from './utils/mime.utils';
 import { isCloudinaryUrl as isCloudinaryUrlExternal, isServerlessRuntime } from './utils/runtime.utils';
 import { withTimeout as withTimeoutExternal } from './utils/promise.utils';
+import {
+  ensureDir as ensureDirExternal,
+  safeCopyFile as safeCopyFileExternal,
+  safeRmDir as safeRmDirExternal,
+} from './utils/fs.utils';
+import {
+  ensureCloudinaryConfigured as ensureCloudinaryConfiguredExternal,
+  uploadBufferToCloudinary as uploadBufferToCloudinaryExternal,
+  uploadVideoFileToCloudinary,
+} from './utils/cloudinary.utils';
 import {
   REMOTION_BACKGROUND_REL,
   REMOTION_CAMERA_CLICK_SFX_REL,
@@ -214,7 +223,7 @@ export class RenderVideosService implements OnModuleInit {
   }
 
   private ensureDir(dir: string) {
-    fs.mkdirSync(dir, { recursive: true });
+    ensureDirExternal(dir);
   }
 
   private inferExt(params: {
@@ -241,19 +250,7 @@ export class RenderVideosService implements OnModuleInit {
   }
 
   private ensureCloudinaryConfigured() {
-    if (
-      !process.env.CLOUDINARY_CLOUD_NAME ||
-      !process.env.CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      throw new Error('Cloudinary environment variables are not configured');
-    }
-
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
-    });
+    ensureCloudinaryConfiguredExternal();
   }
 
   private async uploadBufferToCloudinary(params: {
@@ -261,41 +258,7 @@ export class RenderVideosService implements OnModuleInit {
     folder: string;
     resource_type: 'image' | 'video';
   }): Promise<{ secure_url: string; public_id: string }> {
-    this.ensureCloudinaryConfigured();
-
-    const uploadPromise = new Promise<any>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          folder: params.folder,
-          resource_type: params.resource_type,
-          overwrite: false,
-          use_filename: false,
-        },
-        (error, result) => {
-          if (error || !result) {
-            return reject(error ?? new Error('Cloudinary upload failed'));
-          }
-          resolve(result);
-        },
-      );
-
-      stream.end(params.buffer);
-    });
-
-    const uploadResult: any = await this.withTimeout(
-      uploadPromise,
-      params.resource_type === 'image' ? 60_000 : 90_000,
-      `Cloudinary ${params.resource_type} upload`,
-    );
-
-    if (!uploadResult?.secure_url || !uploadResult?.public_id) {
-      throw new Error('Cloudinary upload did not return a secure_url');
-    }
-
-    return {
-      secure_url: uploadResult.secure_url as string,
-      public_id: uploadResult.public_id as string,
-    };
+    return uploadBufferToCloudinaryExternal(params);
   }
 
   private createTempDir(prefix: string) {
@@ -303,16 +266,11 @@ export class RenderVideosService implements OnModuleInit {
   }
 
   private safeRmDir(dir: string) {
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch {
-      // ignore
-    }
+    safeRmDirExternal(dir);
   }
 
   private safeCopyFile(src: string, dest: string) {
-    this.ensureDir(dirname(dest));
-    fs.copyFileSync(src, dest);
+    safeCopyFileExternal(src, dest);
   }
 
   private getRemotionPublicAssetsDir() {
@@ -678,22 +636,11 @@ export class RenderVideosService implements OnModuleInit {
         'Remotion render',
       );
 
-      // Upload the rendered video to Cloudinary and remove the local file.
-      this.ensureCloudinaryConfigured();
-      const uploadResult: any = await this.withTimeout(
-        cloudinary.uploader.upload(outputFsPath, {
-          folder: 'auto-video-generator/videos',
-          resource_type: 'video',
-          overwrite: false,
-          use_filename: false,
-        }),
-        20 * 60_000,
-        'Cloudinary final video upload',
-      );
-
-      if (!uploadResult?.secure_url) {
-        throw new Error('Cloudinary video upload did not return a secure_url');
-      }
+      const videoUrl = await uploadVideoFileToCloudinary({
+        filePath: outputFsPath,
+        folder: 'auto-video-generator/videos',
+        timeoutMs: 20 * 60_000,
+      });
 
       try {
         fs.unlinkSync(outputFsPath);
@@ -702,7 +649,7 @@ export class RenderVideosService implements OnModuleInit {
       }
 
       job.status = 'completed';
-      job.videoPath = uploadResult.secure_url as string;
+      job.videoPath = videoUrl;
       await this.jobsRepo.save(job);
     } catch (err: any) {
       await this.jobsRepo.save({
@@ -738,6 +685,7 @@ export class RenderVideosService implements OnModuleInit {
       sentences,
       audioDurationSeconds,
       withTimeout: withTimeoutExternal,
+      disableRenderer: shouldUseRemotionLambda(),
     });
   }
 }
