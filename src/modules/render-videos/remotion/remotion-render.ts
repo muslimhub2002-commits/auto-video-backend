@@ -146,6 +146,8 @@ export const renderWithRemotionOnLambda = async (params: {
   }
 
   const start = await lambdaClient.renderMediaOnLambda({
+    memorySizeInMb: 8192, // or 10240
+    timeoutInSeconds: 900,
     region,
     functionName,
     serveUrl,
