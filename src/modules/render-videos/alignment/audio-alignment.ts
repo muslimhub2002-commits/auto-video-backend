@@ -168,22 +168,15 @@ export const alignAudioToSentences = async (params: {
   sentences: SentenceInput[];
   audioDurationSeconds: number;
   withTimeout: WithTimeout;
-  disableRenderer?: boolean;
 }): Promise<SentenceTiming[]> => {
-  const fallback = () => {
-    if (params.disableRenderer) {
-      return Promise.resolve(alignByWordCount(params.sentences, params.audioDurationSeconds));
-    }
-
-    return alignByVoiceActivity(params.audioPath, params.sentences, params.audioDurationSeconds);
-  };
+  const fallback = () =>
+    alignByVoiceActivity(params.audioPath, params.sentences, params.audioDurationSeconds);
 
   console.log('[RenderVideosService] alignAudioToSentences called', {
     audioPath: params.audioPath,
     audioDurationSeconds: params.audioDurationSeconds,
     sentenceCount: params.sentences.length,
     hasOpenAI: !!params.openai,
-    disableRenderer: !!params.disableRenderer,
   });
 
   if (!params.openai) {
