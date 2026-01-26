@@ -2,7 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "incremental": false
   },
   "exclude": [
     "node_modules",
@@ -10,6 +11,7 @@
     "**/*.spec.ts",
     "remotion",
     "scripts",
-    "api"
+    "api",
+    ".vercel"
   ]
 }
