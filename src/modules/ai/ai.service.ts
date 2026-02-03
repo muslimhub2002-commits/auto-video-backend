@@ -4,6 +4,7 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
+import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GenerateScriptDto } from './dto/generate-script.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
@@ -11,10 +12,14 @@ import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
 import { ImagesService } from '../images/images.service';
 import { ImageQuality, ImageSize } from '../images/entities/image.entity';
+import { LlmRouter } from './llm/llm-router';
+import type { LlmMessage } from './llm/llm-types';
 
 @Injectable()
 export class AiService {
-  private readonly client: OpenAI;
+  private readonly openai: OpenAI | null;
+  private readonly anthropic: Anthropic | null;
+  private readonly llm: LlmRouter;
   private readonly model: string;
   private readonly cheapModel: string;
   private readonly imageModel: string;
@@ -73,17 +78,33 @@ export class AiService {
   }
 
   constructor(private readonly imagesService: ImagesService) {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const openaiKey = process.env.OPENAI_API_KEY;
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
-    if (!apiKey) {
-      // Fail fast if the key is missing so it's obvious in dev
-      throw new Error('OPENAI_API_KEY is not set in the environment.');
+    this.openai = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
+    this.anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
+
+    if (!this.openai && !this.anthropic) {
+      throw new Error('Set OPENAI_API_KEY or ANTHROPIC_API_KEY in the environment.');
     }
 
-    this.client = new OpenAI({ apiKey });
-    this.model = process.env.OPENAI_MODEL || 'gpt-5.2';
+    this.llm = new LlmRouter({ openai: this.openai, anthropic: this.anthropic });
+
+    // Default text model is Anthropic-first (as requested). Users can still explicitly
+    // select OpenAI models from the UI.
+    this.model =
+      process.env.DEFAULT_TEXT_MODEL ||
+      process.env.ANTHROPIC_DEFAULT_MODEL ||
+      'claude-sonnet-4-5';
+
     // Used for small classification tasks (cheaper/faster than the main model).
-    this.cheapModel = process.env.OPENAI_CHEAP_MODEL || 'gpt-4o-mini';
+    this.cheapModel =
+      process.env.DEFAULT_CHEAP_TEXT_MODEL ||
+      process.env.ANTHROPIC_CHEAP_MODEL ||
+      process.env.OPENAI_CHEAP_MODEL ||
+      'claude-3-5-haiku-latest';
+
+    // Kept for compatibility with any OpenAI image generation paths (if used).
     this.imageModel = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
     this.elevenApiKey = process.env.ELEVENLABS_API_KEY;
     this.elevenDefaultVoiceId =
@@ -155,10 +176,10 @@ export class AiService {
 
     // Use LLM to determine if pronouns refer to forbidden entities
     try {
-      const contextCheck = await this.client.chat.completions.create({
+      const raw = await this.llm.completeText({
         model: this.cheapModel,
         temperature: 0,
-        max_tokens: 3,
+        maxTokens: 16,
         messages: [
           {
             role: 'system',
@@ -176,7 +197,7 @@ export class AiService {
         ],
       });
 
-      const response = contextCheck.choices[0]?.message?.content?.trim().toLowerCase();
+      const response = raw?.trim().toLowerCase();
       return response === 'yes';
     } catch (error) {
       console.error('Error checking pronoun context:', error);
@@ -234,8 +255,10 @@ export class AiService {
     const scriptForContext = script ? script.slice(0, 8000) : '';
 
     try {
-      const completion = await this.client.chat.completions.create({
-        model: 'gpt-4.1',
+      const raw = await this.llm.completeText({
+        model: this.cheapModel,
+        temperature: 0,
+        maxTokens: 16,
         messages: [
           {
             role: 'system',
@@ -261,8 +284,6 @@ export class AiService {
           },
         ],
       });
-
-      const raw = completion.choices[0]?.message?.content;
       const parsed = this.extractBooleanFromModelText(raw);
       return parsed ?? false;
     } catch (error) {
@@ -296,7 +317,7 @@ export class AiService {
     const techniqueBlock = this.getTechniquePromptBlock(technique);
 
     try {
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      const messages: LlmMessage[] = [
         {
           role: 'system',
           content:
@@ -389,17 +410,15 @@ export class AiService {
         });
       }
 
-      const stream = await this.client.chat.completions.create({
+      return this.llm.streamText({
         model,
-        stream: true,
         messages,
+        maxTokens: 2500,
       });
-
-      return stream;
     } catch (error) {
       // Surface a clean error to the controller
       throw new InternalServerErrorException(
-        'Failed to generate script from OpenAI',
+        'Failed to generate script',
       );
     }
   }
@@ -415,26 +434,6 @@ export class AiService {
     try {
       const script = dto.script;
       const model = dto.model?.trim() || this.model;
-
-      const tryExtractJson = (raw: string): string => {
-        const s = String(raw || '').trim();
-        if (!s) return s;
-
-        // If the model returned extra text, try to salvage the first JSON block.
-        const firstObj = s.indexOf('{');
-        const lastObj = s.lastIndexOf('}');
-        if (firstObj !== -1 && lastObj !== -1 && lastObj > firstObj) {
-          return s.slice(firstObj, lastObj + 1).trim();
-        }
-
-        const firstArr = s.indexOf('[');
-        const lastArr = s.lastIndexOf(']');
-        if (firstArr !== -1 && lastArr !== -1 && lastArr > firstArr) {
-          return s.slice(firstArr, lastArr + 1).trim();
-        }
-
-        return s;
-      };
 
       const normalizeSentences = (parsed: unknown): string[] => {
         if (Array.isArray(parsed)) {
@@ -476,8 +475,11 @@ export class AiService {
         .filter(Boolean)
         .join('\n');
 
-      const completion = await this.client.chat.completions.create({
+      const parsed = await this.llm.completeJson<unknown>({
         model,
+        temperature: 0,
+        maxTokens: 1500,
+        retries: 2,
         messages: [
           {
             role: 'system',
@@ -490,16 +492,7 @@ export class AiService {
               script,
           },
         ],
-        response_format: { type: 'json_object' },
       });
-
-      const raw = completion.choices[0]?.message?.content;
-      if (!raw) {
-        throw new Error('Empty response from OpenAI');
-      }
-
-      const jsonText = tryExtractJson(raw);
-      const parsed = JSON.parse(jsonText) as unknown;
       const sentences = normalizeSentences(parsed);
 
       if (!sentences.length) {
@@ -556,9 +549,9 @@ export class AiService {
       .join('\n');
 
     try {
-      const stream = await this.client.chat.completions.create({
+      return this.llm.streamText({
         model,
-        stream: true,
+        maxTokens: 2500,
         messages: [
           {
             role: 'system',
@@ -578,11 +571,9 @@ export class AiService {
           },
         ],
       });
-
-      return stream;
     } catch (error) {
       throw new InternalServerErrorException(
-        'Failed to enhance script with OpenAI',
+        'Failed to enhance script',
       );
     }
   }
@@ -633,19 +624,17 @@ export class AiService {
       `Rewrite this sentence (keep meaning; improve wording; keep it one sentence):\n\n${baseSentence}`;
 
     try {
-      const stream = await this.client.chat.completions.create({
+      return this.llm.streamText({
         model,
-        stream: true,
+        maxTokens: 800,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },
         ],
       });
-
-      return stream;
     } catch (error) {
       throw new InternalServerErrorException(
-        'Failed to enhance sentence with OpenAI',
+        'Failed to enhance sentence',
       );
     }
   }
@@ -660,8 +649,10 @@ export class AiService {
     }
 
     try {
-      const completion = await this.client.chat.completions.create({
+      const title = (await this.llm.completeText({
         model: this.model,
+        maxTokens: 64,
+        temperature: 0.4,
         messages: [
           {
             role: 'system',
@@ -676,9 +667,8 @@ export class AiService {
               trimmed,
           },
         ],
-      });
-
-      const title = completion.choices[0]?.message?.content?.trim();
+      }))
+        ?.trim();
       if (!title) {
         return 'Untitled Script';
       }
@@ -700,42 +690,37 @@ export class AiService {
       throw new BadRequestException('Script is required');
     }
 
-    const completion = await this.client.chat.completions.create({
-      model: this.model,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are an expert YouTube SEO copywriter. ' +
-            'Given a video narration script, you produce metadata optimized for search and click-through. ' +
-            'Return ONLY valid JSON as: {"title": string, "description": string, "tags": string[]}. ' +
-            'Rules: title <= 100 chars, description <= 5000 chars, tags: 10-20 items, each tag <= 30 chars, no emojis. ' +
-            'This video is a SHORT: the description MUST start with the exact title on its own line, followed by ONE short sentence on the next line. ' +
-            'At the very end of the description, append this exact string: #allah,#islamicShorts,#shorts',
-        },
-        {
-          role: 'user',
-          content:
-            'Generate YouTube SEO metadata for this video script. ' +
-            'The title should be compelling and keyword-rich. ' +
-            'The description must follow the SHORT format: title line + one short sentence, then end with the required hashtags. ' +
-            'Tags should be relevant and specific (mix broad + long-tail).\n\n' +
-            trimmed,
-        },
-      ],
-      response_format: { type: 'json_object' },
-    });
-
-    const raw = completion.choices[0]?.message?.content;
-    if (!raw) {
-      throw new InternalServerErrorException('Empty response from OpenAI');
-    }
-
     let parsed: any;
     try {
-      parsed = JSON.parse(raw);
+      parsed = await this.llm.completeJson<any>({
+        model: this.model,
+        temperature: 0.2,
+        maxTokens: 1200,
+        retries: 2,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are an expert YouTube SEO copywriter. ' +
+              'Given a video narration script, you produce metadata optimized for search and click-through. ' +
+              'Return ONLY valid JSON as: {"title": string, "description": string, "tags": string[]}. ' +
+              'Rules: title <= 100 chars, description <= 5000 chars, tags: 10-20 items, each tag <= 30 chars, no emojis. ' +
+              'This video is a SHORT: the description MUST start with the exact title on its own line, followed by ONE short sentence on the next line. ' +
+              'At the very end of the description, append this exact string: #allah,#islamicShorts,#shorts',
+          },
+          {
+            role: 'user',
+            content:
+              'Generate YouTube SEO metadata for this video script. ' +
+              'The title should be compelling and keyword-rich. ' +
+              'The description must follow the SHORT format: title line + one short sentence, then end with the required hashtags. ' +
+              'Tags should be relevant and specific (mix broad + long-tail).\n\n' +
+              trimmed,
+          },
+        ],
+      });
     } catch {
-      throw new InternalServerErrorException('Invalid JSON from OpenAI');
+      throw new InternalServerErrorException('Invalid JSON from the model');
     }
 
     const title = String(parsed.title ?? '').trim().slice(0, 100);
@@ -833,46 +818,45 @@ export class AiService {
       console.log('Mentions Allah/Prophet/Sahaba:', mentionsAllahProphetOrSahaba);
       if (!prompt) {
         // First ask the chat model for a detailed image prompt
-        const promptCompletion = await this.client.chat.completions.create({
-          model: this.model,
-          messages: [
-            {
-              role: 'system',
-              content:
-                'You are a visual prompt engineer for image generation models. ' +
-                'Read the sentence and identify the single most dominant emotion and the most dominant object/action/idea. ' +
-                'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
-                'Make the result composition-rich, varied, imaginative, and cinematic (avoid generic defaults unless the sentence truly calls for it). ' +
-                'Focus the prompt around the most important object or action in the sentence. ' +
-                'If a full script is provided in the user message, use it ONLY as context to infer the time period, setting, cultural details, and story continuity. ' +
-                'Do NOT quote the script, do NOT mention the word "script", and do NOT include spoilers beyond what the sentence implies. ' +
-                'Keep visuals representative of the script\'s era/time/context while still centered on the sentence. ' +
-                (mentionsAllahProphetOrSahaba
-                  ? noHumanFiguresRule : '') +
-                'Do NOT mention camera settings unless clearly helpful. ' +
-                'Respond with a single prompt sentence only, describing visuals only.',
-            },
-            {
-              role: 'user',
-              content:
-                (fullScriptContext
-                  ? `FULL SCRIPT CONTEXT (use ONLY for era/time/setting/continuity):\n${fullScriptContext}\n\n`
-                  : '') +
-                `Sentence: "${dto.sentence}"\n` +
-                `Desired style: ${style} (anime-style artwork).\n\n` +
-                // Safety / theological constraints for religious content
-                'Important constraints:\n' +
-                '- ABSOLUTELY NO humans/human figures: no people, no faces, no hands, no bodies, no silhouettes.\n' +
-
-                (mentionsAllahProphetOrSahaba
-                  ? noHumanFiguresRule : '') +
-                'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.',
-            },
-          ],
-        });
-
         prompt =
-          promptCompletion.choices[0]?.message?.content?.trim() || dto.sentence;
+          (await this.llm.completeText({
+            model: this.model,
+            maxTokens: 250,
+            temperature: 0.8,
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You are a visual prompt engineer for image generation models. ' +
+                  'Read the sentence and identify the single most dominant emotion and the most dominant object/action/idea. ' +
+                  'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
+                  'Make the result composition-rich, varied, imaginative, and cinematic (avoid generic defaults unless the sentence truly calls for it). ' +
+                  'Focus the prompt around the most important object or action in the sentence. ' +
+                  'If a full script is provided in the user message, use it ONLY as context to infer the time period, setting, cultural details, and story continuity. ' +
+                  'Do NOT quote the script, do NOT mention the word "script", and do NOT include spoilers beyond what the sentence implies. ' +
+                  'Keep visuals representative of the script\'s era/time/context while still centered on the sentence. ' +
+                  (mentionsAllahProphetOrSahaba
+                    ? noHumanFiguresRule : '') +
+                  'Do NOT mention camera settings unless clearly helpful. ' +
+                  'Respond with a single prompt sentence only, describing visuals only.',
+              },
+              {
+                role: 'user',
+                content:
+                  (fullScriptContext
+                    ? `FULL SCRIPT CONTEXT (use ONLY for era/time/setting/continuity):\n${fullScriptContext}\n\n`
+                    : '') +
+                  `Sentence: "${dto.sentence}"\n` +
+                  `Desired style: ${style} (anime-style artwork).\n\n` +
+                  // Safety / theological constraints for religious content
+                  'Important constraints:\n' +
+                  '- ABSOLUTELY NO humans/human figures: no people, no faces, no hands, no bodies, no silhouettes.\n' +
+                  (mentionsAllahProphetOrSahaba
+                    ? noHumanFiguresRule : '') +
+                  'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.',
+              },
+            ],
+          }))?.trim() || dto.sentence;
         console.log('Generated image prompt', prompt);
       } else {
         // Keep consistency with the app's defaults: encourage anime style.

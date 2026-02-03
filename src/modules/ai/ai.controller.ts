@@ -25,7 +25,7 @@ export class AiController {
   constructor(private readonly aiService: AiService) {}
 
   /**
-   * Streams a randomly generated script from OpenAI.
+    * Streams a randomly generated script from the selected model/provider.
    * Response is plain text streamed in small chunks.
    */
   @Post('generate-script')
@@ -41,13 +41,8 @@ export class AiController {
     const stream = await this.aiService.createScriptStream(body);
 
     try {
-      // OpenAI stream is an async iterable of ChatCompletionChunk objects
-
       for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || '';
-        if (content) {
-          res.write(content);
-        }
+        if (chunk) res.write(chunk);
       }
       res.end();
     } catch (error) {
@@ -85,13 +80,8 @@ export class AiController {
     const stream = await this.aiService.createEnhanceScriptStream(body);
 
     try {
-      // OpenAI stream is an async iterable of ChatCompletionChunk objects
-
       for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || '';
-        if (content) {
-          res.write(content);
-        }
+        if (chunk) res.write(chunk);
       }
       res.end();
     } catch (error) {
@@ -120,10 +110,7 @@ export class AiController {
 
     try {
       for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || '';
-        if (content) {
-          res.write(content);
-        }
+        if (chunk) res.write(chunk);
       }
       res.end();
     } catch (error) {
