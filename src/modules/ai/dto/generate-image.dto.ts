@@ -1,9 +1,16 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class GenerateImageDto {
   @IsString()
   @IsNotEmpty()
   sentence: string;
+
+  // Optional full script context. Used ONLY to keep the image prompt representative
+  // of the script's time/era/context (continuity), not to be copied verbatim.
+  @IsString()
+  @IsOptional()
+  @MaxLength(20000)
+  script?: string;
 
   // Optional override: if provided, the backend will generate the image directly
   // from this prompt instead of generating a prompt from the sentence.

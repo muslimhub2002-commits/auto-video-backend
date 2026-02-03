@@ -26,7 +26,19 @@ export class MessagesService {
   ) {}
 
   async saveGeneration(userId: string, dto: SaveGenerationDto) {
-    const { script, sentences, video_url, voice_id, chat_id } = dto;
+    const {
+      script,
+      sentences,
+      video_url,
+      voice_id,
+      chat_id,
+      subject,
+      subject_content,
+      length,
+      style,
+      reference_script_ids,
+      technique,
+    } = dto;
 
     const trimmedScript = (script ?? '').trim();
     const [existingScript, existingVideo] = await Promise.all([
@@ -166,6 +178,12 @@ export class MessagesService {
         message_id: savedMessage.id,
         sentences,
         title,
+        subject,
+        subject_content,
+        length,
+        style,
+        reference_script_ids,
+        technique,
       });
     }
 

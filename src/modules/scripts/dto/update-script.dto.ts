@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsNotEmpty,
@@ -27,6 +28,32 @@ export class UpdateScriptDto {
   @IsString()
   @IsOptional()
   script?: string;
+
+  @IsString()
+  @IsOptional()
+  subject?: string | null;
+
+  @IsString()
+  @IsOptional()
+  subject_content?: string | null;
+
+  @IsString()
+  @IsOptional()
+  length?: string | null;
+
+  @IsString()
+  @IsOptional()
+  style?: string | null;
+
+  @IsString()
+  @IsOptional()
+  technique?: string | null;
+
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  reference_script_ids?: string[];
 
   @IsString()
   @IsOptional()

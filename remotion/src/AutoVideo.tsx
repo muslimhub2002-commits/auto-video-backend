@@ -107,7 +107,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         <Html5Audio src={resolveMediaSrc(timeline.audioSrc)} volume={voiceOverVolume} />
       )}
       {backgroundMusicSrc ? (
-        <Audio src={resolveMediaSrc(backgroundMusicSrc)} volume={0.5} />
+        <Audio src={resolveMediaSrc(backgroundMusicSrc)} volume={0.8} />
       ) : null}
 
       {/* Suspense opening SFX: plays once and stops when audio ends (or at end of scene). */}

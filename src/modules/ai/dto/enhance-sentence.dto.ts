@@ -12,6 +12,11 @@ export class EnhanceSentenceDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(150)
+  technique?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(100)
   model?: string;
 

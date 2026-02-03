@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsNotEmpty,
@@ -30,6 +31,32 @@ export class CreateScriptDto {
 
   @IsString()
   @IsOptional()
+  subject?: string | null;
+
+  @IsString()
+  @IsOptional()
+  subject_content?: string | null;
+
+  @IsString()
+  @IsOptional()
+  length?: string | null;
+
+  @IsString()
+  @IsOptional()
+  style?: string | null;
+
+  @IsString()
+  @IsOptional()
+  technique?: string | null;
+
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  reference_script_ids?: string[];
+
+  @IsString()
+  @IsOptional()
   title?: string;
 
   @IsUUID()
@@ -39,6 +66,10 @@ export class CreateScriptDto {
   @IsUUID()
   @IsOptional()
   voice_id?: string;
+
+  @IsString()
+  @IsOptional()
+  video_url?: string | null;
 
   @IsArray()
   @ValidateNested({ each: true })

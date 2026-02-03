@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Script } from './entities/script.entity';
 import { Sentence } from './entities/sentence.entity';
 import { CreateScriptDto } from './dto/create-script.dto';
@@ -35,12 +35,50 @@ export class ScriptsService {
   ): Promise<Script> {
     const {
       script,
+      subject,
+      subject_content,
+      length,
+      style,
+      technique,
+      reference_script_ids,
       message_id,
       voice_id,
+      video_url,
       sentences,
       title: providedTitle,
     } = createScriptDto;
     const trimmedScript = script.trim();
+
+    const cleanedSubject = subject === undefined ? undefined : (subject ?? '').trim() || null;
+    const cleanedSubjectContent =
+      subject_content === undefined ? undefined : (subject_content ?? '').trim() || null;
+    const cleanedLength = length === undefined ? undefined : (length ?? '').trim() || null;
+    const cleanedStyle = style === undefined ? undefined : (style ?? '').trim() || null;
+    const cleanedTechnique =
+      technique === undefined ? undefined : (technique ?? '').trim() || null;
+
+    const cleanedVideoUrl =
+      video_url === undefined ? undefined : (video_url ?? '').trim() || null;
+
+    const cleanedReferenceIds =
+      reference_script_ids === undefined
+        ? undefined
+        : Array.from(new Set((reference_script_ids ?? []).filter(Boolean)));
+
+    const referenceScripts =
+      cleanedReferenceIds === undefined
+        ? undefined
+        : cleanedReferenceIds.length > 0
+          ? await this.scriptRepository.find({
+              where: { id: In(cleanedReferenceIds), user_id: userId },
+              select: { id: true, title: true, script: true, user_id: true },
+            })
+          : [];
+
+    if (referenceScripts && cleanedReferenceIds && referenceScripts.length !== cleanedReferenceIds.length) {
+      // If any provided IDs don't belong to the user (or don't exist), ignore them rather than erroring.
+      // This keeps drafts resilient if a referenced script was deleted.
+    }
 
     // If an identical script already exists for this user, update it instead
     // of creating a new row, similar to how images are de-duplicated.
@@ -58,6 +96,22 @@ export class ScriptsService {
       existingScript.title = newTitle ?? null;
       existingScript.message_id = message_id ?? existingScript.message_id;
       existingScript.voice_id = voice_id ?? existingScript.voice_id;
+
+      if (cleanedVideoUrl !== undefined) {
+        existingScript.video_url = cleanedVideoUrl;
+      }
+
+      if (cleanedSubject !== undefined) existingScript.subject = cleanedSubject;
+      if (cleanedSubjectContent !== undefined) {
+        existingScript.subject_content = cleanedSubjectContent;
+      }
+      if (cleanedLength !== undefined) existingScript.length = cleanedLength;
+      if (cleanedStyle !== undefined) existingScript.style = cleanedStyle;
+      if (cleanedTechnique !== undefined) existingScript.technique = cleanedTechnique;
+
+      if (referenceScripts !== undefined) {
+        existingScript.reference_scripts = referenceScripts;
+      }
 
       const updatedScript = await this.scriptRepository.save(existingScript);
 
@@ -95,8 +149,18 @@ export class ScriptsService {
       user_id: userId,
       message_id: message_id ?? null,
       voice_id: voice_id ?? null,
+      video_url: cleanedVideoUrl ?? null,
       title: title || null,
+      subject: cleanedSubject ?? null,
+      subject_content: cleanedSubjectContent ?? null,
+      length: cleanedLength ?? null,
+      style: cleanedStyle ?? null,
+      technique: cleanedTechnique ?? null,
     });
+
+    if (referenceScripts !== undefined) {
+      scriptEntity.reference_scripts = referenceScripts;
+    }
 
     const savedScript = await this.scriptRepository.save(scriptEntity);
 
@@ -131,6 +195,31 @@ export class ScriptsService {
     const safeLimit =
       Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
 
+    // Performance notes:
+    // 1) Always filter by user_id.
+    // 2) Avoid doing pagination (skip/take) against a query that joins 1:N tables
+    //    (sentences), because it explodes row counts and can paginate incorrectly.
+    // Instead, page script IDs first, then load relations only for those IDs.
+
+    const [idRows, total] = await Promise.all([
+      this.scriptRepository
+        .createQueryBuilder('script')
+        .select('script.id', 'id')
+        .where('script.user_id = :userId', { userId })
+        .orderBy('script.created_at', 'DESC')
+        .skip((safePage - 1) * safeLimit)
+        .take(safeLimit)
+        .getRawMany<{ id: string }>(),
+
+      // Count without joins to avoid inflated totals from 1:N sentence joins.
+      this.scriptRepository.count({ where: { user_id: userId } }),
+    ]);
+
+    const ids = idRows.map((r) => r.id).filter(Boolean);
+    if (ids.length === 0) {
+      return { items: [], total, page: safePage, limit: safeLimit };
+    }
+
     // Use an explicit QueryBuilder so we can guarantee selecting `image.prompt`
     // even if the Image entity later marks it as `select: false`.
     const items = await this.scriptRepository
@@ -138,16 +227,13 @@ export class ScriptsService {
       .leftJoinAndSelect('script.sentences', 'sentence')
       .leftJoinAndSelect('sentence.image', 'image')
       .leftJoinAndSelect('script.voice', 'voice')
+      .leftJoinAndSelect('script.reference_scripts', 'reference_script')
       .addSelect('image.prompt')
       .where('script.user_id = :userId', { userId })
+      .andWhere('script.id IN (:...ids)', { ids })
       .orderBy('script.created_at', 'DESC')
       .addOrderBy('sentence.index', 'ASC')
-      .skip((safePage - 1) * safeLimit)
-      .take(safeLimit)
       .getMany();
-
-    // Count without joins to avoid inflated totals from 1:N sentence joins.
-    const total = await this.scriptRepository.count({ where: { user_id: userId } });
 
     return { items, total, page: safePage, limit: safeLimit };
   }
@@ -158,6 +244,7 @@ export class ScriptsService {
       .leftJoinAndSelect('script.sentences', 'sentence')
       .leftJoinAndSelect('sentence.image', 'image')
       .leftJoinAndSelect('script.voice', 'voice')
+      .leftJoinAndSelect('script.reference_scripts', 'reference_script')
       .addSelect('image.prompt')
       .where('script.id = :id', { id })
       .andWhere('script.user_id = :userId', { userId })
@@ -184,6 +271,45 @@ export class ScriptsService {
     if (dto.script !== undefined) {
       const trimmedScript = (dto.script ?? '').trim();
       script.script = trimmedScript;
+    }
+
+    if (dto.subject !== undefined) {
+      const trimmed = (dto.subject ?? '').trim();
+      script.subject = trimmed ? trimmed : null;
+    }
+
+    if (dto.subject_content !== undefined) {
+      const trimmed = (dto.subject_content ?? '').trim();
+      script.subject_content = trimmed ? trimmed : null;
+    }
+
+    if (dto.length !== undefined) {
+      const trimmed = (dto.length ?? '').trim();
+      script.length = trimmed ? trimmed : null;
+    }
+
+    if (dto.style !== undefined) {
+      const trimmed = (dto.style ?? '').trim();
+      script.style = trimmed ? trimmed : null;
+    }
+
+    if (dto.technique !== undefined) {
+      const trimmed = (dto.technique ?? '').trim();
+      script.technique = trimmed ? trimmed : null;
+    }
+
+    if (dto.reference_script_ids !== undefined) {
+      const uniqueIds = Array.from(new Set((dto.reference_script_ids ?? []).filter(Boolean)));
+      if (uniqueIds.length === 0) {
+        script.reference_scripts = [];
+      } else {
+        // Ignore missing/deleted scripts so updates don't fail if a reference was removed.
+        const refs = await this.scriptRepository.find({
+          where: { id: In(uniqueIds), user_id: userId },
+          select: { id: true, title: true, script: true, user_id: true },
+        });
+        script.reference_scripts = refs;
+      }
     }
 
     if (dto.title !== undefined) {

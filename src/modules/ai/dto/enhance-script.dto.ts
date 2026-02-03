@@ -15,6 +15,11 @@ export class EnhanceScriptDto {
   @IsOptional()
   style?: string;
 
+  // Narrative technique / hook technique (e.g. "Loss Aversion")
+  @IsString()
+  @IsOptional()
+  technique?: string;
+
   // Optional model override (e.g. "gpt-4o-mini", "gpt-4.1")
   @IsString()
   @IsOptional()
