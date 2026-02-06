@@ -11,6 +11,10 @@ export class VoiceOver {
   @PrimaryGeneratedColumn()
   id: number;
 
+  // Provider for the voice catalog (ElevenLabs vs Google TTS / AI Studio)
+  @Column({ type: 'varchar', default: 'elevenlabs' })
+  provider!: 'elevenlabs' | 'google';
+
   @Column({ type: 'varchar', length: 255, unique: true })
   voice_id: string;
 

@@ -2,7 +2,7 @@
 
 // Linear zoom rate. Example: 0.04 means +4% scale per second.
 // Set to 0 to avoid any constant “camera motion”.
-export const IMAGE_ZOOM_PER_SECOND = 0;
+export const IMAGE_ZOOM_PER_SECOND = 0.009;
 
 // Transition window: last N frames of outgoing + first N frames of incoming.
 export const GLITCH_EDGE_FRAMES = 4;

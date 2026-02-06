@@ -6,6 +6,9 @@ import {
 } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
+import { spawn } from 'child_process';
+import ffmpegPath from 'ffmpeg-static';
+import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { GenerateScriptDto } from './dto/generate-script.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
@@ -23,8 +26,11 @@ export class AiService {
   private readonly model: string;
   private readonly cheapModel: string;
   private readonly imageModel: string;
+  private readonly geminiApiKey?: string;
+  private readonly geminiTtsModel: string;
   private readonly elevenApiKey?: string;
   private readonly elevenDefaultVoiceId: string;
+  private readonly googleTtsDefaultVoiceName?: string;
   private readonly leonardoApiKey?: string;
   private readonly leonardoModelId?: string;
 
@@ -80,15 +86,25 @@ export class AiService {
   constructor(private readonly imagesService: ImagesService) {
     const openaiKey = process.env.OPENAI_API_KEY;
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
+
+    this.geminiApiKey = (geminiKey || '').trim() || undefined;
+    this.geminiTtsModel =
+      String(process.env.GEMINI_TTS_MODEL ?? '').trim() ||
+      'gemini-2.5-flash-preview-tts';
 
     this.openai = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
     this.anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
 
-    if (!this.openai && !this.anthropic) {
-      throw new Error('Set OPENAI_API_KEY or ANTHROPIC_API_KEY in the environment.');
+    if (!this.openai && !this.anthropic && !(geminiKey || '').trim()) {
+      throw new Error('Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY in the environment.');
     }
 
-    this.llm = new LlmRouter({ openai: this.openai, anthropic: this.anthropic });
+    this.llm = new LlmRouter({
+      openai: this.openai,
+      anthropic: this.anthropic,
+      geminiApiKey: geminiKey,
+    });
 
     // Default text model is Anthropic-first (as requested). Users can still explicitly
     // select OpenAI models from the UI.
@@ -109,6 +125,10 @@ export class AiService {
     this.elevenApiKey = process.env.ELEVENLABS_API_KEY;
     this.elevenDefaultVoiceId =
       process.env.ELEVENLABS_VOICE_ID || 'BtWabtumIemAotTjP5sk';
+
+    // AI Studio voices (Gemini TTS)
+    this.googleTtsDefaultVoiceName = process.env.GOOGLE_TTS_VOICE_NAME;
+
     this.leonardoApiKey = process.env.LEONARDO_API_KEY;
     this.leonardoModelId = process.env.LEONARDO_MODEL_ID;
   }
@@ -367,49 +387,21 @@ export class AiService {
             content: ref.script,
           });
         });
-
-        messages.push({
-          role: 'user',
-          content:
-            `Generate a detailed video narration script.\n` +
-            `Approximate length: ${length}.\n` +
-            `Strict word count requirement: ${wordRange.minWords}-${wordRange.maxWords} words (target ${wordRange.targetWords}).\n` +
-            `Subject: ${subject}.\n` +
-            (subjectContent
-              ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${subjectContent}.\n`
-              : '') +
-            'Write the NEW script in the same narrative style as the reference scripts above.\n' +
-            `For religious (Islam) scripts, keep it respectful, authentic, and avoid controversial topics.\n` +
-            'Do not include scene directions, only spoken narration.',
-        });
-      } else {
-        const writingGoals = haveCustomPrompt
-          ? `${customSystemPrompt}\n`
-          :
-          `1) Get Straight to the Point/Subject: Hook the viewer within the first 3 seconds. Avoid long intros or fluffy openings.\n` +
-          `2) Curiosity / Open Loops: introduce an unanswered question early and pay it off later.\n` +
-          `3) Story Arc / Micro Narrative: a clear setup → tension/problem → insight/turn → resolution.\n` +
-          `4) Rhythm & Pacing: short punchy lines mixed with a few longer lines; avoid monotone cadence.\n` +
-          `5) Emotional Trigger: open with a strong feeling (awe, hope, urgency, empathy, etc.).\n`;
-
-        messages.push({
-          role: 'user',
-          content:
-            `Generate a detailed video narration script.\n` +
-            `Approximate length: ${length}.\n` +
-            `Strict word count requirement: ${wordRange.minWords}-${wordRange.maxWords} words (target ${wordRange.targetWords}).\n` +
-            `Subject: ${subject}.\n` +
-            (subjectContent
-              ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${subjectContent}.\n`
-              : '') +
-            `Style/tone: ${style}.\n` +
-            `Writing goals to focus on:\n` +
-            writingGoals +
-            `For religious (Islam) scripts, keep it respectful, authentic, and avoid controversial topics.\n` +
-            'Do not include scene directions, only spoken narration.',
-        });
       }
-
+      messages.push({
+        role: 'user',
+        content:
+          `Generate a detailed video narration script.\n` +
+          `Approximate length: ${length}.\n` +
+          `Strict word count requirement: ${wordRange.minWords}-${wordRange.maxWords} words (target ${wordRange.targetWords}).\n` +
+          `Subject: ${subject}.\n` +
+          (subjectContent
+            ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${subjectContent}.\n`
+            : '') +
+          'Write the NEW script in the same narrative style as the reference scripts above.\n' +
+          `For religious (Islam) scripts, keep it respectful, authentic, and avoid controversial topics.\n` +
+          'Do not include scene directions, only spoken narration.',
+      });
       return this.llm.streamText({
         model,
         messages,
@@ -725,8 +717,7 @@ export class AiService {
 
     const title = String(parsed.title ?? '').trim().slice(0, 100);
 
-    const requiredHashtags = '#allah,#islamicshorts,#shorts';
-    const requiredLeadingTags = ['allah', 'islamic shorts', 'shorts'];
+    const requiredHashtags = '#allah,#shorts';
 
     const pickShortSentence = (raw: string) => {
       const cleaned = String(raw || '')
@@ -746,7 +737,7 @@ export class AiService {
     // Title on first line, one short sentence on second line, required hashtags at the very end.
     const modelDesc = String(parsed.description ?? '').trim();
     const secondLine = pickShortSentence(modelDesc);
-    const description = `${title}\n${secondLine}\n\n${requiredHashtags}`.slice(0, 5000);
+    const description = `${secondLine}\n\n${requiredHashtags}`.slice(0, 5000);
 
     const modelTags = Array.isArray(parsed.tags)
       ? parsed.tags
@@ -759,16 +750,7 @@ export class AiService {
       : [];
 
     const seen = new Set<string>();
-    const tags: string[] = [];
-
-    for (const t of requiredLeadingTags) {
-      const normalized = String(t || '').trim().toLowerCase();
-      const key = normalized;
-      if (!seen.has(key)) {
-        tags.push(normalized);
-        seen.add(key);
-      }
-    }
+    const tags: string[] = ['Allah','Shorts','Islamic Shorts','Muslims'];
 
     for (const t of modelTags) {
       const cleaned = String(t || '').trim().toLowerCase();
@@ -802,11 +784,28 @@ export class AiService {
 
     const fullScriptContext = dto.script?.trim();
 
+    const sentenceText = (dto.sentence ?? '').trim();
+    const sentenceContainsMaleCharacter = (text: string): boolean => {
+      const s = (text ?? '').trim();
+      if (!s) return false;
+
+      // Heuristic: only triggers when the sentence explicitly suggests a male character.
+      // This intentionally stays conservative to avoid injecting random people.
+      return (
+        /\b(he|him|his|himself)\b/i.test(s) ||
+        /\b(man|men|male|boy|father|dad|son|brother|husband|gentleman|king|prince)\b/i.test(s)
+      );
+    };
+
     // OpenAI prompt #1 (classifier): decide whether to enforce male-only characters.
     const mentionsAllahProphetOrSahaba = await this.sentenceMentionsAllahProphetOrSahaba({
       script: fullScriptContext,
       sentence: dto.sentence,
     });
+
+    const enforceNoHumanFigures = mentionsAllahProphetOrSahaba;
+    const focusMaleCharacter =
+      !enforceNoHumanFigures && sentenceContainsMaleCharacter(sentenceText);
 
     const noHumanFiguresRule =
       'ABSOLUTE RULE: Do NOT depict any humans or human-like figures. ' +
@@ -832,12 +831,12 @@ export class AiService {
                   'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
                   'Make the result composition-rich, varied, imaginative, and cinematic (avoid generic defaults unless the sentence truly calls for it). ' +
                   'Focus the prompt around the most important object or action in the sentence. ' +
-                  'If a full script is provided in the user message, use it ONLY as context to infer the time period, setting, cultural details, and story continuity. ' +
-                  'Do NOT quote the script, do NOT mention the word "script", and do NOT include spoilers beyond what the sentence implies. ' +
-                  'Keep visuals representative of the script\'s era/time/context while still centered on the sentence. ' +
-                  (mentionsAllahProphetOrSahaba
-                    ? noHumanFiguresRule : '') +
-                  'Do NOT mention camera settings unless clearly helpful. ' +
+                  'If a full script is provided in the user message, use it ONLY as context to infer the feeling of the sentence, time period, setting, cultural details, and story continuity. ' +
+                  (enforceNoHumanFigures
+                    ? noHumanFiguresRule
+                    : focusMaleCharacter
+                      ? 'The sentence includes male character(s). Include the male character(s) implied by the sentence as the focal point, and make the visual center on what they are doing (clear action, posture, props, and environment). Do not add extra characters beyond what the sentence implies.'
+                      : 'If the sentence explicitly includes a person, you may depict them; otherwise do not introduce random people.') +
                   'Respond with a single prompt sentence only, describing visuals only.',
               },
               {
@@ -850,9 +849,12 @@ export class AiService {
                   `Desired style: ${style} (anime-style artwork).\n\n` +
                   // Safety / theological constraints for religious content
                   'Important constraints:\n' +
-                  '- ABSOLUTELY NO humans/human figures: no people, no faces, no hands, no bodies, no silhouettes.\n' +
-                  (mentionsAllahProphetOrSahaba
-                    ? noHumanFiguresRule : '') +
+                  (enforceNoHumanFigures
+                    ? '- ABSOLUTELY NO humans/human figures: no people, no faces, no hands, no bodies, no silhouettes.\n' +
+                    `${noHumanFiguresRule}\n`
+                    : focusMaleCharacter
+                      ? '- Include the male character(s) implied by the sentence and focus on their action; do not add extra characters beyond what the sentence implies.\n'
+                      : '') +
                   'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.',
               },
             ],
@@ -866,12 +868,14 @@ export class AiService {
           prompt = `${prompt}, ${style}`;
         }
 
-        const hasNoHumans =
-          /\bno\s+(people|humans|human\s+figures?)\b|\bno\s+faces\b|\bno\s+hands\b|\bno\s+silhouettes\b|\bnon[-\s]?figurative\b/i.test(
-            prompt,
-          );
-        if (!hasNoHumans) {
-          prompt = `${prompt}, no people, no humans, no faces, no hands, no silhouettes`;
+        if (enforceNoHumanFigures) {
+          const hasNoHumans =
+            /\bno\s+(people|humans|human\s+figures?)\b|\bno\s+faces\b|\bno\s+hands\b|\bno\s+silhouettes\b|\bnon[-\s]?figurative\b/i.test(
+              prompt,
+            );
+          if (!hasNoHumans) {
+            prompt = `${prompt}, no people, no humans, no faces, no hands, no silhouettes`;
+          }
         }
       }
 
@@ -1131,15 +1135,17 @@ export class AiService {
   async generateVoiceForSentences(
     sentences: string[],
     voiceId?: string,
-  ): Promise<Buffer> {
+    styleInstructions?: string,
+  ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     const merged = this.mergeSentenceTexts(sentences);
-    return this.generateVoiceForScript(merged, voiceId);
+    return this.generateVoiceForScript(merged, voiceId, styleInstructions);
   }
 
   async generateVoiceForScript(
     script: string,
     voiceId?: string,
-  ): Promise<Buffer> {
+    styleInstructions?: string,
+  ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     const text = script?.trim();
     if (!text) {
       throw new BadRequestException(
@@ -1147,17 +1153,80 @@ export class AiService {
       );
     }
 
+    const decideProvider = (idRaw?: string): { provider: 'google' | 'elevenlabs'; rawId?: string } => {
+      const id = String(idRaw ?? '').trim();
+      if (!id) {
+        // Default provider preference: Gemini TTS (AI Studio) if configured; otherwise ElevenLabs.
+        if ((this.geminiApiKey || '').trim()) {
+          return {
+            provider: 'google',
+            rawId: this.googleTtsDefaultVoiceName?.trim() || undefined,
+          };
+        }
+        return { provider: 'elevenlabs', rawId: this.elevenDefaultVoiceId };
+      }
+
+      if (id.startsWith('google:')) {
+        return { provider: 'google', rawId: id.slice('google:'.length) };
+      }
+
+      if (id.startsWith('elevenlabs:')) {
+        return { provider: 'elevenlabs', rawId: id.slice('elevenlabs:'.length) };
+      }
+
+      // Backwards compatibility:
+      // - Existing ElevenLabs IDs are typically opaque.
+      // - Google voice names typically look like: en-US-Studio-O
+      if (/^[a-z]{2}-[A-Z]{2}-/u.test(id)) {
+        return { provider: 'google', rawId: id };
+      }
+
+      return { provider: 'elevenlabs', rawId: id };
+    };
+
+    const chosen = decideProvider(voiceId);
+    if (chosen.provider === 'google') {
+      const voiceName = String(chosen.rawId ?? '').trim();
+      if (!voiceName) {
+        throw new BadRequestException('voiceId is required for Google TTS');
+      }
+      const buffer = await this.generateVoiceWithGeminiTts({
+        text,
+        voiceName,
+        styleInstructions,
+      });
+      return {
+        buffer,
+        mimeType: 'audio/mpeg',
+        filename: 'voice-over.mp3',
+      };
+    }
+
+    const elevenVoiceId = String(chosen.rawId ?? '').trim() || this.elevenDefaultVoiceId;
+    const buffer = await this.generateVoiceWithElevenLabs({
+      text,
+      voiceId: elevenVoiceId,
+    });
+    return {
+      buffer,
+      mimeType: 'audio/mpeg',
+      filename: 'voice-over.mp3',
+    };
+  }
+
+  private async generateVoiceWithElevenLabs(params: {
+    text: string;
+    voiceId: string;
+  }): Promise<Buffer> {
     if (!this.elevenApiKey) {
       throw new InternalServerErrorException(
         'ELEVENLABS_API_KEY is not configured on the server',
       );
     }
 
-    const usedVoiceId = voiceId?.trim() || this.elevenDefaultVoiceId;
-
     try {
       const response = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${usedVoiceId}`,
+        `https://api.elevenlabs.io/v1/text-to-speech/${params.voiceId}`,
         {
           method: 'POST',
           headers: {
@@ -1166,7 +1235,7 @@ export class AiService {
             'xi-api-key': this.elevenApiKey,
           },
           body: JSON.stringify({
-            text,
+            text: params.text,
             model_id: 'eleven_multilingual_v2',
           }),
         } as any,
@@ -1215,6 +1284,230 @@ export class AiService {
       }
       throw new InternalServerErrorException(
         'Unexpected error while generating voice with ElevenLabs',
+      );
+    }
+  }
+
+  private pcm16leToWav(params: {
+    pcm: Buffer;
+    sampleRate: number;
+    channels: number;
+    bitsPerSample: number;
+  }): Buffer {
+    const { pcm, sampleRate, channels, bitsPerSample } = params;
+    const bytesPerSample = bitsPerSample / 8;
+    const blockAlign = channels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+
+    const dataSize = pcm.length;
+    const out = Buffer.allocUnsafe(44 + dataSize);
+
+    out.write('RIFF', 0);
+    out.writeUInt32LE(36 + dataSize, 4);
+    out.write('WAVE', 8);
+
+    out.write('fmt ', 12);
+    out.writeUInt32LE(16, 16); // PCM fmt chunk size
+    out.writeUInt16LE(1, 20); // audio format = PCM
+    out.writeUInt16LE(channels, 22);
+    out.writeUInt32LE(sampleRate, 24);
+    out.writeUInt32LE(byteRate, 28);
+    out.writeUInt16LE(blockAlign, 32);
+    out.writeUInt16LE(bitsPerSample, 34);
+
+    out.write('data', 36);
+    out.writeUInt32LE(dataSize, 40);
+    pcm.copy(out, 44);
+    return out;
+  }
+
+  private async pcm16leToMp3Async(params: {
+    pcm: Buffer;
+    sampleRate: number;
+    channels: 1 | 2;
+    kbps?: number;
+  }): Promise<Buffer> {
+    const { pcm, sampleRate, channels, kbps = 128 } = params;
+
+    const installerPath =
+      (ffmpegInstaller as any)?.path ?? (ffmpegInstaller as any)?.default?.path;
+    const candidatePath =
+      String(installerPath ?? '').trim() ||
+      String(ffmpegPath ?? '').trim() ||
+      String(process.env.FFMPEG_PATH ?? '').trim() ||
+      'ffmpeg';
+
+    const args = [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-f',
+      's16le',
+      '-ar',
+      String(sampleRate),
+      '-ac',
+      String(channels),
+      '-i',
+      'pipe:0',
+      '-vn',
+      '-acodec',
+      'libmp3lame',
+      '-b:a',
+      `${kbps}k`,
+      '-f',
+      'mp3',
+      'pipe:1',
+    ];
+
+    const child = spawn(candidatePath, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+
+    child.stdout.on('data', (d) => stdoutChunks.push(Buffer.from(d)));
+    child.stderr.on('data', (d) => stderrChunks.push(Buffer.from(d)));
+
+    child.stdin.end(pcm);
+
+    const exitCode: number = await new Promise((resolve, reject) => {
+      child.on('error', reject);
+      child.on('close', resolve);
+    });
+
+    const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
+    if (exitCode !== 0) {
+      throw new InternalServerErrorException(
+        `ffmpeg failed to encode MP3 (exit ${exitCode})${stderr ? `: ${stderr}` : ''}`,
+      );
+    }
+
+    const out = Buffer.concat(stdoutChunks);
+    if (!out.length) {
+      throw new InternalServerErrorException(
+        `ffmpeg returned empty MP3 output${stderr ? `: ${stderr}` : ''}`,
+      );
+    }
+    return out;
+  }
+
+  private async generateVoiceWithGeminiTts(params: {
+    text: string;
+    voiceName: string;
+    styleInstructions?: string;
+  }): Promise<Buffer> {
+    if (!this.geminiApiKey) {
+      throw new InternalServerErrorException(
+        'GEMINI_API_KEY is not configured on the server',
+      );
+    }
+
+    try {
+      const url = new URL(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          this.geminiTtsModel,
+        )}:generateContent`,
+      );
+      url.searchParams.set('key', this.geminiApiKey);
+
+      const response = await fetch(url.toString(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: (() => {
+                    const style = String(params.styleInstructions ?? '').trim();
+                    if (!style) return params.text;
+
+                    return (
+                      `Style instructions (do NOT speak these instructions): ${style}\n\n` +
+                      `Read the following script exactly as written:\n${params.text}`
+                    );
+                  })(),
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: params.voiceName,
+                },
+              },
+            },
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        console.error('Gemini TTS failed', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText,
+        });
+
+        if (response.status === 400) {
+          throw new BadRequestException('Invalid request to Gemini TTS API');
+        }
+
+        if (response.status === 401 || response.status === 403) {
+          throw new UnauthorizedException('Unauthorized to call Gemini TTS API');
+        }
+
+        throw new InternalServerErrorException('Failed to generate voice using Gemini TTS');
+      }
+
+      const json = (await response.json()) as any;
+      const parts =
+        json?.candidates?.[0]?.content?.parts &&
+          Array.isArray(json.candidates[0].content.parts)
+          ? json.candidates[0].content.parts
+          : [];
+
+      const audioPart = parts.find((p: any) =>
+        Boolean(p?.inlineData?.data || p?.inline_data?.data),
+      );
+      const b64 =
+        String(audioPart?.inlineData?.data ?? audioPart?.inline_data?.data ?? '').trim();
+
+      if (!b64) {
+        throw new InternalServerErrorException('Gemini TTS returned empty audio data');
+      }
+
+      const pcm = Buffer.from(b64, 'base64');
+      // Gemini TTS currently returns raw PCM (16-bit LE, 24kHz, mono) per docs.
+      return await this.pcm16leToMp3Async({
+        pcm,
+        sampleRate: 24000,
+        channels: 1,
+        kbps: 128,
+      });
+    } catch (error) {
+      const err = error as any;
+
+      console.error('Error while calling Gemini TTS', {
+        message: err?.message,
+        stack: err?.stack,
+      });
+
+      if (err instanceof BadRequestException || err instanceof UnauthorizedException) {
+        throw err;
+      }
+
+      throw new InternalServerErrorException(
+        'Unexpected error while generating voice with Gemini TTS',
       );
     }
   }

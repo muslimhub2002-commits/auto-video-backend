@@ -46,6 +46,7 @@ export class AiController {
       }
       res.end();
     } catch (error) {
+      console.error('Error streaming /ai/generate-script:', error);
       // If something goes wrong during streaming, end the response gracefully
       if (!res.headersSent) {
         res.status(HttpStatus.INTERNAL_SERVER_ERROR);
@@ -85,6 +86,7 @@ export class AiController {
       }
       res.end();
     } catch (error) {
+      console.error('Error streaming /ai/enhance-script:', error);
       // If something goes wrong during streaming, end the response gracefully
       if (!res.headersSent) {
         res.status(HttpStatus.INTERNAL_SERVER_ERROR);
@@ -114,6 +116,7 @@ export class AiController {
       }
       res.end();
     } catch (error) {
+      console.error('Error streaming /ai/enhance-sentence:', error);
       if (!res.headersSent) {
         res.status(HttpStatus.INTERNAL_SERVER_ERROR);
       }
@@ -136,7 +139,9 @@ export class AiController {
   }
 
   /**
-   * Generates a voice-over audio clip (MP3) for the given script using ElevenLabs.
+   * Generates a voice-over audio clip.
+   * - ElevenLabs: MP3
+    * - AI Studio (Gemini TTS): MP3
    */
   @Post('generate-voice')
   @HttpCode(HttpStatus.OK)
@@ -145,16 +150,21 @@ export class AiController {
     @Res() res: Response,
   ): Promise<void> {
     const hasSentences = Array.isArray(body.sentences) && body.sentences.length > 0;
-    const audioBuffer = hasSentences
-      ? await this.aiService.generateVoiceForSentences(body.sentences!, body.voiceId)
-      : await this.aiService.generateVoiceForScript(body.script, body.voiceId);
+    const result = hasSentences
+      ? await this.aiService.generateVoiceForSentences(
+          body.sentences!,
+          body.voiceId,
+          body.styleInstructions,
+        )
+      : await this.aiService.generateVoiceForScript(
+          body.script,
+          body.voiceId,
+          body.styleInstructions,
+        );
 
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader(
-      'Content-Disposition',
-      'inline; filename="voice-over-elevenlabs.mp3"',
-    );
-    res.send(audioBuffer);
+    res.setHeader('Content-Type', result.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${result.filename}"`);
+    res.send(result.buffer);
   }
 
   @Post('youtube-seo')

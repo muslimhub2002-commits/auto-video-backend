@@ -13,4 +13,8 @@ export class GenerateVoiceDto {
   @IsString()
   @IsOptional()
   voiceId?: string;
+
+  @IsString()
+  @IsOptional()
+  styleInstructions?: string;
 }
