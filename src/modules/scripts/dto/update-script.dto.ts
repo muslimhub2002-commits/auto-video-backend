@@ -19,6 +19,18 @@ class UpdateSentenceInput {
   @IsOptional()
   image_id?: string;
 
+  @IsUUID()
+  @IsOptional()
+  start_frame_image_id?: string;
+
+  @IsUUID()
+  @IsOptional()
+  end_frame_image_id?: string;
+
+  @IsUUID()
+  @IsOptional()
+  video_id?: string;
+
   @IsBoolean()
   @IsOptional()
   isSuspense?: boolean;

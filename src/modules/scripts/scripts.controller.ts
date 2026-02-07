@@ -10,12 +10,34 @@ import {
   UseGuards,
   UnauthorizedException,
   Query,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ScriptsService } from './scripts.service';
 import { CreateScriptDto } from './dto/create-script.dto';
 import { UpdateScriptDto } from './dto/update-script.dto';
+import { UpdateSentenceMediaDto } from './dto/update-sentence-media.dto';
+import { GenerateSentenceVideoDto } from './dto/generate-sentence-video.dto';
+import { SaveSentenceVideoDto } from './dto/save-sentence-video.dto';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { UploadedFile } from '@nestjs/common';
+
+type UploadedImageFile = {
+  buffer: Buffer;
+  mimetype?: string;
+  originalname?: string;
+  size?: number;
+};
+
+type UploadedVideoFile = {
+  buffer: Buffer;
+  mimetype?: string;
+  originalname?: string;
+  size?: number;
+};
 
 @Controller('scripts')
 @UseGuards(JwtAuthGuard)
@@ -67,6 +89,109 @@ export class ScriptsController {
     }
 
     return this.scriptsService.update(id, user_id, updateScriptDto);
+  }
+
+  @Patch(':scriptId/sentences/:sentenceId/media')
+  async updateSentenceMedia(
+    @Req() req: Request,
+    @Param('scriptId') scriptId: string,
+    @Param('sentenceId') sentenceId: string,
+    @Body() dto: UpdateSentenceMediaDto,
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    return this.scriptsService.updateSentenceMedia(
+      scriptId,
+      sentenceId,
+      user_id,
+      dto,
+    );
+  }
+
+  @Post(':scriptId/sentences/:sentenceId/generate-video')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'startFrame', maxCount: 1 },
+        { name: 'endFrame', maxCount: 1 },
+      ],
+      {
+        limits: {
+          fileSize: 12 * 1024 * 1024,
+          files: 2,
+        },
+      },
+    ),
+  )
+  async generateSentenceVideo(
+    @Req() req: Request,
+    @Param('scriptId') scriptId: string,
+    @Param('sentenceId') sentenceId: string,
+    @Body() dto: GenerateSentenceVideoDto,
+    @UploadedFiles()
+    files?: {
+      startFrame?: UploadedImageFile[];
+      endFrame?: UploadedImageFile[];
+    },
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    const startFrameFile = files?.startFrame?.[0];
+    const endFrameFile = files?.endFrame?.[0];
+
+    return this.scriptsService.generateSentenceVideoFromFrames(
+      scriptId,
+      sentenceId,
+      user_id,
+      dto,
+      {
+        startFrameFile,
+        endFrameFile,
+      },
+    );
+  }
+
+  @Post(':scriptId/sentences/:sentenceId/video')
+  @UseInterceptors(
+    FileInterceptor('video', {
+      limits: {
+        fileSize: 50 * 1024 * 1024,
+      },
+    }),
+  )
+  async saveSentenceVideo(
+    @Req() req: Request,
+    @Param('scriptId') scriptId: string,
+    @Param('sentenceId') sentenceId: string,
+    @Body() dto: SaveSentenceVideoDto,
+    @UploadedFile() videoFile?: UploadedVideoFile,
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    return this.scriptsService.saveSentenceVideo(
+      scriptId,
+      sentenceId,
+      user_id,
+      dto,
+      {
+        videoFile,
+      },
+    );
   }
 
   @Delete(':id')

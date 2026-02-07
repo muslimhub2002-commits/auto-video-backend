@@ -141,7 +141,9 @@ export class VoiceOversService {
     });
   }
 
-  async getOrCreatePreviewUrl(voiceId: string): Promise<{ preview_url: string }> {
+  async getOrCreatePreviewUrl(
+    voiceId: string,
+  ): Promise<{ preview_url: string }> {
     const raw = String(voiceId ?? '').trim();
     const candidates = raw.includes(':') ? [raw] : [raw, `google:${raw}`];
 
@@ -214,7 +216,9 @@ export class VoiceOversService {
     return voiceId.startsWith(prefix) ? voiceId.slice(prefix.length) : voiceId;
   }
 
-  private async ensureNamespacedForProvider(provider: VoiceProvider): Promise<void> {
+  private async ensureNamespacedForProvider(
+    provider: VoiceProvider,
+  ): Promise<void> {
     const prefix = `${provider}:`;
     const rows = await this.voiceOverRepository.find({ where: { provider } });
 

@@ -22,7 +22,9 @@ export const downloadUrlToBuffer = async (params: {
     if (contentLength) {
       const bytes = Number(contentLength);
       if (Number.isFinite(bytes) && bytes > params.maxBytes) {
-        throw new Error(`Downloaded ${params.label} is too large (${bytes} bytes)`);
+        throw new Error(
+          `Downloaded ${params.label} is too large (${bytes} bytes)`,
+        );
       }
     }
 

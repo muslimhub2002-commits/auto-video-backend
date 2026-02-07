@@ -1,5 +1,7 @@
 import {
   Body,
+  UseInterceptors,
+  UploadedFiles,
   Controller,
   Post,
   Res,
@@ -8,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { AiService } from './ai.service';
 import { GenerateScriptDto } from './dto/generate-script.dto';
 import { SplitScriptDto } from './dto/split-script.dto';
@@ -16,16 +19,24 @@ import { GenerateVoiceDto } from './dto/generate-voice.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
 import { YoutubeSeoDto } from './dto/youtube-seo.dto';
+import { GenerateVideoFromFramesDto } from './dto/generate-video-from-frames.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User } from '../users/entities/user.entity';
+
+type UploadedImageFile = {
+  buffer: Buffer;
+  mimetype: string;
+  size: number;
+  originalname: string;
+};
 
 @Controller('ai')
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 
   /**
-    * Streams a randomly generated script from the selected model/provider.
+   * Streams a randomly generated script from the selected model/provider.
    * Response is plain text streamed in small chunks.
    */
   @Post('generate-script')
@@ -139,9 +150,52 @@ export class AiController {
   }
 
   /**
+   * Generates a short video clip from 1-2 image frames.
+   * This endpoint does not persist scripts/sentences/videos in the DB.
+   */
+  @Post('generate-video-from-frames')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'startFrame', maxCount: 1 },
+        { name: 'endFrame', maxCount: 1 },
+      ],
+      {
+        limits: {
+          fileSize: 12 * 1024 * 1024,
+          files: 2,
+        },
+      },
+    ),
+  )
+  async generateVideoFromFrames(
+    @GetUser() user: User,
+    @Body() body: GenerateVideoFromFramesDto,
+    @UploadedFiles()
+    files: {
+      startFrame?: UploadedImageFile[];
+      endFrame?: UploadedImageFile[];
+    },
+  ) {
+    const startFrameFile = files?.startFrame?.[0];
+    const endFrameFile = files?.endFrame?.[0];
+
+    const result = await this.aiService.generateVideoFromUploadedFrames({
+      userId: user.id,
+      dto: body,
+      startFrameFile,
+      endFrameFile,
+    });
+
+    return result;
+  }
+
+  /**
    * Generates a voice-over audio clip.
    * - ElevenLabs: MP3
-    * - AI Studio (Gemini TTS): MP3
+   * - AI Studio (Gemini TTS): MP3
    */
   @Post('generate-voice')
   @HttpCode(HttpStatus.OK)
@@ -149,7 +203,8 @@ export class AiController {
     @Body() body: GenerateVoiceDto,
     @Res() res: Response,
   ): Promise<void> {
-    const hasSentences = Array.isArray(body.sentences) && body.sentences.length > 0;
+    const hasSentences =
+      Array.isArray(body.sentences) && body.sentences.length > 0;
     const result = hasSentences
       ? await this.aiService.generateVoiceForSentences(
           body.sentences!,
@@ -163,7 +218,10 @@ export class AiController {
         );
 
     res.setHeader('Content-Type', result.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${result.filename}"`);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${result.filename}"`,
+    );
     res.send(result.buffer);
   }
 

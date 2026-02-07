@@ -23,15 +23,16 @@ import { Scene } from './components/Scene';
 import { buildCutTransitions, getCutSeed, pickWhipDirection } from './utils/transitions';
 
 export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
+  // Treat empty strings from the backend as "unset" so local `staticFile()` defaults work.
   const backgroundMusicSrc =
-    timeline.assets?.backgroundMusicSrc ?? DEFAULT_BACKGROUND_MUSIC_SRC;
-  const glitchSfxSrc = timeline.assets?.glitchSfxSrc ?? DEFAULT_GLITCH_FX_URL;
-  const whooshSfxSrc = timeline.assets?.whooshSfxSrc ?? DEFAULT_WHOOSH_SFX_URL;
+    timeline.assets?.backgroundMusicSrc || DEFAULT_BACKGROUND_MUSIC_SRC;
+  const glitchSfxSrc = timeline.assets?.glitchSfxSrc || DEFAULT_GLITCH_FX_URL;
+  const whooshSfxSrc = timeline.assets?.whooshSfxSrc || DEFAULT_WHOOSH_SFX_URL;
   const cameraClickSfxSrc =
-    timeline.assets?.cameraClickSfxSrc ?? DEFAULT_CAMERA_CLICK_SFX_URL;
-  const chromaLeakSfxSrc = timeline.assets?.chromaLeakSfxSrc ?? '';
+    timeline.assets?.cameraClickSfxSrc || DEFAULT_CAMERA_CLICK_SFX_URL;
+  const chromaLeakSfxSrc = timeline.assets?.chromaLeakSfxSrc || '';
   const suspenseGlitchSfxSrc =
-    timeline.assets?.suspenseGlitchSfxSrc ?? DEFAULT_SUSPENSE_GLITCH_SFX_URL;
+    timeline.assets?.suspenseGlitchSfxSrc || DEFAULT_SUSPENSE_GLITCH_SFX_URL;
 
   const isVertical = timeline.height > timeline.width;
   const baseHeight = isVertical ? 1920 : 1080;

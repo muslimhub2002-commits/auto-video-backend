@@ -29,13 +29,19 @@ export class RenderVideosController {
     // Many users try to open /videos in the browser.
     // Rendering is started via POST requests.
     throw new MethodNotAllowedException({
-      message: 'Use POST /videos (multipart) or POST /videos/url (JSON) to start a render. Use GET /videos/:id to poll status.',
+      message:
+        'Use POST /videos (multipart) or POST /videos/url (JSON) to start a render. Use GET /videos/:id to poll status.',
       endpoints: {
         createMultipart: {
           method: 'POST',
           path: '/videos',
           contentType: 'multipart/form-data',
-          fields: ['voiceOver (file)', 'images (files)', 'sentences (json string)', 'scriptLength'],
+          fields: [
+            'voiceOver (file)',
+            'images (files)',
+            'sentences (json string)',
+            'scriptLength',
+          ],
         },
         createFromUrls: {
           method: 'POST',
@@ -122,15 +128,47 @@ export class RenderVideosController {
     const voice = files.voiceOver?.[0];
     const images = files.images ?? [];
 
-    let sentences: Array<{ text: string; isSuspense?: boolean }>;
+    let sentences: Array<{
+      text: string;
+      isSuspense?: boolean;
+      mediaType?: 'image' | 'video';
+      videoUrl?: string;
+    }>;
     try {
-      sentences = JSON.parse(body.sentences) as Array<{ text: string; isSuspense?: boolean }>;
+      sentences = JSON.parse(body.sentences) as Array<{
+        text: string;
+        isSuspense?: boolean;
+        mediaType?: 'image' | 'video';
+        videoUrl?: string;
+      }>;
     } catch {
       throw new BadRequestException('Invalid `sentences` JSON');
     }
 
     if (!Array.isArray(sentences) || sentences.length === 0) {
       throw new BadRequestException('`sentences` must be a non-empty array');
+    }
+
+    for (const [idx, s] of sentences.entries()) {
+      const mediaType = s?.mediaType;
+      if (mediaType && mediaType !== 'image' && mediaType !== 'video') {
+        throw new BadRequestException(
+          `Invalid mediaType for sentence ${idx + 1}. Expected 'image' or 'video'.`,
+        );
+      }
+
+      if (mediaType === 'video') {
+        const url = String(s.videoUrl ?? '').trim();
+        const ok =
+          url.startsWith('http://') ||
+          url.startsWith('https://') ||
+          url === '/subscribe.mp4';
+        if (!ok) {
+          throw new BadRequestException(
+            `Missing or invalid videoUrl for sentence ${idx + 1} on video tab.`,
+          );
+        }
+      }
     }
 
     if (!voice?.buffer?.length) {
@@ -142,13 +180,17 @@ export class RenderVideosController {
       : undefined;
 
     // Preserve alignment between sentences and uploaded media.
-    // The frontend does not upload an image for the subscribe sentence (it uses a built-in subscribe video),
-    // so we map uploaded images to non-subscribe sentences in order and insert null for the subscribe sentence.
+    // The frontend does not upload an image for:
+    // - the subscribe sentence (uses a built-in subscribe video)
+    // - sentences on the video tab (they provide a sentence-level videoUrl)
+    // So we map uploaded images to image-tab sentences in order and insert null otherwise.
     const alignedImages: Array<Multer.File | null> = [];
     let imageCursor = 0;
     for (const s of sentences) {
       const isSubscribe = (s.text || '').trim() === SUBSCRIBE_SENTENCE;
-      if (isSubscribe) {
+      const wantsVideo =
+        s.mediaType === 'video' && !!String(s.videoUrl ?? '').trim();
+      if (isSubscribe || wantsVideo) {
         alignedImages.push(null);
       } else {
         alignedImages.push(images[imageCursor] ?? null);
@@ -199,9 +241,9 @@ export class RenderVideosController {
     const updated = await this.renderVideosService.getJob(id);
     const derivedIsShort =
       updated.timeline &&
-      typeof (updated.timeline as any).width === 'number' &&
-      typeof (updated.timeline as any).height === 'number'
-        ? (updated.timeline as any).height > (updated.timeline as any).width
+      typeof updated.timeline.width === 'number' &&
+      typeof updated.timeline.height === 'number'
+        ? updated.timeline.height > updated.timeline.width
         : null;
     return {
       id: updated.id,

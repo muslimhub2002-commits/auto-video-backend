@@ -21,8 +21,6 @@ export class YoutubeController {
   constructor(private readonly youtubeService: YoutubeService) {}
 
   @UseGuards(JwtAuthGuard)
- 
-
   @UseGuards(JwtAuthGuard)
   @Get('auth-url')
   async getAuthUrl(@Req() req: Request, @GetUser() user: User) {
@@ -32,10 +30,14 @@ export class YoutubeController {
     // Derive the redirect URI from the current request in non-production.
     const host = req.get('host');
     const hostname = (host ?? '').split(':')[0].replace(/^\[|\]$/g, '');
-    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-    const redirectUriOverride = isLocalhost && host
-      ? `${req.protocol}://${host}/youtube/oauth2callback`
-      : undefined;
+    const isLocalhost =
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1';
+    const redirectUriOverride =
+      isLocalhost && host
+        ? `${req.protocol}://${host}/youtube/oauth2callback`
+        : undefined;
 
     const url = this.youtubeService.getAuthUrl(user.id, redirectUriOverride);
     return { url };
@@ -52,10 +54,14 @@ export class YoutubeController {
   ) {
     const host = req.get('host');
     const hostname = (host ?? '').split(':')[0].replace(/^\[|\]$/g, '');
-    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-    const redirectUriOverride = isLocalhost && host
-      ? `${req.protocol}://${host}/youtube/oauth2callback`
-      : undefined;
+    const isLocalhost =
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1';
+    const redirectUriOverride =
+      isLocalhost && host
+        ? `${req.protocol}://${host}/youtube/oauth2callback`
+        : undefined;
 
     await this.youtubeService.handleOAuthCallback({
       code,

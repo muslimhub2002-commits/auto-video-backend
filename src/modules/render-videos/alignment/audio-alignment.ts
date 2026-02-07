@@ -2,7 +2,11 @@ import * as fs from 'fs';
 import type OpenAI from 'openai';
 import type { SentenceInput, SentenceTiming } from '../render-videos.types';
 
-export type WithTimeout = <T>(promise: Promise<T>, ms: number, label: string) => Promise<T>;
+export type WithTimeout = <T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+) => Promise<T>;
 
 export const alignByWordCount = (
   sentences: SentenceInput[],
@@ -56,7 +60,9 @@ export const alignByVoiceActivity = async (
       noiseThresholdInDecibels: -35,
     });
 
-    const audible = Array.isArray(result?.audibleParts) ? result.audibleParts : [];
+    const audible = Array.isArray(result?.audibleParts)
+      ? result.audibleParts
+      : [];
 
     if (!audible.length) {
       return alignByWordCount(sentences, audioDurationSeconds);
@@ -67,14 +73,20 @@ export const alignByVoiceActivity = async (
         start: Number(p.startInSeconds),
         end: Number(p.endInSeconds),
       }))
-      .filter((p) => Number.isFinite(p.start) && Number.isFinite(p.end) && p.end > p.start)
+      .filter(
+        (p) =>
+          Number.isFinite(p.start) && Number.isFinite(p.end) && p.end > p.start,
+      )
       .sort((a, b) => a.start - b.start);
 
     if (!segments.length) {
       return alignByWordCount(sentences, audioDurationSeconds);
     }
 
-    const voicedDuration = segments.reduce((sum, s) => sum + (s.end - s.start), 0);
+    const voicedDuration = segments.reduce(
+      (sum, s) => sum + (s.end - s.start),
+      0,
+    );
 
     if (!Number.isFinite(voicedDuration) || voicedDuration <= 0) {
       return alignByWordCount(sentences, audioDurationSeconds);
@@ -114,7 +126,10 @@ export const alignByVoiceActivity = async (
       }
 
       for (const seg of segmentMaps) {
-        if (tCompressed >= seg.compressedStart && tCompressed <= seg.compressedEnd) {
+        if (
+          tCompressed >= seg.compressedStart &&
+          tCompressed <= seg.compressedEnd
+        ) {
           const within = tCompressed - seg.compressedStart;
           return seg.realStart + within;
         }
@@ -135,7 +150,8 @@ export const alignByVoiceActivity = async (
       };
     });
 
-    const realDuration = Number(result?.durationInSeconds) || audioDurationSeconds || 1;
+    const realDuration =
+      Number(result?.durationInSeconds) || audioDurationSeconds || 1;
     const T = Math.max(1, realDuration);
 
     for (const t of mappedTimings) {
@@ -172,10 +188,16 @@ export const alignAudioToSentences = async (params: {
 }): Promise<SentenceTiming[]> => {
   const fallback = () => {
     if (params.disableRenderer) {
-      return Promise.resolve(alignByWordCount(params.sentences, params.audioDurationSeconds));
+      return Promise.resolve(
+        alignByWordCount(params.sentences, params.audioDurationSeconds),
+      );
     }
 
-    return alignByVoiceActivity(params.audioPath, params.sentences, params.audioDurationSeconds);
+    return alignByVoiceActivity(
+      params.audioPath,
+      params.sentences,
+      params.audioDurationSeconds,
+    );
   };
 
   console.log('[RenderVideosService] alignAudioToSentences called', {
@@ -187,7 +209,9 @@ export const alignAudioToSentences = async (params: {
   });
 
   if (!params.openai) {
-    console.log('[RenderVideosService] OpenAI client not configured, using fallback alignment');
+    console.log(
+      '[RenderVideosService] OpenAI client not configured, using fallback alignment',
+    );
     return fallback();
   }
 
@@ -202,10 +226,13 @@ export const alignAudioToSentences = async (params: {
     const model = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe';
     const responseFormat = model.startsWith('gpt-4o') ? 'json' : 'verbose_json';
 
-    console.log('[RenderVideosService] Calling OpenAI audio.transcriptions.create', {
-      model,
-      responseFormat,
-    });
+    console.log(
+      '[RenderVideosService] Calling OpenAI audio.transcriptions.create',
+      {
+        model,
+        responseFormat,
+      },
+    );
 
     const transcription: any = await params.withTimeout(
       params.openai.audio.transcriptions.create({
@@ -217,7 +244,9 @@ export const alignAudioToSentences = async (params: {
       'OpenAI transcription',
     );
 
-    let segments: any[] = Array.isArray(transcription?.segments) ? transcription.segments : [];
+    let segments: any[] = Array.isArray(transcription?.segments)
+      ? transcription.segments
+      : [];
 
     console.log('[RenderVideosService] OpenAI transcription result', {
       hasSegments: Array.isArray(transcription?.segments),
@@ -252,7 +281,9 @@ export const alignAudioToSentences = async (params: {
       });
 
       if (!segments.length) {
-        console.warn('[RenderVideosService] Whisper also returned no segments, using fallback alignment');
+        console.warn(
+          '[RenderVideosService] Whisper also returned no segments, using fallback alignment',
+        );
         return fallback();
       }
     }
@@ -274,8 +305,10 @@ export const alignAudioToSentences = async (params: {
     for (const seg of segments) {
       const segStartRaw = seg.start;
       const segEndRaw = seg.end;
-      const segStart = typeof segStartRaw === 'number' ? segStartRaw : parseFloat(segStartRaw);
-      const segEnd = typeof segEndRaw === 'number' ? segEndRaw : parseFloat(segEndRaw);
+      const segStart =
+        typeof segStartRaw === 'number' ? segStartRaw : parseFloat(segStartRaw);
+      const segEnd =
+        typeof segEndRaw === 'number' ? segEndRaw : parseFloat(segEndRaw);
 
       if (!Number.isFinite(segStart) || !Number.isFinite(segEnd)) continue;
       if (segEnd <= segStart) continue;
@@ -298,7 +331,9 @@ export const alignAudioToSentences = async (params: {
     }
 
     if (!wordsTimeline.length) {
-      console.warn('[RenderVideosService] No wordsTimeline built from transcription, using fallback alignment');
+      console.warn(
+        '[RenderVideosService] No wordsTimeline built from transcription, using fallback alignment',
+      );
       return fallback();
     }
 
@@ -306,7 +341,9 @@ export const alignAudioToSentences = async (params: {
     let wordIndex = 0;
 
     const lastWordEnd =
-      (wordsTimeline[wordsTimeline.length - 1]?.endSeconds ?? params.audioDurationSeconds) || 1;
+      (wordsTimeline[wordsTimeline.length - 1]?.endSeconds ??
+        params.audioDurationSeconds) ||
+      1;
     const T = Math.max(1, lastWordEnd);
 
     const cleaned = params.sentences.map((s) => (s.text || '').trim());
@@ -368,9 +405,14 @@ export const alignAudioToSentences = async (params: {
       const match = findBestMatch(wordIndex, sentenceTokens);
 
       if (!match) {
-        const prevEnd = timings.length ? timings[timings.length - 1].endSeconds : 0;
+        const prevEnd = timings.length
+          ? timings[timings.length - 1].endSeconds
+          : 0;
         const remainingDuration = Math.max(0.1, T - prevEnd);
-        const remaining = alignByWordCount(params.sentences.slice(i), remainingDuration);
+        const remaining = alignByWordCount(
+          params.sentences.slice(i),
+          remainingDuration,
+        );
 
         for (const r of remaining) {
           timings.push({
@@ -409,15 +451,21 @@ export const alignAudioToSentences = async (params: {
       }
     }
 
-    console.log('[RenderVideosService] OpenAI-based alignment produced timings', {
-      timingCount: timings.length,
-    });
+    console.log(
+      '[RenderVideosService] OpenAI-based alignment produced timings',
+      {
+        timingCount: timings.length,
+      },
+    );
 
     return timings;
   } catch (err: any) {
-    console.error('[RenderVideosService] Error during OpenAI alignment, using fallback', {
-      message: err?.message,
-    });
+    console.error(
+      '[RenderVideosService] Error during OpenAI alignment, using fallback',
+      {
+        message: err?.message,
+      },
+    );
     return fallback();
   }
 };

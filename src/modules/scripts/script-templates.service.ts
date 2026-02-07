@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Script } from './entities/script.entity';
@@ -15,7 +19,10 @@ export class ScriptTemplatesService {
     private readonly scriptRepository: Repository<Script>,
   ) {}
 
-  private async loadUserScripts(userId: string, scriptIds: string[]): Promise<Script[]> {
+  private async loadUserScripts(
+    userId: string,
+    scriptIds: string[],
+  ): Promise<Script[]> {
     const uniqueIds = Array.from(new Set((scriptIds ?? []).filter(Boolean)));
     if (uniqueIds.length === 0) return [];
 
@@ -24,7 +31,14 @@ export class ScriptTemplatesService {
         id: In(uniqueIds),
         user_id: userId,
       },
-      relations: ['sentences', 'sentences.image', 'voice'],
+      relations: [
+        'sentences',
+        'sentences.image',
+        'sentences.startFrameImage',
+        'sentences.endFrameImage',
+        'sentences.video',
+        'voice',
+      ],
     });
 
     if (scripts.length !== uniqueIds.length) {
@@ -34,7 +48,10 @@ export class ScriptTemplatesService {
     return scripts;
   }
 
-  async create(userId: string, dto: CreateScriptTemplateDto): Promise<ScriptTemplate> {
+  async create(
+    userId: string,
+    dto: CreateScriptTemplateDto,
+  ): Promise<ScriptTemplate> {
     const title = (dto.title ?? '').trim();
     if (!title) throw new BadRequestException('title is required');
 
@@ -55,14 +72,25 @@ export class ScriptTemplatesService {
     userId: string,
     page = 1,
     limit = 20,
-  ): Promise<{ items: ScriptTemplate[]; total: number; page: number; limit: number }> {
+  ): Promise<{
+    items: ScriptTemplate[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
-    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
+    const safeLimit =
+      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
 
     const [items, total] = await this.templateRepository.findAndCount({
       where: { user_id: userId },
       order: { created_at: 'DESC' },
-      relations: ['scripts', 'scripts.sentences', 'scripts.sentences.image', 'scripts.voice'],
+      relations: [
+        'scripts',
+        'scripts.sentences',
+        'scripts.sentences.image',
+        'scripts.voice',
+      ],
       skip: (safePage - 1) * safeLimit,
       take: safeLimit,
     });
@@ -73,7 +101,12 @@ export class ScriptTemplatesService {
   async findOne(id: string, userId: string): Promise<ScriptTemplate> {
     const template = await this.templateRepository.findOne({
       where: { id, user_id: userId },
-      relations: ['scripts', 'scripts.sentences', 'scripts.sentences.image', 'scripts.voice'],
+      relations: [
+        'scripts',
+        'scripts.sentences',
+        'scripts.sentences.image',
+        'scripts.voice',
+      ],
     });
 
     if (!template) throw new NotFoundException('Template not found');
@@ -81,7 +114,11 @@ export class ScriptTemplatesService {
     return template;
   }
 
-  async update(id: string, userId: string, dto: UpdateScriptTemplateDto): Promise<ScriptTemplate> {
+  async update(
+    id: string,
+    userId: string,
+    dto: UpdateScriptTemplateDto,
+  ): Promise<ScriptTemplate> {
     const existing = await this.templateRepository.findOne({
       where: { id, user_id: userId },
       relations: ['scripts'],
@@ -100,7 +137,10 @@ export class ScriptTemplatesService {
     }
 
     if (dto.scriptIds !== undefined) {
-      existing.scripts = await this.loadUserScripts(userId, dto.scriptIds ?? []);
+      existing.scripts = await this.loadUserScripts(
+        userId,
+        dto.scriptIds ?? [],
+      );
     }
 
     await this.templateRepository.save(existing);

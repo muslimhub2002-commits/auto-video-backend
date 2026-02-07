@@ -1,7 +1,16 @@
-import { IsNotEmpty, IsOptional, IsString, IsUrl, Length } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Length,
+} from 'class-validator';
 
 export class CreateVoiceUrlDto {
-  @IsUrl({ require_protocol: true }, { message: 'voice must be a valid URL (include https://)' })
+  @IsUrl(
+    { require_protocol: true },
+    { message: 'voice must be a valid URL (include https://)' },
+  )
   @IsNotEmpty()
   voice: string;
 

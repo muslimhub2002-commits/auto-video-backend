@@ -1,4 +1,11 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class GenerateImageDto {
   @IsString()
@@ -17,6 +24,16 @@ export class GenerateImageDto {
   @IsString()
   @IsOptional()
   prompt?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['single', 'start', 'end'])
+  frameType?: 'single' | 'start' | 'end';
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(4000)
+  continuityPrompt?: string;
 
   @IsString()
   @IsOptional()

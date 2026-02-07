@@ -7,6 +7,7 @@ import {
 } from 'typeorm';
 import { Script } from './script.entity';
 import { Image } from '../../images/entities/image.entity';
+import { Video } from '../../videos/entities/video.entity';
 
 @Entity('sentences')
 export class Sentence {
@@ -25,6 +26,15 @@ export class Sentence {
   @Column({ type: 'uuid', nullable: true })
   image_id: string | null;
 
+  @Column({ type: 'uuid', nullable: true })
+  start_frame_image_id: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  end_frame_image_id: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  video_id: string | null;
+
   @Column({ type: 'boolean', default: false })
   isSuspense: boolean;
 
@@ -37,4 +47,16 @@ export class Sentence {
   @ManyToOne(() => Image, { nullable: true })
   @JoinColumn({ name: 'image_id' })
   image: Image | null;
+
+  @ManyToOne(() => Image, { nullable: true })
+  @JoinColumn({ name: 'start_frame_image_id' })
+  startFrameImage: Image | null;
+
+  @ManyToOne(() => Image, { nullable: true })
+  @JoinColumn({ name: 'end_frame_image_id' })
+  endFrameImage: Image | null;
+
+  @ManyToOne(() => Video, { nullable: true })
+  @JoinColumn({ name: 'video_id' })
+  video: Video | null;
 }

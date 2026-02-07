@@ -1,4 +1,9 @@
-export type SentenceInput = { text: string; isSuspense?: boolean };
+export type SentenceInput = {
+  text: string;
+  isSuspense?: boolean;
+  mediaType?: 'image' | 'video';
+  videoUrl?: string;
+};
 
 export type UploadedAsset = {
   buffer: Buffer;

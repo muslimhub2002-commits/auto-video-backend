@@ -6,17 +6,42 @@ import {
 } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
+import { GoogleGenAI } from '@google/genai';
 import { spawn } from 'child_process';
+import { createHash } from 'crypto';
 import ffmpegPath from 'ffmpeg-static';
 import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { GenerateScriptDto } from './dto/generate-script.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
+import { GenerateVideoFromFramesDto } from './dto/generate-video-from-frames.dto';
 import { ImagesService } from '../images/images.service';
 import { ImageQuality, ImageSize } from '../images/entities/image.entity';
 import { LlmRouter } from './llm/llm-router';
 import type { LlmMessage } from './llm/llm-types';
+import { uploadBufferToCloudinary } from '../render-videos/utils/cloudinary.utils';
+
+type UploadedImageFile = {
+  buffer?: Buffer;
+  mimetype?: string;
+  size?: number;
+  originalname?: string;
+};
+
+type CharacterGender = 'male' | 'female' | 'unknown';
+
+type CharacterProfile = {
+  key: string;
+  name: string;
+  gender: CharacterGender;
+  description: string;
+};
+
+type CharacterBible = {
+  characters: CharacterProfile[];
+  byKey: Record<string, CharacterProfile>;
+};
 
 @Injectable()
 export class AiService {
@@ -37,8 +62,254 @@ export class AiService {
   private readonly forbiddenIslamicDepictionRegex =
     /\b(allah|god|deity|divine\s*being|prophet|messenger\s+of\s+allah|rasul|rasool|muhammad|mohammad|ahmad|isa|jesus|moses|musa|ibrahim|abraham|noah|nuh|yusuf|joseph|yakub|yaqub|jacob|dawud|david|sulayman|solomon|yunus|jonah|aisha|khadija|fatima|abu\s*bakr|umar|u?thman|ali\b|sahaba|companions?|caliphs?|archangel|angel\s+gabriel|jibril|jibreel|quran\s+page|quranic\s+text|quran\s+verse|surah|ayah|arabic\s+text|quranic\s+script|mushaf|quran\s+book)\b/i;
 
+  private readonly characterBibleCache = new Map<
+    string,
+    { expiresAt: number; bible: CharacterBible }
+  >();
+
   // Narration pacing assumption (words per minute) used to derive strict word-count targets.
   private readonly narrationWpm = 150;
+
+  async generateVideoFromFrames(params: {
+    prompt: string;
+    model?: string;
+    resolution?: string;
+    aspectRatio?: string;
+    isLooping?: boolean;
+    startFrame: { buffer: Buffer; mimeType: string };
+    endFrame?: { buffer: Buffer; mimeType: string };
+  }): Promise<{ buffer: Buffer; mimeType: string; uri: string }> {
+    if (!this.geminiApiKey) {
+      throw new InternalServerErrorException(
+        'GEMINI_API_KEY is not configured on the server',
+      );
+    }
+
+    const prompt = String(params.prompt ?? '').trim();
+    if (!prompt) {
+      throw new BadRequestException('Prompt is required to generate a video');
+    }
+
+    const ai = new GoogleGenAI({ apiKey: this.geminiApiKey });
+
+    const config: any = {
+      numberOfVideos: 1,
+      resolution: String(params.resolution ?? '').trim() || '720p',
+    };
+
+    // Default to portrait (shorts/reels) if not specified.
+    const aspectRatio = String(params.aspectRatio ?? '').trim() || '9:16';
+    config.aspectRatio = aspectRatio;
+
+    const requestedModelRaw =
+      String(params.model ?? '').trim() ||
+      String(process.env.GEMINI_VIDEO_MODEL ?? '').trim();
+
+    const requestedModel = requestedModelRaw || 'veo-3.0-fast-generate-001';
+
+    const finalEndFrame = params.isLooping
+      ? params.startFrame
+      : params.endFrame;
+    const hasSecondFrame = Boolean(finalEndFrame);
+
+    // Veo 3 uses `endFrame` while older variants use `lastFrame`.
+    const preferredSecondFrameKey: 'endFrame' | 'lastFrame' = requestedModel
+      .toLowerCase()
+      .startsWith('veo-3')
+      ? 'endFrame'
+      : 'lastFrame';
+
+    const payload: any = {
+      model: requestedModel,
+      config,
+      prompt,
+      image: {
+        imageBytes: params.startFrame.buffer.toString('base64'),
+        mimeType: params.startFrame.mimeType,
+      },
+    };
+
+    const setSecondFrame = (key: 'endFrame' | 'lastFrame' | null) => {
+      delete payload.config.endFrame;
+      delete payload.config.lastFrame;
+      if (!finalEndFrame || !key) return;
+      payload.config[key] = {
+        imageBytes: finalEndFrame.buffer.toString('base64'),
+        mimeType: finalEndFrame.mimeType,
+      };
+    };
+
+    setSecondFrame(hasSecondFrame ? preferredSecondFrameKey : null);
+
+    const isFrameParamUnsupported = (
+      err: unknown,
+      paramName: 'lastFrame' | 'endFrame',
+    ) => {
+      const msg =
+        typeof err === 'object' && err !== null && 'message' in err
+          ? String((err as any).message)
+          : '';
+      return (
+        (msg.includes('`' + paramName + '`') || msg.includes(paramName)) &&
+        (msg.includes("isn't supported") || msg.includes('is not supported'))
+      );
+    };
+
+    const isModelNotFound = (err: unknown) => {
+      const msg =
+        typeof err === 'object' && err !== null && 'message' in err
+          ? String((err as any).message)
+          : '';
+      return (
+        msg.toLowerCase().includes('not found') ||
+        (msg.toLowerCase().includes('model') &&
+          msg.toLowerCase().includes('not') &&
+          msg.toLowerCase().includes('available')) ||
+        msg.includes('404')
+      );
+    };
+
+    let operation;
+    const callGenerate = () => ai.models.generateVideos(payload);
+
+    try {
+      operation = await callGenerate();
+    } catch (err: unknown) {
+      // Some models use `endFrame` instead of `lastFrame` (and vice versa).
+      // When that happens, swap the field name and retry before dropping the second frame.
+      if (hasSecondFrame && isFrameParamUnsupported(err, 'lastFrame')) {
+        setSecondFrame('endFrame');
+        operation = await callGenerate();
+      } else if (hasSecondFrame && isFrameParamUnsupported(err, 'endFrame')) {
+        setSecondFrame('lastFrame');
+        operation = await callGenerate();
+      } else if (payload.model === requestedModel && isModelNotFound(err)) {
+        // If the preferred model isn't available for this API key/project,
+        // fall back to Veo 2 so the feature still works.
+        payload.model = 'veo-2.0-generate-001';
+        // Veo 2 expects `lastFrame`.
+        if (hasSecondFrame) setSecondFrame('lastFrame');
+        try {
+          operation = await callGenerate();
+        } catch (fallbackErr: unknown) {
+          // If the second-frame field name is rejected, try the other one, then drop it.
+          if (
+            hasSecondFrame &&
+            isFrameParamUnsupported(fallbackErr, 'lastFrame')
+          ) {
+            setSecondFrame('endFrame');
+            operation = await callGenerate();
+          } else if (
+            hasSecondFrame &&
+            isFrameParamUnsupported(fallbackErr, 'endFrame')
+          ) {
+            setSecondFrame('lastFrame');
+            operation = await callGenerate();
+          } else {
+            throw fallbackErr;
+          }
+        }
+      } else {
+        throw err;
+      }
+    }
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    while (!operation.done) {
+      await sleep(10_000);
+      operation = await ai.operations.getVideosOperation({ operation });
+    }
+
+    const videos = operation?.response?.generatedVideos;
+    const first = Array.isArray(videos) && videos.length > 0 ? videos[0] : null;
+    const uriRaw = first?.video?.uri;
+    if (!uriRaw) {
+      throw new InternalServerErrorException('No videos generated');
+    }
+
+    const uri = decodeURIComponent(String(uriRaw));
+    const urlWithKey = `${uri}${uri.includes('?') ? '&' : '?'}key=${encodeURIComponent(
+      this.geminiApiKey,
+    )}`;
+
+    const res = await fetch(urlWithKey);
+    if (!res.ok) {
+      throw new InternalServerErrorException(
+        `Failed to fetch generated video: ${res.status} ${res.statusText}`,
+      );
+    }
+
+    const mimeType = res.headers.get('content-type') || 'video/mp4';
+    const arrayBuffer = await res.arrayBuffer();
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      mimeType,
+      uri,
+    };
+  }
+
+  async generateVideoFromUploadedFrames(params: {
+    userId: string;
+    dto: GenerateVideoFromFramesDto;
+    startFrameFile?: UploadedImageFile;
+    endFrameFile?: UploadedImageFile;
+  }): Promise<{ videoUrl: string }> {
+    const prompt = String(params.dto?.prompt ?? '').trim();
+    if (!prompt) {
+      throw new BadRequestException('Prompt is required');
+    }
+
+    const isLooping = Boolean(params.dto?.isLooping);
+
+    const fromUploaded = (
+      file: UploadedImageFile | undefined,
+      label: string,
+    ) => {
+      if (!file) return null;
+      const mimeType = String(file.mimetype ?? '').trim();
+      if (!mimeType || !mimeType.startsWith('image/')) {
+        throw new BadRequestException(`${label} must be an image`);
+      }
+      if (
+        !file.buffer ||
+        !(file.buffer instanceof Buffer) ||
+        file.buffer.length === 0
+      ) {
+        throw new BadRequestException(`${label} is missing file data`);
+      }
+      return { buffer: file.buffer, mimeType };
+    };
+
+    const start = fromUploaded(params.startFrameFile, 'Start frame');
+    if (!start) {
+      throw new BadRequestException('Start frame image is required');
+    }
+
+    const end = isLooping
+      ? undefined
+      : (fromUploaded(params.endFrameFile, 'End frame') ?? undefined);
+    if (!isLooping && !end) {
+      throw new BadRequestException('End frame image is required');
+    }
+
+    const generated = await this.generateVideoFromFrames({
+      prompt,
+      model: params.dto?.model,
+      resolution: params.dto?.resolution,
+      aspectRatio: params.dto?.aspectRatio,
+      isLooping,
+      startFrame: start,
+      endFrame: end,
+    });
+
+    const uploaded = await uploadBufferToCloudinary({
+      buffer: generated.buffer,
+      folder: 'auto-video-generator/sentence-videos',
+      resource_type: 'video',
+    });
+
+    return { videoUrl: uploaded.secure_url };
+  }
 
   private normalizeTechnique(raw?: string | null): string | null {
     const s = (raw ?? '').trim();
@@ -94,10 +365,14 @@ export class AiService {
       'gemini-2.5-flash-preview-tts';
 
     this.openai = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
-    this.anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
+    this.anthropic = anthropicKey
+      ? new Anthropic({ apiKey: anthropicKey })
+      : null;
 
     if (!this.openai && !this.anthropic && !(geminiKey || '').trim()) {
-      throw new Error('Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY in the environment.');
+      throw new Error(
+        'Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY in the environment.',
+      );
     }
 
     this.llm = new LlmRouter({
@@ -114,11 +389,21 @@ export class AiService {
       'claude-sonnet-4-5';
 
     // Used for small classification tasks (cheaper/faster than the main model).
+    // Pick a sensible provider-specific default so we don't accidentally call a non-existent
+    // model (which can spam logs during batch operations like "Generate All Images").
+    const defaultCheapModel = ((): string => {
+      if ((openaiKey ?? '').trim()) return 'gpt-4o-mini';
+      if ((anthropicKey ?? '').trim()) return 'claude-3-haiku-20240307';
+      if ((geminiKey ?? '').trim()) return 'gemini-1.5-flash';
+      // Should be unreachable due to earlier guard, but keep a safe fallback.
+      return 'gpt-4o-mini';
+    })();
+
     this.cheapModel =
       process.env.DEFAULT_CHEAP_TEXT_MODEL ||
       process.env.ANTHROPIC_CHEAP_MODEL ||
       process.env.OPENAI_CHEAP_MODEL ||
-      'claude-3-5-haiku-latest';
+      defaultCheapModel;
 
     // Kept for compatibility with any OpenAI image generation paths (if used).
     this.imageModel = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
@@ -138,7 +423,9 @@ export class AiService {
     if (!s) return null;
 
     // Match patterns like "1 minute", "2.5 min", "90 seconds", "30 sec"
-    const match = s.match(/(\d+(?:\.\d+)?)\s*(seconds?|secs?|s|minutes?|mins?|m)\b/);
+    const match = s.match(
+      /(\d+(?:\.\d+)?)\s*(seconds?|secs?|s|minutes?|mins?|m)\b/,
+    );
     if (!match) return null;
 
     const value = Number(match[1]);
@@ -154,7 +441,11 @@ export class AiService {
     return Math.round(seconds);
   }
 
-  private getStrictWordRange(lengthRaw: string): { targetWords: number; minWords: number; maxWords: number } {
+  private getStrictWordRange(lengthRaw: string): {
+    targetWords: number;
+    minWords: number;
+    maxWords: number;
+  } {
     const seconds = this.parseApproxLengthToSeconds(lengthRaw);
 
     const targetWords = seconds
@@ -169,14 +460,25 @@ export class AiService {
     return { targetWords, minWords, maxWords };
   }
 
-  private async containsForbiddenIslamicDepiction(text: string): Promise<boolean> {
+  private async containsForbiddenIslamicDepiction(
+    text: string,
+  ): Promise<boolean> {
     const s = (text || '').toLowerCase();
     if (!s) return false;
 
     // Quick checks first - explicit mentions
-    if (s.includes('prophet') || s.includes('sahaba') || s.includes('companion') ||
-      s.includes('quran page') || s.includes('quranic text') || s.includes('quran verse') ||
-      s.includes('arabic text') || s.includes('surah') || s.includes('ayah') || s.includes('mushaf')) {
+    if (
+      s.includes('prophet') ||
+      s.includes('sahaba') ||
+      s.includes('companion') ||
+      s.includes('quran page') ||
+      s.includes('quranic text') ||
+      s.includes('quran verse') ||
+      s.includes('arabic text') ||
+      s.includes('surah') ||
+      s.includes('ayah') ||
+      s.includes('mushaf')
+    ) {
       return true;
     }
 
@@ -223,12 +525,261 @@ export class AiService {
       console.error('Error checking pronoun context:', error);
       // If LLM check fails, be conservative and return true if there are pronouns
       // in a potentially religious context
-      const religiousContext = /\b(islam|muslim|quran|hadith|faith|allah|worship|prayer)\b/i.test(text);
+      const religiousContext =
+        /\b(islam|muslim|quran|hadith|faith|allah|worship|prayer)\b/i.test(
+          text,
+        );
       return religiousContext && hasPronouns;
     }
   }
 
-  private extractBooleanFromModelText(raw: string | null | undefined): boolean | null {
+  private sentenceMentionsFemale(text: string): boolean {
+    const s = (text ?? '').trim();
+    if (!s) return false;
+    return (
+      /\b(she|her|hers|herself)\b/i.test(s) ||
+      /\b(woman|women|female|girl|mother|mom|wife|sister|daughter|aunt|queen|princess)\b/i.test(
+        s,
+      )
+    );
+  }
+
+  private hashScriptForCache(script: string): string {
+    return createHash('sha1').update(script, 'utf8').digest('hex');
+  }
+
+  private normalizeCharacterBible(raw: any): CharacterBible {
+    const rawChars = Array.isArray(raw?.characters) ? raw.characters : [];
+
+    const characters: CharacterProfile[] = rawChars
+      .map((c: any, idx: number) => {
+        const key = String(c?.key ?? `C${idx + 1}`).trim() || `C${idx + 1}`;
+        const name = String(c?.name ?? '').trim() || key;
+        const genderRaw = String(c?.gender ?? '')
+          .trim()
+          .toLowerCase();
+        const gender: CharacterGender =
+          genderRaw === 'male' || genderRaw === 'm'
+            ? 'male'
+            : genderRaw === 'female' || genderRaw === 'f'
+              ? 'female'
+              : 'unknown';
+        const description = String(c?.description ?? '').trim();
+
+        return { key, name, gender, description };
+      })
+      .filter((c: CharacterProfile) => Boolean(c.key) && Boolean(c.description))
+      // Enforce the product rule: never produce female character profiles.
+      .filter((c: CharacterProfile) => c.gender !== 'female')
+      .slice(0, 8);
+
+    const byKey: Record<string, CharacterProfile> = {};
+    for (const c of characters) byKey[c.key] = c;
+
+    return { characters, byKey };
+  }
+
+  private async getOrCreateCharacterBible(
+    scriptRaw?: string | null,
+  ): Promise<CharacterBible | null> {
+    const script = (scriptRaw ?? '').trim();
+    if (!script) return null;
+
+    const key = this.hashScriptForCache(script);
+    const now = Date.now();
+    const cached = this.characterBibleCache.get(key);
+    if (cached && cached.expiresAt > now) return cached.bible;
+
+    // Extract only allowed characters (exclude: Allah/Prophets/Sahaba and all women/females)
+    // so we can keep visual consistency across sentence-level image prompts.
+    const messages: LlmMessage[] = [
+      {
+        role: 'system',
+        content:
+          'You extract a CHARACTER BIBLE for consistent image generation across multiple scenes.\n' +
+          'Return ONLY valid JSON with exactly this shape: {"characters": [{"key": string, "name": string, "gender": "male"|"unknown", "description": string}]}.\n\n' +
+          'Rules (must follow):\n' +
+          '- Extract ONLY recurring or clearly implied characters that could be visually depicted.\n' +
+          '- EXCLUDE any mention of Allah/God, any Prophet, any Sahaba/Companions, or any religious figure.\n' +
+          '- EXCLUDE women/females entirely (do not output female characters).\n' +
+          '- keys must be short like C1, C2, C3...\n' +
+          '- description must include facial + physical attributes for consistency (age range, face, hair, beard, skin tone, body build, clothing/accessories).\n' +
+          '- Keep descriptions concise but specific (1-2 sentences).\n' +
+          '- If no safe characters exist, return {"characters": []}.',
+      },
+      {
+        role: 'user',
+        content: 'SCRIPT (extract character bible from this):\n' + script,
+      },
+    ];
+
+    const tryModel = async (model: string): Promise<CharacterBible> => {
+      const parsed = await this.llm.completeJson<unknown>({
+        model,
+        temperature: 0.2,
+        maxTokens: 800,
+        retries: 1,
+        messages,
+      });
+      return this.normalizeCharacterBible(parsed);
+    };
+
+    try {
+      const bible = await tryModel(this.cheapModel);
+      const ttlMs = 30 * 60 * 1000;
+      this.characterBibleCache.set(key, { bible, expiresAt: now + ttlMs });
+      return bible;
+    } catch (error: any) {
+      // If the "cheap" model isn't available (common when users don't have access to a specific Anthropic alias),
+      // fall back to the main model. If that also fails, cache an empty bible briefly to prevent log spam.
+      console.error(
+        'Character bible extraction failed (cheap model). Falling back.',
+        {
+          message: error?.message,
+          status: error?.status,
+          code: error?.code,
+          type: error?.type,
+        },
+      );
+
+      try {
+        const bible = await tryModel(this.model);
+        const ttlMs = 30 * 60 * 1000;
+        this.characterBibleCache.set(key, { bible, expiresAt: now + ttlMs });
+        return bible;
+      } catch (fallbackErr: any) {
+        console.error(
+          'Character bible extraction failed (fallback model). Disabling for this script temporarily.',
+          {
+            message: fallbackErr?.message,
+            status: fallbackErr?.status,
+            code: fallbackErr?.code,
+            type: fallbackErr?.type,
+          },
+        );
+
+        const empty: CharacterBible = { characters: [], byKey: {} };
+        const ttlMs = 5 * 60 * 1000;
+        this.characterBibleCache.set(key, {
+          bible: empty,
+          expiresAt: now + ttlMs,
+        });
+        return empty;
+      }
+    }
+  }
+
+  private async mapSentenceToCharacterKeys(params: {
+    sentence: string;
+    script?: string | null;
+    bible: CharacterBible;
+  }): Promise<string[]> {
+    const sentence = (params.sentence ?? '').trim();
+    if (!sentence) return [];
+    if (!params.bible.characters.length) return [];
+
+    const script = (params.script ?? '').trim();
+    const characterList = params.bible.characters
+      .map((c) => `${c.key}: ${c.name} — ${c.description}`)
+      .join('\n');
+
+    const nameToKey = new Map<string, string>();
+    for (const c of params.bible.characters) {
+      const nameKey = String(c.name ?? '')
+        .trim()
+        .toLowerCase();
+      if (nameKey) nameToKey.set(nameKey, c.key);
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = await this.llm.completeJson<unknown>({
+        model: this.cheapModel,
+        retries: 1,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You map a single sentence to referenced character keys. ' +
+              'Return ONLY valid JSON with exactly this shape: {"keys": string[]}.\n\n' +
+              'Rules:\n' +
+              '- Use the character list provided.\n' +
+              '- IMPORTANT: The array MUST contain ONLY character KEYS from the list (e.g. "C1"), NOT character names.\n' +
+              '- Include a key ONLY if the sentence clearly refers to that character (name, title, or unambiguous pronoun reference).\n' +
+              '- If unclear, return an empty array.\n' +
+              '- Never invent new keys.\n\n' +
+              'Example output: {"keys": ["C2"]}',
+          },
+          {
+            role: 'user',
+            content:
+              (script
+                ? `SCRIPT CONTEXT (for pronoun resolution):\n${script.slice(0, 8000)}\n\n`
+                : '') +
+              `CHARACTER LIST (keys you are allowed to output):\n${characterList}\n\nSENTENCE:\n${sentence}`,
+          },
+        ],
+      });
+    } catch (error: any) {
+      console.error(
+        'Character key mapping failed; skipping character injection for this sentence.',
+        {
+          message: error?.message,
+          status: error?.status,
+          code: error?.code,
+          type: error?.type,
+        },
+      );
+      return [];
+    }
+
+    const keysRaw: unknown[] = Array.isArray((parsed as any)?.keys)
+      ? ((parsed as any).keys as unknown[])
+      : [];
+
+    const coerceToKey = (raw: string): string | null => {
+      const s = String(raw ?? '').trim();
+      if (!s) return null;
+
+      // Happy path: model returns actual keys.
+      if (params.bible.byKey[s]) return s;
+
+      // Common failure: model returns a character NAME instead of the key.
+      const byName = nameToKey.get(s.toLowerCase());
+      if (byName && params.bible.byKey[byName]) return byName;
+
+      // Tolerate things like "C1:" or "(C1)".
+      const keyMatch = s.match(/\b(C\d{1,2})\b/i);
+      if (keyMatch) {
+        const k = keyMatch[1].toUpperCase();
+        if (params.bible.byKey[k]) return k;
+      }
+
+      // Fuzzy-ish: if output is "Utbah" and the character name is "Utbah ibn ...".
+      const lowered = s.toLowerCase();
+      for (const c of params.bible.characters) {
+        const cn = String(c.name ?? '')
+          .trim()
+          .toLowerCase();
+        if (!cn) continue;
+        if (cn === lowered || cn.includes(lowered) || lowered.includes(cn)) {
+          if (params.bible.byKey[c.key]) return c.key;
+        }
+      }
+
+      return null;
+    };
+
+    const normalizedKeys: string[] = keysRaw
+      .map((k) => coerceToKey(String(k)))
+      .filter((k): k is string => Boolean(k));
+
+    return Array.from(new Set<string>(normalizedKeys)).slice(0, 3);
+  }
+
+  private extractBooleanFromModelText(
+    raw: string | null | undefined,
+  ): boolean | null {
     const text = (raw ?? '').trim().toLowerCase();
     if (!text) return null;
 
@@ -240,7 +791,7 @@ export class AiService {
       const parsed = JSON.parse(text);
       if (typeof parsed === 'boolean') return parsed;
       if (parsed && typeof parsed === 'object') {
-        const v = (parsed as any).mentions ?? (parsed as any).result ?? (parsed as any).value;
+        const v = parsed.mentions ?? parsed.result ?? parsed.value;
         if (typeof v === 'boolean') return v;
       }
     } catch {
@@ -263,13 +814,10 @@ export class AiService {
   private async sentenceMentionsAllahProphetOrSahaba(params: {
     script?: string | null;
     sentence: string;
-  }): Promise<boolean> {
+    characterBible?: CharacterBible | null;
+  }): Promise<{ mentions: boolean; characterKeys: string[] }> {
     const sentence = (params.sentence ?? '').trim();
-    if (!sentence) return false;
-
-    const quickHitRegex =
-      /\b(allah|the\s+prophet|prophet\s+muhammad|muhammad|mohammad|rasulullah|rasul\s*allah|messenger\s+of\s+allah|pbuh|peace\s+be\s+upon\s+him|sahaba|companions?|abu\s*bakr|umar|\bu?thman\b|ali\b|bilal|khalid\s+ibn\s+walid|salman\s+al\s+farisi|abu\s+hurairah|aisha|khadija|fatima)\b/i;
-    if (quickHitRegex.test(sentence)) return true;
+    if (!sentence) return { mentions: false, characterKeys: [] };
 
     const script = (params.script ?? '').trim();
     const scriptForContext = script ? script.slice(0, 8000) : '';
@@ -288,10 +836,10 @@ export class AiService {
               'Task: Determine whether the TARGET SENTENCE mentions OR refers to any of the following (directly or via pronouns resolved using the provided SCRIPT CONTEXT):\n' +
               '1) Allah (or God when clearly used in Islamic context)\n' +
               '2) Any Prophet\n' +
-              '3) Any Sahaba / Companions of Prophet Muhammad (including common names like Abu Bakr, Umar, Uthman, Ali, etc.)\n\n' +
+              '3) Any Sahaba / Companion of the Prophet\n\n' +
               'Rules:\n' +
               '- Use SCRIPT CONTEXT only to resolve pronouns / references for the TARGET SENTENCE.\n' +
-              '- If the sentence is talking about a regular person (not tied to the list), return false.\n' +
+              '- If the sentence is talking about any one but Allah, Any Prophet, Sahaba/Companions, return false.\n' +
               '- If unclear/ambiguous, return false.',
           },
           {
@@ -299,17 +847,27 @@ export class AiService {
             content:
               (scriptForContext
                 ? `SCRIPT CONTEXT (for reference resolution):\n${scriptForContext}\n\n`
-                : '') +
-              `TARGET SENTENCE:\n${sentence}`,
+                : '') + `TARGET SENTENCE:\n${sentence}`,
           },
         ],
       });
       const parsed = this.extractBooleanFromModelText(raw);
-      return parsed ?? false;
+      const mentions = parsed ?? false;
+      if (mentions) return { mentions: true, characterKeys: [] };
+      if (params.characterBible && params.characterBible.characters.length) {
+        const characterKeys = await this.mapSentenceToCharacterKeys({
+          sentence,
+          script: params.script,
+          bible: params.characterBible,
+        });
+        return { mentions: false, characterKeys };
+      }
+
+      return { mentions: false, characterKeys: [] };
     } catch (error) {
       console.error('Error classifying Allah/Prophet/Sahaba reference:', error);
       // Non-fatal: default to false so we don't unexpectedly restrict prompts.
-      return false;
+      return { mentions: false, characterKeys: [] };
     }
   }
 
@@ -409,9 +967,7 @@ export class AiService {
       });
     } catch (error) {
       // Surface a clean error to the controller
-      throw new InternalServerErrorException(
-        'Failed to generate script',
-      );
+      throw new InternalServerErrorException('Failed to generate script');
     }
   }
 
@@ -444,7 +1000,8 @@ export class AiService {
           // Common failure: {"1":"...","2":"..."}
           // Convert numeric-keyed objects to an ordered array.
           const keys = Object.keys(obj);
-          const allNumericKeys = keys.length > 0 && keys.every((k) => /^\d+$/.test(k));
+          const allNumericKeys =
+            keys.length > 0 && keys.every((k) => /^\d+$/.test(k));
           if (allNumericKeys) {
             return keys
               .sort((a, b) => Number(a) - Number(b))
@@ -564,9 +1121,7 @@ export class AiService {
         ],
       });
     } catch (error) {
-      throw new InternalServerErrorException(
-        'Failed to enhance script',
-      );
+      throw new InternalServerErrorException('Failed to enhance script');
     }
   }
 
@@ -588,7 +1143,8 @@ export class AiService {
 
     const techniqueBlock = this.getTechniquePromptBlock(technique);
 
-    const requiredRoleLine = 'You are an expert editor for short video narration.';
+    const requiredRoleLine =
+      'You are an expert editor for short video narration.';
     const requiredOutputOnlyLine =
       'You ONLY respond with the improved sentence text. No quotes, no headings, no markdown, no explanations.';
     const requiredSingleSentenceLine =
@@ -625,9 +1181,7 @@ export class AiService {
         ],
       });
     } catch (error) {
-      throw new InternalServerErrorException(
-        'Failed to enhance sentence',
-      );
+      throw new InternalServerErrorException('Failed to enhance sentence');
     }
   }
 
@@ -641,26 +1195,27 @@ export class AiService {
     }
 
     try {
-      const title = (await this.llm.completeText({
-        model: this.model,
-        maxTokens: 64,
-        temperature: 0.4,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You create concise, engaging titles for video scripts. ' +
-              'Respond with ONLY the title text, no quotes, no extra words.',
-          },
-          {
-            role: 'user',
-            content:
-              'Generate a short, catchy title (max 8 words) for this script:\n\n' +
-              trimmed,
-          },
-        ],
-      }))
-        ?.trim();
+      const title = (
+        await this.llm.completeText({
+          model: this.model,
+          maxTokens: 64,
+          temperature: 0.4,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You create concise, engaging titles for video scripts. ' +
+                'Respond with ONLY the title text, no quotes, no extra words.',
+            },
+            {
+              role: 'user',
+              content:
+                'Generate a short, catchy title (max 8 words) for this script:\n\n' +
+                trimmed,
+            },
+          ],
+        })
+      )?.trim();
       if (!title) {
         return 'Untitled Script';
       }
@@ -715,7 +1270,9 @@ export class AiService {
       throw new InternalServerErrorException('Invalid JSON from the model');
     }
 
-    const title = String(parsed.title ?? '').trim().slice(0, 100);
+    const title = String(parsed.title ?? '')
+      .trim()
+      .slice(0, 100);
 
     const requiredHashtags = '#allah,#shorts';
 
@@ -729,7 +1286,10 @@ export class AiService {
       const first = cleaned.split(/(?<=[.!?])\s+/)[0] || cleaned;
       const normalized = first.replace(/[\n\r]+/g, ' ').trim();
       if (!normalized) return 'A quick short with a powerful takeaway.';
-      const capped = normalized.length > 140 ? normalized.slice(0, 137).trimEnd() + '...' : normalized;
+      const capped =
+        normalized.length > 140
+          ? normalized.slice(0, 137).trimEnd() + '...'
+          : normalized;
       return capped;
     };
 
@@ -741,19 +1301,21 @@ export class AiService {
 
     const modelTags = Array.isArray(parsed.tags)
       ? parsed.tags
-        .map((t: any) => String(t).trim())
-        .filter(Boolean)
-        .map((t: string) => t.replace(/^#/, ''))
-        .map((t: string) => t.toLowerCase())
-        .map((t: string) => t.slice(0, 30))
-        .slice(0, 25)
+          .map((t: any) => String(t).trim())
+          .filter(Boolean)
+          .map((t: string) => t.replace(/^#/, ''))
+          .map((t: string) => t.toLowerCase())
+          .map((t: string) => t.slice(0, 30))
+          .slice(0, 25)
       : [];
 
     const seen = new Set<string>();
-    const tags: string[] = ['Allah','Shorts','Islamic Shorts','Muslims'];
+    const tags: string[] = ['Allah', 'Shorts', 'Islamic Shorts', 'Muslims'];
 
     for (const t of modelTags) {
-      const cleaned = String(t || '').trim().toLowerCase();
+      const cleaned = String(t || '')
+        .trim()
+        .toLowerCase();
       if (!cleaned) continue;
       const key = cleaned;
       if (seen.has(key)) continue;
@@ -784,6 +1346,12 @@ export class AiService {
 
     const fullScriptContext = dto.script?.trim();
 
+    const frameType: 'single' | 'start' | 'end' =
+      dto.frameType === 'start' || dto.frameType === 'end'
+        ? dto.frameType
+        : 'single';
+    const continuityPrompt = dto.continuityPrompt?.trim();
+
     const sentenceText = (dto.sentence ?? '').trim();
     const sentenceContainsMaleCharacter = (text: string): boolean => {
       const s = (text ?? '').trim();
@@ -793,79 +1361,152 @@ export class AiService {
       // This intentionally stays conservative to avoid injecting random people.
       return (
         /\b(he|him|his|himself)\b/i.test(s) ||
-        /\b(man|men|male|boy|father|dad|son|brother|husband|gentleman|king|prince)\b/i.test(s)
+        /\b(man|men|male|boy|father|dad|son|brother|husband|gentleman|king|prince)\b/i.test(
+          s,
+        )
       );
     };
 
-    // OpenAI prompt #1 (classifier): decide whether to enforce male-only characters.
-    const mentionsAllahProphetOrSahaba = await this.sentenceMentionsAllahProphetOrSahaba({
+    const characterBible =
+      await this.getOrCreateCharacterBible(fullScriptContext);
+
+    // Classify prohibitions + map referenced characters (if safe).
+    const mentionResult = await this.sentenceMentionsAllahProphetOrSahaba({
       script: fullScriptContext,
       sentence: dto.sentence,
+      characterBible,
     });
-
-    const enforceNoHumanFigures = mentionsAllahProphetOrSahaba;
+    const mentionsFemale = this.sentenceMentionsFemale(sentenceText);
+    const enforceNoHumanFigures = mentionResult.mentions || mentionsFemale;
+    const referencedCharacterKeys = enforceNoHumanFigures
+      ? []
+      : mentionResult.characterKeys;
     const focusMaleCharacter =
-      !enforceNoHumanFigures && sentenceContainsMaleCharacter(sentenceText);
+      !enforceNoHumanFigures &&
+      (sentenceContainsMaleCharacter(sentenceText) ||
+        referencedCharacterKeys.length > 0);
 
     const noHumanFiguresRule =
       'ABSOLUTE RULE: Do NOT depict any humans or human-like figures. ' +
       'NO people, NO faces, NO heads, NO hands, NO bodies, NO skin, NO silhouettes, NO characters, NO crowds, NO humanoid statues.';
 
+    const noWomenRule =
+      'ABSOLUTE RULE: Do NOT depict women or female characters. ' +
+      'No female faces, no female bodies, no girls, no women, no feminine silhouettes.';
+
     try {
       let prompt = dto.prompt?.trim();
-      console.log('Prompt', prompt);
-      console.log('Mentions Allah/Prophet/Sahaba:', mentionsAllahProphetOrSahaba);
       if (!prompt) {
+        const frameBlock =
+          frameType === 'single'
+            ? ''
+            : (frameType === 'start'
+                ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
+                : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
+              (continuityPrompt
+                ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
+                : '');
+
+        const characterRefsBlock =
+          referencedCharacterKeys.length && characterBible
+            ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
+              referencedCharacterKeys
+                .map((k) => {
+                  const c = characterBible.byKey[k];
+                  return c ? `${c.key}: ${c.description}` : null;
+                })
+                .filter(Boolean)
+                .join('\n') +
+              '\n\n'
+            : '';
+
         // First ask the chat model for a detailed image prompt
         prompt =
-          (await this.llm.completeText({
-            model: this.model,
-            maxTokens: 250,
-            temperature: 0.8,
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a visual prompt engineer for image generation models. ' +
-                  'Read the sentence and identify the single most dominant emotion and the most dominant object/action/idea. ' +
-                  'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
-                  'Make the result composition-rich, varied, imaginative, and cinematic (avoid generic defaults unless the sentence truly calls for it). ' +
-                  'Focus the prompt around the most important object or action in the sentence. ' +
-                  'If a full script is provided in the user message, use it ONLY as context to infer the feeling of the sentence, time period, setting, cultural details, and story continuity. ' +
-                  (enforceNoHumanFigures
-                    ? noHumanFiguresRule
-                    : focusMaleCharacter
-                      ? 'The sentence includes male character(s). Include the male character(s) implied by the sentence as the focal point, and make the visual center on what they are doing (clear action, posture, props, and environment). Do not add extra characters beyond what the sentence implies.'
-                      : 'If the sentence explicitly includes a person, you may depict them; otherwise do not introduce random people.') +
-                  'Respond with a single prompt sentence only, describing visuals only.',
-              },
-              {
-                role: 'user',
-                content:
-                  (fullScriptContext
-                    ? `FULL SCRIPT CONTEXT (use ONLY for era/time/setting/continuity):\n${fullScriptContext}\n\n`
-                    : '') +
-                  `Sentence: "${dto.sentence}"\n` +
-                  `Desired style: ${style} (anime-style artwork).\n\n` +
-                  // Safety / theological constraints for religious content
-                  'Important constraints:\n' +
-                  (enforceNoHumanFigures
-                    ? '- ABSOLUTELY NO humans/human figures: no people, no faces, no hands, no bodies, no silhouettes.\n' +
-                    `${noHumanFiguresRule}\n`
-                    : focusMaleCharacter
-                      ? '- Include the male character(s) implied by the sentence and focus on their action; do not add extra characters beyond what the sentence implies.\n'
+          (
+            await this.llm.completeText({
+              model: this.model,
+              maxTokens: 250,
+              temperature: 0.8,
+              messages: [
+                {
+                  role: 'system',
+                  content:
+                    'You are a visual prompt engineer for image generation models. ' +
+                    'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
+                    'Make the result composition-rich, varied, imaginative, and cinematic (avoid generic defaults unless the sentence truly calls for it). ' +
+                    'use the full script provided ONLY as context to infer time period, cultural details. ' +
+                    (frameBlock ? frameBlock + '\n' : '') +
+                    noWomenRule +
+                    (enforceNoHumanFigures
+                      ? noHumanFiguresRule
+                      : referencedCharacterKeys.length
+                        ? 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
+                        : focusMaleCharacter
+                          ? 'The sentence includes male character(s). Include the male character(s) implied by the sentence as the focal point, and make the visual center on what they are doing (clear action, posture, props, and environment). Do not add extra characters beyond what the sentence implies.'
+                          : 'If the sentence explicitly includes a person, you may depict them; otherwise do not introduce random people.') +
+                    'Respond with a single prompt sentence only, describing visuals only.' +
+                    'Read the sentence and identify the single most dominant emotion and the most dominant object/action/idea. ',
+                },
+                {
+                  role: 'user',
+                  content:
+                    (fullScriptContext
+                      ? `FULL SCRIPT CONTEXT (use ONLY for era/time):\n${fullScriptContext}\n\n`
                       : '') +
-                  'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.',
-              },
-            ],
-          }))?.trim() || dto.sentence;
-        console.log('Generated image prompt', prompt);
+                    characterRefsBlock +
+                    (frameBlock ? `${frameBlock}\n\n` : '') +
+                    `Sentence: "${dto.sentence}"\n` +
+                    `Desired style: ${style} (anime-style artwork).\n\n` +
+                    // Safety / theological constraints for religious content
+                    'Important constraints:\n' +
+                    '- Do not depict women/females.\n' +
+                    (enforceNoHumanFigures
+                      ? '- ABSOLUTELY NO humans/human figures: no people, no faces, no hands, no bodies, no silhouettes.\n' +
+                        `${noHumanFiguresRule}\n`
+                      : focusMaleCharacter
+                        ? '- Include the male character(s) implied by the sentence and focus on their action; do not add extra characters beyond what the sentence implies.\n'
+                        : '') +
+                    (referencedCharacterKeys.length
+                      ? '- You MUST include the referenced character(s) facial + physical attributes from the CHARACTER CONSISTENCY block in your final prompt sentence.\n'
+                      : '') +
+                    'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.',
+                },
+              ],
+            })
+          )?.trim() || dto.sentence;
       } else {
         // Keep consistency with the app's defaults: encourage anime style.
         const wantsAnime = /anime/i.test(style);
         const hasAnime = /anime/i.test(prompt);
         if (wantsAnime && !hasAnime) {
           prompt = `${prompt}, ${style}`;
+        }
+
+        if (frameType === 'start') {
+          const hasStartFrame = /\bstart\s*frame\b/i.test(prompt);
+          if (!hasStartFrame) {
+            prompt = `${prompt}, START FRAME of the scene`;
+          }
+        } else if (frameType === 'end') {
+          const hasEndFrame = /\bend\s*frame\b/i.test(prompt);
+          if (!hasEndFrame) {
+            prompt = `${prompt}, END FRAME of the same scene, same environment as the start frame, slightly progressed action`;
+          }
+          if (
+            continuityPrompt &&
+            !prompt.toLowerCase().includes('continuity')
+          ) {
+            prompt = `${prompt}, continuity to match: ${continuityPrompt}`;
+          }
+        }
+
+        // Always enforce: no female depictions.
+        const hasNoWomen =
+          /\bno\s+(women|woman|girls|girl|female|females)\b|\bno\s+female\s+(faces|bodies|silhouettes)\b/i.test(
+            prompt,
+          );
+        if (!hasNoWomen) {
+          prompt = `${prompt}, no women, no girls, no female faces, no female bodies`;
         }
 
         if (enforceNoHumanFigures) {
@@ -875,6 +1516,20 @@ export class AiService {
             );
           if (!hasNoHumans) {
             prompt = `${prompt}, no people, no humans, no faces, no hands, no silhouettes`;
+          }
+        } else if (referencedCharacterKeys.length && characterBible) {
+          // Inject the character descriptions so the image model keeps the character consistent.
+          const characterSuffix = referencedCharacterKeys
+            .map((k) => characterBible.byKey[k])
+            .filter(Boolean)
+            .map((c) => `${c.key} (${c.description})`)
+            .join(', ');
+          if (
+            characterSuffix &&
+            !prompt.includes('CHARACTER') &&
+            !prompt.includes('C1')
+          ) {
+            prompt = `${prompt}, character details: ${characterSuffix}`;
           }
         }
       }
@@ -1153,7 +1808,9 @@ export class AiService {
       );
     }
 
-    const decideProvider = (idRaw?: string): { provider: 'google' | 'elevenlabs'; rawId?: string } => {
+    const decideProvider = (
+      idRaw?: string,
+    ): { provider: 'google' | 'elevenlabs'; rawId?: string } => {
       const id = String(idRaw ?? '').trim();
       if (!id) {
         // Default provider preference: Gemini TTS (AI Studio) if configured; otherwise ElevenLabs.
@@ -1171,7 +1828,10 @@ export class AiService {
       }
 
       if (id.startsWith('elevenlabs:')) {
-        return { provider: 'elevenlabs', rawId: id.slice('elevenlabs:'.length) };
+        return {
+          provider: 'elevenlabs',
+          rawId: id.slice('elevenlabs:'.length),
+        };
       }
 
       // Backwards compatibility:
@@ -1202,7 +1862,8 @@ export class AiService {
       };
     }
 
-    const elevenVoiceId = String(chosen.rawId ?? '').trim() || this.elevenDefaultVoiceId;
+    const elevenVoiceId =
+      String(chosen.rawId ?? '').trim() || this.elevenDefaultVoiceId;
     const buffer = await this.generateVoiceWithElevenLabs({
       text,
       voiceId: elevenVoiceId,
@@ -1330,7 +1991,7 @@ export class AiService {
     const { pcm, sampleRate, channels, kbps = 128 } = params;
 
     const installerPath =
-      (ffmpegInstaller as any)?.path ?? (ffmpegInstaller as any)?.default?.path;
+      ffmpegInstaller?.path ?? ffmpegInstaller?.default?.path;
     const candidatePath =
       String(installerPath ?? '').trim() ||
       String(ffmpegPath ?? '').trim() ||
@@ -1463,27 +2124,34 @@ export class AiService {
         }
 
         if (response.status === 401 || response.status === 403) {
-          throw new UnauthorizedException('Unauthorized to call Gemini TTS API');
+          throw new UnauthorizedException(
+            'Unauthorized to call Gemini TTS API',
+          );
         }
 
-        throw new InternalServerErrorException('Failed to generate voice using Gemini TTS');
+        throw new InternalServerErrorException(
+          'Failed to generate voice using Gemini TTS',
+        );
       }
 
-      const json = (await response.json()) as any;
+      const json = await response.json();
       const parts =
         json?.candidates?.[0]?.content?.parts &&
-          Array.isArray(json.candidates[0].content.parts)
+        Array.isArray(json.candidates[0].content.parts)
           ? json.candidates[0].content.parts
           : [];
 
       const audioPart = parts.find((p: any) =>
         Boolean(p?.inlineData?.data || p?.inline_data?.data),
       );
-      const b64 =
-        String(audioPart?.inlineData?.data ?? audioPart?.inline_data?.data ?? '').trim();
+      const b64 = String(
+        audioPart?.inlineData?.data ?? audioPart?.inline_data?.data ?? '',
+      ).trim();
 
       if (!b64) {
-        throw new InternalServerErrorException('Gemini TTS returned empty audio data');
+        throw new InternalServerErrorException(
+          'Gemini TTS returned empty audio data',
+        );
       }
 
       const pcm = Buffer.from(b64, 'base64');
@@ -1495,14 +2163,17 @@ export class AiService {
         kbps: 128,
       });
     } catch (error) {
-      const err = error as any;
+      const err = error;
 
       console.error('Error while calling Gemini TTS', {
         message: err?.message,
         stack: err?.stack,
       });
 
-      if (err instanceof BadRequestException || err instanceof UnauthorizedException) {
+      if (
+        err instanceof BadRequestException ||
+        err instanceof UnauthorizedException
+      ) {
         throw err;
       }
 

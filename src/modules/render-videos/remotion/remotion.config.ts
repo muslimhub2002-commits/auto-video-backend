@@ -5,14 +5,15 @@
 // - REMOTION_RENDER_PROVIDER=lambda
 // - REMOTION_LAMBDA_TEST_MODE=true (legacy)
 
-export const REMOTION_RENDER_PROVIDER = (process.env.REMOTION_RENDER_PROVIDER ?? '')
+export const REMOTION_RENDER_PROVIDER = (
+  process.env.REMOTION_RENDER_PROVIDER ?? ''
+)
   .trim()
   .toLowerCase();
 
-export const REMOTION_LAMBDA_REGION =
-  (process.env.REMOTION_LAMBDA_REGION ??
-    process.env.REMOTION_LAMBDA_TEST_REGION ??
-    'us-east-1') as any;
+export const REMOTION_LAMBDA_REGION = (process.env.REMOTION_LAMBDA_REGION ??
+  process.env.REMOTION_LAMBDA_TEST_REGION ??
+  'us-east-1') as any;
 
 export const REMOTION_LAMBDA_FUNCTION_NAME =
   process.env.REMOTION_LAMBDA_FUNCTION_NAME ??

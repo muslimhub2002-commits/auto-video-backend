@@ -26,8 +26,10 @@ export const CHROMA_MAX_BLUR_PX = 6;
 // Production note:
 // In production (Remotion Lambda), prefer passing CDN/Cloudinary/S3 URLs via `timeline.assets`.
 // If not provided, we fall back to local `staticFile()` assets in `remotion/public`.
-export const DEFAULT_BACKGROUND_MUSIC_SRC = 'background_3.mp3';
-export const DEFAULT_GLITCH_FX_URL = 'glitch-fx.mp3';
-export const DEFAULT_WHOOSH_SFX_URL = 'whoosh.mp3';
-export const DEFAULT_CAMERA_CLICK_SFX_URL = 'camera_click.mp3';
-export const DEFAULT_SUSPENSE_GLITCH_SFX_URL = 'suspense-glitch.mp3';
+// These defaults intentionally match the backend render pipeline's publicDir layout
+// (see REMOTION_*_REL constants): audio/*, sfx/*, videos/*.
+export const DEFAULT_BACKGROUND_MUSIC_SRC = 'audio/background_3.mp3';
+export const DEFAULT_GLITCH_FX_URL = 'sfx/glitch.mp3';
+export const DEFAULT_WHOOSH_SFX_URL = 'sfx/whoosh.mp3';
+export const DEFAULT_CAMERA_CLICK_SFX_URL = 'sfx/camera_click.mp3';
+export const DEFAULT_SUSPENSE_GLITCH_SFX_URL = 'sfx/suspense-glitch.mp3';

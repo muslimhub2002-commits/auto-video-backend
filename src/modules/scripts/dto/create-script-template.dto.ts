@@ -1,4 +1,11 @@
-import { ArrayUnique, IsArray, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  ArrayUnique,
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 
 export class CreateScriptTemplateDto {
   @IsString()

@@ -84,7 +84,10 @@ export class Script {
   @JoinTable({
     name: 'script_reference_scripts',
     joinColumn: { name: 'script_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'reference_script_id', referencedColumnName: 'id' },
+    inverseJoinColumn: {
+      name: 'reference_script_id',
+      referencedColumnName: 'id',
+    },
   })
   reference_scripts: Script[];
 }

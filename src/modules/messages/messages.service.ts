@@ -111,12 +111,15 @@ export class MessagesService {
         });
 
         try {
-          const uploadResult: any = await cloudinary.uploader.upload(localPath, {
-            folder: 'auto-video-generator/videos',
-            resource_type: 'video',
-            overwrite: false,
-            use_filename: false,
-          });
+          const uploadResult: any = await cloudinary.uploader.upload(
+            localPath,
+            {
+              folder: 'auto-video-generator/videos',
+              resource_type: 'video',
+              overwrite: false,
+              use_filename: false,
+            },
+          );
 
           if (uploadResult?.secure_url) {
             finalVideoUrl = uploadResult.secure_url as string;

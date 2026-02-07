@@ -11,7 +11,12 @@ async function bootstrap() {
   // Allow larger request bodies (e.g., longer scripts/sentence payloads).
   // Keep this reasonably bounded; uploads should still use multipart endpoints.
   app.use(json({ limit: process.env.BODY_SIZE_LIMIT ?? '400mb' }));
-  app.use(urlencoded({ extended: true, limit: process.env.BODY_SIZE_LIMIT ?? '400mb' }));
+  app.use(
+    urlencoded({
+      extended: true,
+      limit: process.env.BODY_SIZE_LIMIT ?? '400mb',
+    }),
+  );
 
   // Enable validation globally
   app.useGlobalPipes(

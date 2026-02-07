@@ -1,10 +1,22 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
-import type { LlmCompleteJsonParams, LlmCompleteParams, LlmMessage, LlmStreamParams } from './llm-types';
+import type {
+  LlmCompleteJsonParams,
+  LlmCompleteParams,
+  LlmMessage,
+  LlmStreamParams,
+} from './llm-types';
 
 const isAnthropicModel = (model: string) => /^claude-/i.test(model || '');
 const isGeminiModel = (model: string) => /^gemini-/i.test(model || '');
+
+const prefersMaxCompletionTokens = (model: string): boolean => {
+  const m = /^gpt-(\d+)/i.exec(String(model || '').trim());
+  if (!m) return false;
+  const major = Number(m[1]);
+  return Number.isFinite(major) && major >= 5;
+};
 
 const splitSystemMessages = (messages: LlmMessage[]) => {
   const systemParts: string[] = [];
@@ -82,11 +94,15 @@ export class LlmRouter {
 
   async *streamText(params: LlmStreamParams): AsyncIterable<string> {
     const model = String(params.model || '').trim();
-    const maxTokens = Number.isFinite(params.maxTokens) ? Number(params.maxTokens) : 2048;
+    const maxTokens = Number.isFinite(params.maxTokens)
+      ? Number(params.maxTokens)
+      : 2048;
 
     if (isGeminiModel(model)) {
       if (!this.gemini) {
-        throw new Error('GEMINI_API_KEY is not set, but a Gemini model was requested.');
+        throw new Error(
+          'GEMINI_API_KEY is not set, but a Gemini model was requested.',
+        );
       }
 
       const { systemText, contents } = toGeminiContents(params.messages);
@@ -95,7 +111,12 @@ export class LlmRouter {
       const generativeModel = this.gemini.getGenerativeModel({
         model,
         ...(systemText
-          ? { systemInstruction: { role: 'system', parts: [{ text: systemText }] } }
+          ? {
+              systemInstruction: {
+                role: 'system',
+                parts: [{ text: systemText }],
+              },
+            }
           : {}),
       } as any);
 
@@ -123,7 +144,10 @@ export class LlmRouter {
           } as any);
 
           for await (const chunk of result.stream as any) {
-            const text = typeof chunk?.text === 'function' ? String(chunk.text() ?? '') : '';
+            const text =
+              typeof chunk?.text === 'function'
+                ? String(chunk.text() ?? '')
+                : '';
             if (text) {
               streamedSoFar += text;
               yieldedAny = true;
@@ -139,7 +163,7 @@ export class LlmRouter {
           if (status === 404) {
             throw new Error(
               `Gemini model "${model}" is not available for this API key or does not support streaming. ` +
-              'Pick a different Gemini model (e.g. gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash).',
+                'Pick a different Gemini model (e.g. gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash).',
             );
           }
 
@@ -186,7 +210,9 @@ export class LlmRouter {
 
     if (isAnthropicModel(model)) {
       if (!this.deps.anthropic) {
-        throw new Error('ANTHROPIC_API_KEY is not set, but an Anthropic model was requested.');
+        throw new Error(
+          'ANTHROPIC_API_KEY is not set, but an Anthropic model was requested.',
+        );
       }
 
       const { system, messages } = splitSystemMessages(params.messages);
@@ -201,7 +227,10 @@ export class LlmRouter {
       });
 
       for await (const event of stream as any) {
-        if (event?.type === 'content_block_delta' && event?.delta?.type === 'text_delta') {
+        if (
+          event?.type === 'content_block_delta' &&
+          event?.delta?.type === 'text_delta'
+        ) {
           const text = String(event.delta.text ?? '');
           if (text) yield text;
         }
@@ -211,14 +240,21 @@ export class LlmRouter {
     }
 
     if (!this.deps.openai) {
-      throw new Error('OPENAI_API_KEY is not set, but an OpenAI model was requested.');
+      throw new Error(
+        'OPENAI_API_KEY is not set, but an OpenAI model was requested.',
+      );
     }
-    const stream = await this.deps.openai.chat.completions.create({
+
+    const openAiTokenParam = prefersMaxCompletionTokens(model)
+      ? { max_completion_tokens: maxTokens }
+      : { max_tokens: maxTokens };
+
+    const stream: any = await this.deps.openai.chat.completions.create({
       model,
       stream: true,
       messages: params.messages as any,
       temperature: params.temperature,
-      max_tokens: maxTokens,
+      ...(openAiTokenParam as any),
     });
 
     for await (const chunk of stream) {
@@ -229,18 +265,27 @@ export class LlmRouter {
 
   async completeText(params: LlmCompleteParams): Promise<string> {
     const model = String(params.model || '').trim();
-    const maxTokens = Number.isFinite(params.maxTokens) ? Number(params.maxTokens) : 2048;
+    const maxTokens = Number.isFinite(params.maxTokens)
+      ? Number(params.maxTokens)
+      : 2048;
 
     if (isGeminiModel(model)) {
       if (!this.gemini) {
-        throw new Error('GEMINI_API_KEY is not set, but a Gemini model was requested.');
+        throw new Error(
+          'GEMINI_API_KEY is not set, but a Gemini model was requested.',
+        );
       }
 
       const { systemText, contents } = toGeminiContents(params.messages);
       const generativeModel = this.gemini.getGenerativeModel({
         model,
         ...(systemText
-          ? { systemInstruction: { role: 'system', parts: [{ text: systemText }] } }
+          ? {
+              systemInstruction: {
+                role: 'system',
+                parts: [{ text: systemText }],
+              },
+            }
           : {}),
       } as any);
 
@@ -265,7 +310,7 @@ export class LlmRouter {
           if (status === 404) {
             throw new Error(
               `Gemini model "${model}" is not available for this API key or does not support generateContent. ` +
-              'Pick a different Gemini model (e.g. gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash).',
+                'Pick a different Gemini model (e.g. gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash).',
             );
           }
 
@@ -284,7 +329,9 @@ export class LlmRouter {
 
     if (isAnthropicModel(model)) {
       if (!this.deps.anthropic) {
-        throw new Error('ANTHROPIC_API_KEY is not set, but an Anthropic model was requested.');
+        throw new Error(
+          'ANTHROPIC_API_KEY is not set, but an Anthropic model was requested.',
+        );
       }
 
       const { system, messages } = splitSystemMessages(params.messages);
@@ -300,21 +347,29 @@ export class LlmRouter {
     }
 
     if (!this.deps.openai) {
-      throw new Error('OPENAI_API_KEY is not set, but an OpenAI model was requested.');
+      throw new Error(
+        'OPENAI_API_KEY is not set, but an OpenAI model was requested.',
+      );
     }
+
+    const openAiTokenParam = prefersMaxCompletionTokens(model)
+      ? { max_completion_tokens: maxTokens }
+      : { max_tokens: maxTokens };
 
     const completion = await this.deps.openai.chat.completions.create({
       model,
       messages: params.messages as any,
       temperature: params.temperature,
-      max_tokens: maxTokens,
+      ...(openAiTokenParam as any),
     });
 
     return String(completion.choices?.[0]?.message?.content ?? '');
   }
 
   async completeJson<T = any>(params: LlmCompleteJsonParams): Promise<T> {
-    const retries = Number.isFinite(params.retries) ? Number(params.retries) : 2;
+    const retries = Number.isFinite(params.retries)
+      ? Number(params.retries)
+      : 2;
 
     // For OpenAI we can use strict JSON mode; for Anthropic/Gemini, enforce via prompt + parse.
     const model = String(params.model || '').trim();
@@ -354,24 +409,34 @@ export class LlmRouter {
 
     if (!isAnthropicModel(model)) {
       if (!this.deps.openai) {
-        throw new Error('OPENAI_API_KEY is not set, but an OpenAI model was requested.');
+        throw new Error(
+          'OPENAI_API_KEY is not set, but an OpenAI model was requested.',
+        );
       }
+
+      const openAiTokenParam = prefersMaxCompletionTokens(model)
+        ? { max_completion_tokens: params.maxTokens ?? 2048 }
+        : { max_tokens: params.maxTokens ?? 2048 };
 
       const completion = await this.deps.openai.chat.completions.create({
         model,
         messages: params.messages as any,
         temperature: params.temperature,
-        max_tokens: params.maxTokens ?? 2048,
+        ...(openAiTokenParam as any),
         response_format: { type: 'json_object' },
       });
 
-      const raw = String(completion.choices?.[0]?.message?.content ?? '').trim();
+      const raw = String(
+        completion.choices?.[0]?.message?.content ?? '',
+      ).trim();
       if (!raw) throw new Error('Empty JSON response');
       return JSON.parse(raw) as T;
     }
 
     if (!this.deps.anthropic) {
-      throw new Error('ANTHROPIC_API_KEY is not set, but an Anthropic model was requested.');
+      throw new Error(
+        'ANTHROPIC_API_KEY is not set, but an Anthropic model was requested.',
+      );
     }
 
     const baseMessages = (params.messages || []).slice();

@@ -8,7 +8,8 @@ import {
 } from './remotion.config';
 
 const getPositiveIntOrNull = (value: unknown) => {
-  const num = typeof value === 'string' ? Number.parseInt(value, 10) : Number.NaN;
+  const num =
+    typeof value === 'string' ? Number.parseInt(value, 10) : Number.NaN;
   if (!Number.isFinite(num) || num <= 0) return null;
   return Math.floor(num);
 };
@@ -83,7 +84,10 @@ const getOrCreateRemotionServeUrl = async (params: {
     return remotionServeUrl;
   }
 
-  if (remotionServeUrlPromise && remotionServeUrlPublicDir === params.publicDir) {
+  if (
+    remotionServeUrlPromise &&
+    remotionServeUrlPublicDir === params.publicDir
+  ) {
     return remotionServeUrlPromise;
   }
 
@@ -116,9 +120,10 @@ export const renderWithRemotionLocal = async (params: {
 
   const concurrencyRaw = Number(process.env.REMOTION_CONCURRENCY ?? '');
   const defaultConcurrency = Math.min(2, Math.max(1, os.cpus().length));
-  const concurrency = Number.isFinite(concurrencyRaw) && concurrencyRaw > 0
-    ? Math.max(1, Math.floor(concurrencyRaw))
-    : defaultConcurrency;
+  const concurrency =
+    Number.isFinite(concurrencyRaw) && concurrencyRaw > 0
+      ? Math.max(1, Math.floor(concurrencyRaw))
+      : defaultConcurrency;
 
   const chromiumOptions: any = {
     disableWebSecurity: true,
@@ -180,7 +185,9 @@ export const renderWithRemotionOnLambda = async (params: {
 
   const region = REMOTION_LAMBDA_REGION;
   let functionName = REMOTION_LAMBDA_FUNCTION_NAME;
-  const serveUrl = normalizeAndValidateLambdaServeUrl(REMOTION_LAMBDA_SERVE_URL);
+  const serveUrl = normalizeAndValidateLambdaServeUrl(
+    REMOTION_LAMBDA_SERVE_URL,
+  );
 
   if (!functionName || functionName.trim().toLowerCase() === 'auto') {
     const functions = await lambdaClient.getFunctions({
@@ -193,7 +200,9 @@ export const renderWithRemotionOnLambda = async (params: {
     );
 
     functionName =
-      preferred?.functionName ?? functions?.[0]?.functionName ?? REMOTION_LAMBDA_FUNCTION_NAME;
+      preferred?.functionName ??
+      functions?.[0]?.functionName ??
+      REMOTION_LAMBDA_FUNCTION_NAME;
   }
 
   if (!functionName) {
@@ -234,7 +243,6 @@ export const renderWithRemotionOnLambda = async (params: {
     ? Math.max(2000, Math.floor(pollEveryMsRaw))
     : 5000;
 
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const progress = await lambdaClient.getRenderProgress({
       region,
@@ -250,8 +258,8 @@ export const renderWithRemotionOnLambda = async (params: {
     if (progress?.fatalErrorEncountered) {
       const first = Array.isArray(progress?.errors) ? progress.errors[0] : null;
       const message =
-        (first as any)?.message ||
-        (first as any)?.stack ||
+        first?.message ||
+        first?.stack ||
         'Lambda render failed (fatalErrorEncountered=true)';
       throw new Error(message);
     }

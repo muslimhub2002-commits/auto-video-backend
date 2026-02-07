@@ -82,7 +82,13 @@ export const buildTimeline = (params: {
   let cursor = 0;
   const scenes = params.sentences.map((s, index) => {
     const isSubscribe =
-      (s.text || '').trim() === SUBSCRIBE_SENTENCE && !!params.subscribeVideoSrc;
+      (s.text || '').trim() === SUBSCRIBE_SENTENCE &&
+      !!params.subscribeVideoSrc;
+
+    const wantsSentenceVideo =
+      !isSubscribe &&
+      s.mediaType === 'video' &&
+      !!String(s.videoUrl ?? '').trim();
 
     // Critical: ensure scenes are frame-contiguous.
     // Any gap from rounding would otherwise show as black in Remotion.
@@ -98,8 +104,15 @@ export const buildTimeline = (params: {
       index,
       text: s.text,
       isSuspense: !!s.isSuspense,
-      imageSrc: isSubscribe ? undefined : params.imagePaths[index],
-      videoSrc: isSubscribe ? params.subscribeVideoSrc : undefined,
+      imageSrc:
+        isSubscribe || wantsSentenceVideo
+          ? undefined
+          : params.imagePaths[index],
+      videoSrc: isSubscribe
+        ? params.subscribeVideoSrc
+        : wantsSentenceVideo
+          ? String(s.videoUrl)
+          : undefined,
       startFrame,
       durationFrames,
       useGlitch: index === glitchSceneIndex,
@@ -108,7 +121,8 @@ export const buildTimeline = (params: {
 
   const durationInFrames =
     scenes.length > 0
-      ? scenes[scenes.length - 1].startFrame + scenes[scenes.length - 1].durationFrames
+      ? scenes[scenes.length - 1].startFrame +
+        scenes[scenes.length - 1].durationFrames
       : Math.ceil(T * fps);
 
   return {

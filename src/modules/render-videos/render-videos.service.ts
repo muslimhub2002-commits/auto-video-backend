@@ -7,17 +7,27 @@ import * as fs from 'fs';
 import * as os from 'os';
 import OpenAI from 'openai';
 
-import type { SentenceInput, SentenceTiming, UploadedAsset } from './render-videos.types';
+import type {
+  SentenceInput,
+  SentenceTiming,
+  UploadedAsset,
+} from './render-videos.types';
 import {
   CHROMA_LEAK_SFX_CLOUDINARY_URL,
   SUBSCRIBE_SENTENCE,
   SUBSCRIBE_VIDEO_CLOUDINARY_URL,
 } from './render-videos.constants';
-import { buildTimeline as buildTimelineExternal, isShortScript } from './timeline.builder';
+import {
+  buildTimeline as buildTimelineExternal,
+  isShortScript,
+} from './timeline.builder';
 import { alignAudioToSentences as alignAudioToSentencesExternal } from './alignment/audio-alignment';
 import { downloadUrlToBuffer as downloadUrlToBufferExternal } from './utils/net.utils';
 import { inferExt as inferExtExternal } from './utils/mime.utils';
-import { isCloudinaryUrl as isCloudinaryUrlExternal, isServerlessRuntime } from './utils/runtime.utils';
+import {
+  isCloudinaryUrl as isCloudinaryUrlExternal,
+  isServerlessRuntime,
+} from './utils/runtime.utils';
 import { withTimeout as withTimeoutExternal } from './utils/promise.utils';
 import {
   ensureDir as ensureDirExternal,
@@ -44,7 +54,6 @@ import {
   renderWithRemotionLocal as renderWithRemotionLocalExternal,
   renderWithRemotionOnLambda as renderWithRemotionOnLambdaExternal,
 } from './remotion/remotion-render';
-
 
 @Injectable()
 export class RenderVideosService implements OnModuleInit {
@@ -202,7 +211,9 @@ export class RenderVideosService implements OnModuleInit {
 
     // If the platform kills the function mid-render, the job can be stuck forever.
     // Mark it failed after a reasonable timeout so the UI doesn't spin indefinitely.
-    const staleMinutesRaw = Number(process.env.RENDER_JOB_STALE_MINUTES ?? '45');
+    const staleMinutesRaw = Number(
+      process.env.RENDER_JOB_STALE_MINUTES ?? '45',
+    );
     const staleMinutes = Number.isFinite(staleMinutesRaw)
       ? Math.max(15, staleMinutesRaw)
       : 45;
@@ -432,7 +443,9 @@ export class RenderVideosService implements OnModuleInit {
       let voiceoverAudioSrc = '';
       const imageSrcs: string[] = [];
 
-      const providedUrls = Array.isArray(params.imageUrls) ? params.imageUrls : null;
+      const providedUrls = Array.isArray(params.imageUrls)
+        ? params.imageUrls
+        : null;
       if (providedUrls && providedUrls.length !== params.sentences.length) {
         throw new Error('imageUrls length must match sentences length');
       }
@@ -456,6 +469,14 @@ export class RenderVideosService implements OnModuleInit {
           const sentenceText = (params.sentences[i]?.text || '').trim();
           const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
           if (isSubscribe) {
+            imageSrcs.push('');
+            continue;
+          }
+
+          const wantsVideo =
+            params.sentences[i]?.mediaType === 'video' &&
+            !!String(params.sentences[i]?.videoUrl ?? '').trim();
+          if (wantsVideo) {
             imageSrcs.push('');
             continue;
           }
@@ -504,7 +525,9 @@ export class RenderVideosService implements OnModuleInit {
         const prepared = this.prepareRemotionPublicDir(jobId);
         const jobDir = prepared.jobDir;
         publicDir = prepared.publicDir;
-        subscribeVideoSrc = hasSubscribeSentence ? prepared.subscribeVideoSrc : null;
+        subscribeVideoSrc = hasSubscribeSentence
+          ? prepared.subscribeVideoSrc
+          : null;
         publicDirToClean = jobDir;
 
         // Materialize required Remotion assets into the job-scoped publicDir.
@@ -555,6 +578,14 @@ export class RenderVideosService implements OnModuleInit {
           const sentenceText = (params.sentences[i]?.text || '').trim();
           const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
           if (isSubscribe) {
+            imageSrcs.push('');
+            continue;
+          }
+
+          const wantsVideo =
+            params.sentences[i]?.mediaType === 'video' &&
+            !!String(params.sentences[i]?.videoUrl ?? '').trim();
+          if (wantsVideo) {
             imageSrcs.push('');
             continue;
           }

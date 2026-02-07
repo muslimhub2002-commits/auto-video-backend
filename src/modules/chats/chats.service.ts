@@ -54,6 +54,9 @@ export class ChatsService {
         'scripts',
         'scripts.sentences',
         'scripts.sentences.image',
+        'scripts.sentences.startFrameImage',
+        'scripts.sentences.endFrameImage',
+        'scripts.sentences.video',
       ],
     });
 
