@@ -16,6 +16,7 @@ import { GenerateScriptDto } from './dto/generate-script.dto';
 import { SplitScriptDto } from './dto/split-script.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
 import { GenerateVoiceDto } from './dto/generate-voice.dto';
+import { GenerateVoiceStyleDto } from './dto/generate-voice-style.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
 import { YoutubeSeoDto } from './dto/youtube-seo.dto';
@@ -223,6 +224,34 @@ export class AiController {
       `inline; filename="${result.filename}"`,
     );
     res.send(result.buffer);
+  }
+
+  /**
+   * Streams AI Studio voice style/tone instructions derived from a full script.
+   */
+  @Post('generate-voice-style')
+  @HttpCode(HttpStatus.OK)
+  async generateVoiceStyle(
+    @Body() body: GenerateVoiceStyleDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
+    const stream = await this.aiService.createVoiceStyleInstructionsStream(body);
+
+    try {
+      for await (const chunk of stream) {
+        if (chunk) res.write(chunk);
+      }
+      res.end();
+    } catch (error) {
+      console.error('Error streaming /ai/generate-voice-style:', error);
+      if (!res.headersSent) {
+        res.status(HttpStatus.INTERNAL_SERVER_ERROR);
+      }
+      res.end('\n[Error] Failed to stream voice style instructions.');
+    }
   }
 
   @Post('youtube-seo')

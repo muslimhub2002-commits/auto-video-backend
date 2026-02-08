@@ -18,7 +18,7 @@ import { CreateRenderVideoUrlDto } from './dto/create-render-video-url.dto';
 import { RenderVideosService } from './render-videos.service';
 
 const SUBSCRIBE_SENTENCE =
-  'Please Subscribe & Help us reach out to more people';
+  'Please Subscribe & Leave a comment to Help us reach out to more people';
 
 @Controller('videos')
 export class RenderVideosController {

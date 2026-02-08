@@ -43,6 +43,11 @@ type CharacterBible = {
   byKey: Record<string, CharacterProfile>;
 };
 
+type ScriptEraCacheEntry = {
+  expiresAt: number;
+  era: string | null;
+};
+
 @Injectable()
 export class AiService {
   private readonly openai: OpenAI | null;
@@ -66,6 +71,8 @@ export class AiService {
     string,
     { expiresAt: number; bible: CharacterBible }
   >();
+
+  private readonly scriptEraCache = new Map<string, ScriptEraCacheEntry>();
 
   // Narration pacing assumption (words per minute) used to derive strict word-count targets.
   private readonly narrationWpm = 150;
@@ -460,78 +467,6 @@ export class AiService {
     return { targetWords, minWords, maxWords };
   }
 
-  private async containsForbiddenIslamicDepiction(
-    text: string,
-  ): Promise<boolean> {
-    const s = (text || '').toLowerCase();
-    if (!s) return false;
-
-    // Quick checks first - explicit mentions
-    if (
-      s.includes('prophet') ||
-      s.includes('sahaba') ||
-      s.includes('companion') ||
-      s.includes('quran page') ||
-      s.includes('quranic text') ||
-      s.includes('quran verse') ||
-      s.includes('arabic text') ||
-      s.includes('surah') ||
-      s.includes('ayah') ||
-      s.includes('mushaf')
-    ) {
-      return true;
-    }
-
-    // Check for explicit forbidden terms
-    const hasExplicitTerms = this.forbiddenIslamicDepictionRegex.test(text);
-    if (hasExplicitTerms) {
-      return true;
-    }
-
-    // Check if text contains pronouns that might refer to forbidden entities
-    const pronounRegex = /\b(he|him|his|himself|they|them|their|themselves)\b/i;
-    const hasPronouns = pronounRegex.test(text);
-
-    if (!hasPronouns) {
-      return false;
-    }
-
-    // Use LLM to determine if pronouns refer to forbidden entities
-    try {
-      const raw = await this.llm.completeText({
-        model: this.cheapModel,
-        temperature: 0,
-        maxTokens: 16,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are analyzing text for Islamic content rules. ' +
-              'Determine if pronouns (he, him, his, they, them, their) in the text refer to: ' +
-              'Allah/God, any prophet (Muhammad, Moses, Jesus, Abraham, etc.), or any Sahaba/Companion. ' +
-              'Also check if the text mentions showing Quran pages, Quranic text, Arabic verses, or Mushaf. ' +
-              'Respond with ONLY "yes" if pronouns refer to any forbidden entities OR if Quran pages/text are mentioned, or "no" if they refer to regular people or are unclear.',
-          },
-          {
-            role: 'user',
-            content: `Text to analyze: "${text}"\n\nDo the pronouns in this text refer to Allah, a prophet, or Sahaba/Companions?`,
-          },
-        ],
-      });
-
-      const response = raw?.trim().toLowerCase();
-      return response === 'yes';
-    } catch (error) {
-      console.error('Error checking pronoun context:', error);
-      // If LLM check fails, be conservative and return true if there are pronouns
-      // in a potentially religious context
-      const religiousContext =
-        /\b(islam|muslim|quran|hadith|faith|allah|worship|prayer)\b/i.test(
-          text,
-        );
-      return religiousContext && hasPronouns;
-    }
-  }
 
   private sentenceMentionsFemale(text: string): boolean {
     const s = (text ?? '').trim();
@@ -546,6 +481,92 @@ export class AiService {
 
   private hashScriptForCache(script: string): string {
     return createHash('sha1').update(script, 'utf8').digest('hex');
+  }
+
+  private normalizeEra(raw: unknown): string | null {
+    const era = String(
+      (raw && typeof raw === 'object' ? (raw as any).era : raw) ?? '',
+    )
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!era) return null;
+
+    // Keep it short and UI-friendly.
+    const capped = era.length > 80 ? era.slice(0, 77).trimEnd() + '...' : era;
+    return capped;
+  }
+
+  private async getOrCreateEra(scriptRaw?: string | null): Promise<string | null> {
+    const script = (scriptRaw ?? '').trim();
+    if (!script) return null;
+
+    const key = this.hashScriptForCache(script);
+    const now = Date.now();
+    const cached = this.scriptEraCache.get(key);
+    if (cached && cached.expiresAt > now) return cached.era;
+
+    const messages: LlmMessage[] = [
+      {
+        role: 'system',
+        content:
+          'You infer the ERA / time period of a narration script for visual setting consistency.\n' +
+          'Return ONLY valid JSON with exactly this shape: {"era": string}.\n\n' +
+          'Rules:\n' +
+          '- The value must be a short label suitable to prepend as "Era:" (e.g. "7th century Arabia", "Ottoman era", "Modern day", "Medieval era", "Ancient Egypt").\n' +
+          '- If the script does not imply a clear time period, return {"era": ""}.\n' +
+          '- Do NOT include explanations, quotes, or extra keys.',
+      },
+      {
+        role: 'user',
+        content: 'SCRIPT (infer era from this):\n' + script.slice(0, 8000),
+      },
+    ];
+
+    const tryModel = async (model: string): Promise<string | null> => {
+      const parsed = await this.llm.completeJson<unknown>({
+        model,
+        temperature: 0,
+        maxTokens: 120,
+        retries: 1,
+        messages,
+      });
+      return this.normalizeEra(parsed);
+    };
+
+    try {
+      const era = await tryModel(this.cheapModel);
+      const ttlMs = 30 * 60 * 1000;
+      this.scriptEraCache.set(key, { era, expiresAt: now + ttlMs });
+      return era;
+    } catch (error: any) {
+      console.error('Era extraction failed (cheap model). Falling back.', {
+        message: error?.message,
+        status: error?.status,
+        code: error?.code,
+        type: error?.type,
+      });
+
+      try {
+        const era = await tryModel(this.model);
+        const ttlMs = 30 * 60 * 1000;
+        this.scriptEraCache.set(key, { era, expiresAt: now + ttlMs });
+        return era;
+      } catch (fallbackErr: any) {
+        console.error(
+          'Era extraction failed (fallback model). Disabling for this script temporarily.',
+          {
+            message: fallbackErr?.message,
+            status: fallbackErr?.status,
+            code: fallbackErr?.code,
+            type: fallbackErr?.type,
+          },
+        );
+
+        const ttlMs = 5 * 60 * 1000;
+        this.scriptEraCache.set(key, { era: null, expiresAt: now + ttlMs });
+        return null;
+      }
+    }
   }
 
   private normalizeCharacterBible(raw: any): CharacterBible {
@@ -1186,6 +1207,45 @@ export class AiService {
   }
 
   /**
+   * Streams detailed AI Studio (Gemini TTS) style/tone instructions derived from the full script.
+   * Output is plain text only (no markdown).
+   */
+  async createVoiceStyleInstructionsStream(dto: {
+    script: string;
+    model?: string;
+  }) {
+    const script = String(dto?.script ?? '').trim();
+    if (!script) {
+      throw new BadRequestException('Script is required');
+    }
+
+    const model = String(dto?.model ?? '').trim() || this.cheapModel;
+
+    const systemPrompt =
+      'You are a voice director for short-form narration (reels/shorts).\n' +
+      'Given a SCRIPT, you produce detailed style instructions for AI Studio / TTS.\n' +
+      'Respond with ONLY the style instructions text (no headings, no markdown, no quotes).\n\n' +
+      'Requirements:\n' +
+      '- Be specific and actionable: tone, emotion, pace, pauses, emphasis, energy, smile/brightness, seriousness, cadence.\n' +
+      '- Mention any tricky pronunciations ONLY if the script implies them.\n' +
+      '- Keep it concise but detailed: 4-10 short lines max.\n' +
+      '- Do NOT repeat the script. Do NOT add meta commentary.';
+
+    return this.llm.streamText({
+      model,
+      maxTokens: 400,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content:
+            'SCRIPT (derive voice style/tone instructions from this):\n' + script,
+        },
+      ],
+    });
+  }
+
+  /**
    * Generates a short, descriptive title for a script.
    */
   async generateTitleForScript(script: string): Promise<string> {
@@ -1370,6 +1430,10 @@ export class AiService {
     const characterBible =
       await this.getOrCreateCharacterBible(fullScriptContext);
 
+    // Infer the script era once per script (cached), then reuse for all sentence prompts.
+    const scriptEra = await this.getOrCreateEra(fullScriptContext);
+    const eraLine = scriptEra ? `Era:${scriptEra}` : '';
+
     // Classify prohibitions + map referenced characters (if safe).
     const mentionResult = await this.sentenceMentionsAllahProphetOrSahaba({
       script: fullScriptContext,
@@ -1434,7 +1498,7 @@ export class AiService {
                     'You are a visual prompt engineer for image generation models. ' +
                     'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
                     'Make the result composition-rich, varied, imaginative, and cinematic (avoid generic defaults unless the sentence truly calls for it). ' +
-                    'use the full script provided ONLY as context to infer time period, cultural details. ' +
+                    'Use the provided Era line ONLY to infer time period and cultural details. ' +
                     (frameBlock ? frameBlock + '\n' : '') +
                     noWomenRule +
                     (enforceNoHumanFigures
@@ -1450,8 +1514,8 @@ export class AiService {
                 {
                   role: 'user',
                   content:
-                    (fullScriptContext
-                      ? `FULL SCRIPT CONTEXT (use ONLY for era/time):\n${fullScriptContext}\n\n`
+                    (eraLine
+                      ? `SCRIPT ERA (use ONLY for era/time):\n${eraLine}\n\n`
                       : '') +
                     characterRefsBlock +
                     (frameBlock ? `${frameBlock}\n\n` : '') +
@@ -1563,24 +1627,113 @@ export class AiService {
         );
       }
 
-      // Step 1: create a generation job
-      const createResponse = await fetch(
-        'https://cloud.leonardo.ai/api/rest/v1/generations',
-        {
+      const escapeRegExp = (s: string) =>
+        s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      const safeReplacementForTerm = (termRaw: string): string => {
+        const t = String(termRaw ?? '').trim().toLowerCase();
+        if (!t) return 'redacted';
+
+        // IMPORTANT: Avoid replacements that still contain the original substring (e.g. "enslaved" contains "slave").
+        if (t === 'slave') return 'captive';
+        if (t === 'slaves') return 'captives';
+        if (t === 'slavery') return 'forced labor';
+        if (t === 'enslaved') return 'captive';
+        if (t === 'enslaves') return 'captures';
+        if (t === 'enslaving') return 'capturing';
+        return 'redacted';
+      };
+
+      const preSanitizeLeonardoPrompt = (input: string): string => {
+        let out = String(input ?? '');
+
+        // Proactively replace common moderated terms we’ve seen.
+        out = out
+          .replace(/\bslaves\b/gi, 'captives')
+          .replace(/\bslave\b/gi, 'captive')
+          .replace(/\bslavery\b/gi, 'forced labor')
+          .replace(/\benslaved\b/gi, 'captive')
+          .replace(/\benslaving\b/gi, 'capturing')
+          .replace(/\benslaves\b/gi, 'captures');
+
+        return out;
+      };
+
+      const extractModerationTermFromLeonardoError = (
+        errorText: string,
+      ): string | null => {
+        const raw = String(errorText ?? '').trim();
+        if (!raw) return null;
+
+        // Typical body: {"error":"Content moderated due to referencing slave.", ...}
+        let msg = raw;
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            msg = String((parsed as any).error ?? (parsed as any).message ?? raw);
+          }
+        } catch {
+          // ignore
+        }
+
+        const m = msg.match(/referencing\s+([^\.\"\n\r]+)\.?/i);
+        if (!m) return null;
+        const term = String(m[1] ?? '').trim();
+        return term || null;
+      };
+
+      const doCreateGeneration = async (promptForLeonardo: string) =>
+        fetch('https://cloud.leonardo.ai/api/rest/v1/generations', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.leonardoApiKey}`,
           },
           body: JSON.stringify({
-            prompt,
+            prompt: promptForLeonardo,
             modelId: this.leonardoModelId,
             width,
             height,
             num_images: 1,
           }),
-        } as any,
-      );
+        } as any);
+
+      // Step 1: create a generation job
+      let leonardoPrompt = preSanitizeLeonardoPrompt(prompt);
+      let createResponse = await doCreateGeneration(leonardoPrompt);
+
+      if (!createResponse.ok) {
+        const errorText = await createResponse.text().catch(() => '');
+
+        // If content moderation triggers (commonly returned as 403), try to automatically
+        // remove the flagged term and retry once.
+        if (createResponse.status === 403) {
+          const term = extractModerationTermFromLeonardoError(errorText);
+          if (term) {
+            const replacement = safeReplacementForTerm(term);
+            const replaced = leonardoPrompt.replace(
+              new RegExp(`\\b${escapeRegExp(term)}\\b`, 'gi'),
+              replacement,
+            );
+
+            if (replaced !== leonardoPrompt) {
+              const retryResponse = await doCreateGeneration(replaced);
+              if (retryResponse.ok) {
+                leonardoPrompt = replaced;
+                createResponse = retryResponse;
+              } else {
+                const retryErrorText =
+                  await retryResponse.text().catch(() => errorText);
+                console.error('Leonardo create generation failed (retry)', {
+                  status: retryResponse.status,
+                  statusText: retryResponse.statusText,
+                  body: retryErrorText,
+                });
+              }
+            }
+          }
+        }
+      }
 
       if (!createResponse.ok) {
         const errorText = await createResponse.text().catch(() => '');
@@ -1597,7 +1750,17 @@ export class AiService {
           );
         }
 
-        if (createResponse.status === 401 || createResponse.status === 403) {
+        // Leonardo sometimes returns 403 for content moderation.
+        if (createResponse.status === 403) {
+          const term = extractModerationTermFromLeonardoError(errorText);
+          if (term) {
+            throw new BadRequestException(
+              `Leonardo content moderation blocked the word "${term}". The server attempted an automatic replacement but it still failed. Please rephrase the sentence/prompt.`,
+            );
+          }
+        }
+
+        if (createResponse.status === 401) {
           throw new UnauthorizedException(
             'Unauthorized to call Leonardo image generation API',
           );
@@ -1607,6 +1770,9 @@ export class AiService {
           'Failed to start image generation using Leonardo',
         );
       }
+
+      // Use the final prompt that succeeded (sanitized if needed).
+      prompt = leonardoPrompt;
 
       const createJson = await createResponse.json();
 
@@ -2054,6 +2220,81 @@ export class AiService {
     return out;
   }
 
+  private looksLikeWav(buffer: Buffer): boolean {
+    if (!buffer || buffer.length < 12) return false;
+    return (
+      buffer.toString('ascii', 0, 4) === 'RIFF' &&
+      buffer.toString('ascii', 8, 12) === 'WAVE'
+    );
+  }
+
+  private looksLikeMp3(buffer: Buffer): boolean {
+    if (!buffer || buffer.length < 3) return false;
+    // ID3 header (most common) or MPEG frame sync (0xFFEx)
+    if (buffer.toString('ascii', 0, 3) === 'ID3') return true;
+    return buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
+  }
+
+  private async wavToMp3Async(params: { wav: Buffer; kbps?: number }): Promise<Buffer> {
+    const { wav, kbps = 128 } = params;
+
+    const installerPath =
+      ffmpegInstaller?.path ?? ffmpegInstaller?.default?.path;
+    const candidatePath =
+      String(installerPath ?? '').trim() ||
+      String(ffmpegPath ?? '').trim() ||
+      String(process.env.FFMPEG_PATH ?? '').trim() ||
+      'ffmpeg';
+
+    const args = [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      'pipe:0',
+      '-vn',
+      '-acodec',
+      'libmp3lame',
+      '-b:a',
+      `${kbps}k`,
+      '-f',
+      'mp3',
+      'pipe:1',
+    ];
+
+    const child = spawn(candidatePath, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+
+    child.stdout.on('data', (d) => stdoutChunks.push(Buffer.from(d)));
+    child.stderr.on('data', (d) => stderrChunks.push(Buffer.from(d)));
+    child.stdin.end(wav);
+
+    const exitCode: number = await new Promise((resolve, reject) => {
+      child.on('error', reject);
+      child.on('close', resolve);
+    });
+
+    const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
+    if (exitCode !== 0) {
+      throw new InternalServerErrorException(
+        `ffmpeg failed to transcode WAV to MP3 (exit ${exitCode})${stderr ? `: ${stderr}` : ''}`,
+      );
+    }
+
+    const out = Buffer.concat(stdoutChunks);
+    if (!out.length) {
+      throw new InternalServerErrorException(
+        `ffmpeg returned empty MP3 output${stderr ? `: ${stderr}` : ''}`,
+      );
+    }
+    return out;
+  }
+
   private async generateVoiceWithGeminiTts(params: {
     text: string;
     voiceName: string;
@@ -2154,10 +2395,21 @@ export class AiService {
         );
       }
 
-      const pcm = Buffer.from(b64, 'base64');
-      // Gemini TTS currently returns raw PCM (16-bit LE, 24kHz, mono) per docs.
+      const audioBytes = Buffer.from(b64, 'base64');
+
+      // Some providers/models may return WAV or MP3 containers instead of raw PCM.
+      // Always normalize to MP3 for downstream consistency.
+      if (this.looksLikeMp3(audioBytes)) {
+        return audioBytes;
+      }
+
+      if (this.looksLikeWav(audioBytes)) {
+        return await this.wavToMp3Async({ wav: audioBytes, kbps: 128 });
+      }
+
+      // Default: treat as raw PCM (16-bit LE, 24kHz, mono).
       return await this.pcm16leToMp3Async({
-        pcm,
+        pcm: audioBytes,
         sampleRate: 24000,
         channels: 1,
         kbps: 128,
