@@ -104,6 +104,7 @@ export class VoiceOversService {
     fileName: string;
     folder: string;
     overwrite?: boolean;
+    format?: string;
   }): Promise<string> {
     if (
       !process.env.CLOUDINARY_CLOUD_NAME ||
@@ -115,7 +116,7 @@ export class VoiceOversService {
       );
     }
 
-    const { buffer, fileName, folder, overwrite = false } = params;
+    const { buffer, fileName, folder, overwrite = false, format } = params;
 
     return await new Promise<string>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
@@ -123,7 +124,7 @@ export class VoiceOversService {
           resource_type: 'video',
           folder,
           public_id: fileName,
-          format: 'mp3',
+          ...(format ? { format } : {}),
           overwrite,
         },
         (error, result) => {
@@ -168,7 +169,7 @@ export class VoiceOversService {
     const previewText =
       'Hi! This is a quick preview of my voice. If you like it, you can use me to generate your voice-over.';
 
-    const { buffer } = await this.aiService.generateVoiceForScript(
+    const voiceResult = await this.aiService.generateVoiceForScript(
       previewText,
       voice.voice_id,
     );
@@ -178,10 +179,15 @@ export class VoiceOversService {
       .replace(/[^a-zA-Z0-9_\-]/g, '');
 
     const previewUrl = await this.uploadAudioPreviewToCloudinary({
-      buffer,
+      buffer: voiceResult.buffer,
       fileName: `${safePublicId}__preview`,
       folder: 'auto-video-generator/voice-previews',
       overwrite: false,
+      format: (() => {
+        const name = String(voiceResult.filename ?? '').trim().toLowerCase();
+        const match = /\.([a-z0-9]+)$/.exec(name);
+        return match?.[1];
+      })(),
     });
 
     await this.voiceOverRepository.update(

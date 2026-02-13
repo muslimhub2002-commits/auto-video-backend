@@ -2,22 +2,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { spawn } from 'child_process';
-import ffmpegPath from 'ffmpeg-static';
-import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import type OpenAI from 'openai';
 import type { SentenceInput, SentenceTiming } from '../render-videos.types';
-
-const getFfmpegBinary = (): string => {
-  const installerPath =
-    (ffmpegInstaller as any)?.path ?? (ffmpegInstaller as any)?.default?.path;
-  const candidate =
-    String(installerPath ?? '').trim() ||
-    String((ffmpegPath as any) ?? '').trim() ||
-    String(process.env.FFMPEG_PATH ?? '').trim() ||
-    'ffmpeg';
-  return candidate;
-};
 
 const readHeaderBytes = (filePath: string, length: number): Buffer => {
   const fd = fs.openSync(filePath, 'r');
@@ -49,49 +35,6 @@ const looksLikeWavHeader = (buffer: Buffer): boolean => {
   return buffer.toString('ascii', 8, 12) === 'WAVE';
 };
 
-const transcodeToMp3ForTranscription = async (
-  inputPath: string,
-): Promise<string> => {
-  const outPath = path.join(os.tmpdir(), `transcribe-${randomUUID()}.mp3`);
-  const ffmpegBin = getFfmpegBinary();
-
-  const args = [
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-y',
-    '-i',
-    inputPath,
-    '-vn',
-    '-ac',
-    '1',
-    '-ar',
-    '16000',
-    '-acodec',
-    'libmp3lame',
-    '-b:a',
-    '128k',
-    outPath,
-  ];
-
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(ffmpegBin, args, { windowsHide: true });
-    const stderrChunks: Buffer[] = [];
-    child.stderr.on('data', (d) => stderrChunks.push(Buffer.from(d)));
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code === 0) return resolve();
-      const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
-      reject(
-        new Error(
-          `ffmpeg transcode failed (exit ${code})${stderr ? `: ${stderr}` : ''}`,
-        ),
-      );
-    });
-  });
-
-  return outPath;
-};
 
 const copyToTempWithExtension = (inputPath: string, ext: string): string => {
   const safeExt = ext.startsWith('.') ? ext : `.${ext}`;
@@ -366,32 +309,16 @@ export const alignAudioToSentences = async (params: {
         headerIsWav,
       });
 
-      // Normalize to an actual MP3 file (both bytes and extension) so the OpenAI
-      // API doesn't receive mismatched containers (e.g. MP3 bytes saved as .wav).
-      const alreadyMp3 = ext === '.mp3' && headerIsMp3;
-      if (!alreadyMp3) {
-        try {
-          transcriptionAudioPath = await transcodeToMp3ForTranscription(
-            transcriptionAudioPath,
-          );
-          tempFilesToCleanup.push(transcriptionAudioPath);
-          console.log('[RenderVideosService] Normalized audio for transcription', {
-            transcriptionAudioPath,
-          });
-        } catch (e: any) {
-          // If it's already MP3 bytes but the extension is wrong, a copy/rename is often enough.
-          if (headerIsMp3 && ext !== '.mp3') {
-            const copied = copyToTempWithExtension(transcriptionAudioPath, '.mp3');
-            tempFilesToCleanup.push(copied);
-            transcriptionAudioPath = copied;
-            console.log(
-              '[RenderVideosService] Copied audio to .mp3 for transcription (no transcode)',
-              { transcriptionAudioPath },
-            );
-          } else {
-            throw e;
-          }
-        }
+      // Keep behavior robust: if the bytes are MP3 but the
+      // extension is wrong, copy to a temp file with a .mp3 extension.
+      if (headerIsMp3 && ext !== '.mp3') {
+        const copied = copyToTempWithExtension(transcriptionAudioPath, '.mp3');
+        tempFilesToCleanup.push(copied);
+        transcriptionAudioPath = copied;
+        console.log(
+          '[RenderVideosService] Copied audio to .mp3 for transcription (no transcode)',
+          { transcriptionAudioPath },
+        );
       }
     } catch (e: any) {
       console.warn(

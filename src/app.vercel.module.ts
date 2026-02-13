@@ -27,7 +27,7 @@ import { RenderJob } from './modules/render-videos/entities/render-job.entity';
 /**
  * Vercel deployment module.
  *
- * Intentionally excludes the RenderVideos module (Remotion/Chromium/ffmpeg heavy)
+ * Intentionally excludes the RenderVideos module (Remotion/Chromium heavy)
  * so Vercel Serverless Function bundle stays under the 250MB unzipped limit.
  */
 @Module({

@@ -4,53 +4,108 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { spawn } from 'child_process';
 import { AiRuntimeService } from './ai-runtime.service';
 
 @Injectable()
 export class AiVoiceService {
   constructor(private readonly runtime: AiRuntimeService) {}
 
+  private parseMimeType(raw: string): {
+    base: string;
+    params: Record<string, string>;
+  } {
+    const value = String(raw ?? '').trim();
+    if (!value) return { base: '', params: {} };
+
+    const [baseRaw, ...rest] = value.split(';');
+    const base = String(baseRaw ?? '').trim().toLowerCase();
+
+    const params: Record<string, string> = {};
+    for (const seg of rest) {
+      const [kRaw, vRaw] = String(seg ?? '').split('=');
+      const key = String(kRaw ?? '').trim().toLowerCase();
+      const val = String(vRaw ?? '').trim();
+      if (key) params[key] = val;
+    }
+
+    return { base, params };
+  }
+
+  private pcm16leToWav(params: {
+    pcm: Buffer;
+    sampleRate: number;
+    channels: number;
+  }): Buffer {
+    const sampleRate = Number.isFinite(params.sampleRate) && params.sampleRate > 0 ? params.sampleRate : 24000;
+    const channels = Number.isFinite(params.channels) && params.channels > 0 ? params.channels : 1;
+    const bitsPerSample = 16;
+
+    const byteRate = sampleRate * channels * (bitsPerSample / 8);
+    const blockAlign = channels * (bitsPerSample / 8);
+    const dataSize = params.pcm.length;
+    const riffChunkSize = 36 + dataSize;
+
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0, 4, 'ascii');
+    header.writeUInt32LE(riffChunkSize >>> 0, 4);
+    header.write('WAVE', 8, 4, 'ascii');
+    header.write('fmt ', 12, 4, 'ascii');
+    header.writeUInt32LE(16, 16); // PCM fmt chunk size
+    header.writeUInt16LE(1, 20); // AudioFormat=1 (PCM)
+    header.writeUInt16LE(channels, 22);
+    header.writeUInt32LE(sampleRate >>> 0, 24);
+    header.writeUInt32LE(byteRate >>> 0, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write('data', 36, 4, 'ascii');
+    header.writeUInt32LE(dataSize >>> 0, 40);
+
+    return Buffer.concat([header, params.pcm]);
+  }
+
   private isRunningOnVercel(): boolean {
     // Vercel sets VERCEL=1 on build/runtime.
     return String(process.env.VERCEL ?? '').trim() === '1';
   }
 
-  private async resolveFfmpegPath(): Promise<string> {
-    const envPath = String(process.env.FFMPEG_PATH ?? '').trim();
-    if (envPath) return envPath;
+  private looksLikeWav(buffer: Buffer): boolean {
+    if (!buffer || buffer.length < 12) return false;
+    return (
+      buffer.toString('ascii', 0, 4) === 'RIFF' &&
+      buffer.toString('ascii', 8, 12) === 'WAVE'
+    );
+  }
 
-    // Vercel serverless does not ship with a system ffmpeg binary, and bundling
-    // ffmpeg via npm packages will exceed the 250MB unzipped function limit.
-    if (this.isRunningOnVercel()) {
-      throw new BadRequestException(
-        'Google TTS voice generation is not supported on Vercel Serverless (requires ffmpeg). Use an ElevenLabs voiceId (elevenlabs:...) or deploy the backend to a long-running server.',
-      );
+  private normalizeMimeType(raw: string): string {
+    const value = String(raw ?? '').trim();
+    if (!value) return '';
+    // Strip parameters: "audio/wav;codec=..." -> "audio/wav"
+    return value.split(';')[0]!.trim().toLowerCase();
+  }
+
+  private extensionFromMimeType(mimeTypeRaw: string): string {
+    const mimeType = this.normalizeMimeType(mimeTypeRaw);
+    switch (mimeType) {
+      case 'audio/mpeg':
+      case 'audio/mp3':
+        return 'mp3';
+      case 'audio/wav':
+      case 'audio/x-wav':
+        return 'wav';
+      case 'audio/webm':
+        return 'webm';
+      case 'audio/ogg':
+        return 'ogg';
+      case 'audio/flac':
+        return 'flac';
+      case 'audio/aac':
+        return 'aac';
+      case 'audio/pcm':
+      case 'audio/l16':
+        return 'pcm';
+      default:
+        return '';
     }
-
-    // IMPORTANT: avoid static imports so Vercel does not bundle ffmpeg binaries.
-    // Use non-literal module names to prevent Node File Trace from pulling them in.
-    try {
-      const installerPkg = ['@ffmpeg-installer', 'ffmpeg'].join('/');
-      const installer: any = await import(installerPkg);
-      const installerPath =
-        installer?.path ?? installer?.default?.path ?? installer?.ffmpegPath;
-      const trimmed = String(installerPath ?? '').trim();
-      if (trimmed) return trimmed;
-    } catch {
-      // ignore
-    }
-
-    try {
-      const staticPkg = ['ffmpeg', 'static'].join('-');
-      const ffmpegStatic: any = await import(staticPkg);
-      const candidate = String(ffmpegStatic?.default ?? ffmpegStatic ?? '').trim();
-      if (candidate) return candidate;
-    } catch {
-      // ignore
-    }
-
-    return 'ffmpeg';
   }
 
   private get geminiApiKey() {
@@ -103,7 +158,7 @@ export class AiVoiceService {
     ): { provider: 'google' | 'elevenlabs'; rawId?: string } => {
       const id = String(idRaw ?? '').trim();
       if (!id) {
-        if (!this.isRunningOnVercel() && (this.geminiApiKey || '').trim()) {
+        if ((this.geminiApiKey || '').trim()) {
           return {
             provider: 'google',
             rawId: this.googleTtsDefaultVoiceName?.trim() || undefined,
@@ -134,12 +189,12 @@ export class AiVoiceService {
       if (!voiceName) {
         throw new BadRequestException('voiceId is required for Google TTS');
       }
-      const buffer = await this.generateVoiceWithGeminiTts({
+      const result = await this.generateVoiceWithGeminiTts({
         text,
         voiceName,
         styleInstructions,
       });
-      return { buffer, mimeType: 'audio/mpeg', filename: 'voice-over.mp3' };
+      return result;
     }
 
     const elevenVoiceId = String(chosen.rawId ?? '').trim() || this.elevenDefaultVoiceId;
@@ -221,149 +276,28 @@ export class AiVoiceService {
     }
   }
 
-  private async pcm16leToMp3Async(params: {
-    pcm: Buffer;
-    sampleRate: number;
-    channels: 1 | 2;
-    kbps?: number;
-  }): Promise<Buffer> {
-    const { pcm, sampleRate, channels, kbps = 128 } = params;
-
-    const candidatePath = await this.resolveFfmpegPath();
-
-    const args = [
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-f',
-      's16le',
-      '-ar',
-      String(sampleRate),
-      '-ac',
-      String(channels),
-      '-i',
-      'pipe:0',
-      '-vn',
-      '-acodec',
-      'libmp3lame',
-      '-b:a',
-      `${kbps}k`,
-      '-f',
-      'mp3',
-      'pipe:1',
-    ];
-
-    const child = spawn(candidatePath, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-
-    child.stdout.on('data', (d) => stdoutChunks.push(Buffer.from(d)));
-    child.stderr.on('data', (d) => stderrChunks.push(Buffer.from(d)));
-
-    child.stdin.end(pcm);
-
-    const exitCode: number = await new Promise((resolve, reject) => {
-      child.on('error', reject);
-      child.on('close', resolve);
-    });
-
-    const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
-    if (exitCode !== 0) {
-      throw new InternalServerErrorException(
-        `ffmpeg failed to encode MP3 (exit ${exitCode})${stderr ? `: ${stderr}` : ''}`,
-      );
-    }
-
-    const out = Buffer.concat(stdoutChunks);
-    if (!out.length) {
-      throw new InternalServerErrorException(
-        `ffmpeg returned empty MP3 output${stderr ? `: ${stderr}` : ''}`,
-      );
-    }
-    return out;
-  }
-
-  private looksLikeWav(buffer: Buffer): boolean {
-    if (!buffer || buffer.length < 12) return false;
-    return (
-      buffer.toString('ascii', 0, 4) === 'RIFF' &&
-      buffer.toString('ascii', 8, 12) === 'WAVE'
-    );
-  }
-
   private looksLikeMp3(buffer: Buffer): boolean {
     if (!buffer || buffer.length < 3) return false;
     if (buffer.toString('ascii', 0, 3) === 'ID3') return true;
     return buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
   }
 
-  private async wavToMp3Async(params: { wav: Buffer; kbps?: number }): Promise<Buffer> {
-    const { wav, kbps = 128 } = params;
-
-    const candidatePath = await this.resolveFfmpegPath();
-
-    const args = [
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-i',
-      'pipe:0',
-      '-vn',
-      '-acodec',
-      'libmp3lame',
-      '-b:a',
-      `${kbps}k`,
-      '-f',
-      'mp3',
-      'pipe:1',
-    ];
-
-    const child = spawn(candidatePath, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-
-    child.stdout.on('data', (d) => stdoutChunks.push(Buffer.from(d)));
-    child.stderr.on('data', (d) => stderrChunks.push(Buffer.from(d)));
-    child.stdin.end(wav);
-
-    const exitCode: number = await new Promise((resolve, reject) => {
-      child.on('error', reject);
-      child.on('close', resolve);
-    });
-
-    const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
-    if (exitCode !== 0) {
-      throw new InternalServerErrorException(
-        `ffmpeg failed to transcode WAV to MP3 (exit ${exitCode})${stderr ? `: ${stderr}` : ''}`,
-      );
-    }
-
-    const out = Buffer.concat(stdoutChunks);
-    if (!out.length) {
-      throw new InternalServerErrorException(
-        `ffmpeg returned empty MP3 output${stderr ? `: ${stderr}` : ''}`,
-      );
-    }
-    return out;
-  }
-
   private async generateVoiceWithGeminiTts(params: {
     text: string;
     voiceName: string;
     styleInstructions?: string;
-  }): Promise<Buffer> {
+  }): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     if (!this.geminiApiKey) {
       throw new InternalServerErrorException(
         'GEMINI_API_KEY is not configured on the server',
       );
+    }
+
+    // Note: we do not transcode server-side (ffmpeg removed). We return whichever
+    // supported container Gemini provides (MP3 or WAV).
+    if (this.isRunningOnVercel()) {
+      // Just a guardrail: Vercel is fine, but WAV payloads can be larger.
+      // No behavioral change needed.
     }
 
     try {
@@ -447,6 +381,24 @@ export class AiVoiceService {
         audioPart?.inlineData?.data ?? audioPart?.inline_data?.data ?? '',
       ).trim();
 
+      const declaredMimeType = this.normalizeMimeType(
+        String(
+          audioPart?.inlineData?.mimeType ??
+            audioPart?.inlineData?.mime_type ??
+            audioPart?.inline_data?.mimeType ??
+            audioPart?.inline_data?.mime_type ??
+            '',
+        ),
+      );
+
+      const declaredMimeTypeFull = String(
+        audioPart?.inlineData?.mimeType ??
+          audioPart?.inlineData?.mime_type ??
+          audioPart?.inline_data?.mimeType ??
+          audioPart?.inline_data?.mime_type ??
+          '',
+      ).trim();
+
       if (!b64) {
         throw new InternalServerErrorException(
           'Gemini TTS returned empty audio data',
@@ -455,20 +407,51 @@ export class AiVoiceService {
 
       const audioBytes = Buffer.from(b64, 'base64');
 
+      // If Gemini returns raw PCM (e.g. audio/L16 or audio/pcm), wrap it in a WAV
+      // container so browsers can play it and report duration (no transcoding).
+      if (declaredMimeTypeFull) {
+        const parsed = this.parseMimeType(declaredMimeTypeFull);
+        if (parsed.base === 'audio/pcm' || parsed.base === 'audio/l16') {
+          const rateRaw = parsed.params['rate'] ?? parsed.params['samplerate'] ?? parsed.params['sample_rate'];
+          const channelsRaw = parsed.params['channels'] ?? parsed.params['channel'];
+          const sampleRate = Number.parseInt(String(rateRaw ?? ''), 10);
+          const channels = Number.parseInt(String(channelsRaw ?? ''), 10);
+
+          const wav = this.pcm16leToWav({
+            pcm: audioBytes,
+            sampleRate: Number.isFinite(sampleRate) ? sampleRate : 24000,
+            channels: Number.isFinite(channels) ? channels : 1,
+          });
+          return { buffer: wav, mimeType: 'audio/wav', filename: 'voice-over.wav' };
+        }
+      }
+
+      // Prefer Gemini's declared mimeType if it provides one.
+      if (declaredMimeType) {
+        const ext = this.extensionFromMimeType(declaredMimeType);
+        const filename = ext ? `voice-over.${ext}` : 'voice-over.bin';
+        return {
+          buffer: audioBytes,
+          mimeType: declaredMimeType,
+          filename,
+        };
+      }
+
       if (this.looksLikeMp3(audioBytes)) {
-        return audioBytes;
+        return { buffer: audioBytes, mimeType: 'audio/mpeg', filename: 'voice-over.mp3' };
       }
 
       if (this.looksLikeWav(audioBytes)) {
-        return await this.wavToMp3Async({ wav: audioBytes, kbps: 128 });
+        return { buffer: audioBytes, mimeType: 'audio/wav', filename: 'voice-over.wav' };
       }
 
-      return await this.pcm16leToMp3Async({
-        pcm: audioBytes,
-        sampleRate: 24000,
-        channels: 1,
-        kbps: 128,
-      });
+      // Return the raw bytes even if we can't identify the container.
+      // Clients (and OpenAI transcription) can often handle the payload.
+      return {
+        buffer: audioBytes,
+        mimeType: 'application/octet-stream',
+        filename: 'voice-over.bin',
+      };
     } catch (error) {
       const err: any = error;
 

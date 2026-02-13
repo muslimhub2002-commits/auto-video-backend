@@ -206,7 +206,7 @@ export class AiController {
   /**
    * Generates a voice-over audio clip.
    * - ElevenLabs: MP3
-   * - AI Studio (Gemini TTS): MP3
+    * - AI Studio (Gemini TTS): MP3 or WAV
    */
   @Post('generate-voice')
   @HttpCode(HttpStatus.OK)
