@@ -1,6 +1,117 @@
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { randomUUID } from 'crypto';
+import { spawn } from 'child_process';
+import ffmpegPath from 'ffmpeg-static';
+import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import type OpenAI from 'openai';
 import type { SentenceInput, SentenceTiming } from '../render-videos.types';
+
+const getFfmpegBinary = (): string => {
+  const installerPath =
+    (ffmpegInstaller as any)?.path ?? (ffmpegInstaller as any)?.default?.path;
+  const candidate =
+    String(installerPath ?? '').trim() ||
+    String((ffmpegPath as any) ?? '').trim() ||
+    String(process.env.FFMPEG_PATH ?? '').trim() ||
+    'ffmpeg';
+  return candidate;
+};
+
+const readHeaderBytes = (filePath: string, length: number): Buffer => {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(Math.max(0, length));
+    const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
+    return bytesRead === buf.length ? buf : buf.subarray(0, bytesRead);
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      // ignore
+    }
+  }
+};
+
+const looksLikeMp3Header = (buffer: Buffer): boolean => {
+  if (!buffer || buffer.length < 3) return false;
+  if (buffer.toString('ascii', 0, 3) === 'ID3') return true;
+  return buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
+};
+
+const looksLikeWavHeader = (buffer: Buffer): boolean => {
+  if (!buffer || buffer.length < 12) return false;
+  const riff = buffer.toString('ascii', 0, 4);
+  if (riff !== 'RIFF' && riff !== 'RF64' && riff !== 'BW64' && riff !== 'RIFX') {
+    return false;
+  }
+  return buffer.toString('ascii', 8, 12) === 'WAVE';
+};
+
+const transcodeToMp3ForTranscription = async (
+  inputPath: string,
+): Promise<string> => {
+  const outPath = path.join(os.tmpdir(), `transcribe-${randomUUID()}.mp3`);
+  const ffmpegBin = getFfmpegBinary();
+
+  const args = [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-y',
+    '-i',
+    inputPath,
+    '-vn',
+    '-ac',
+    '1',
+    '-ar',
+    '16000',
+    '-acodec',
+    'libmp3lame',
+    '-b:a',
+    '128k',
+    outPath,
+  ];
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(ffmpegBin, args, { windowsHide: true });
+    const stderrChunks: Buffer[] = [];
+    child.stderr.on('data', (d) => stderrChunks.push(Buffer.from(d)));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) return resolve();
+      const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
+      reject(
+        new Error(
+          `ffmpeg transcode failed (exit ${code})${stderr ? `: ${stderr}` : ''}`,
+        ),
+      );
+    });
+  });
+
+  return outPath;
+};
+
+const copyToTempWithExtension = (inputPath: string, ext: string): string => {
+  const safeExt = ext.startsWith('.') ? ext : `.${ext}`;
+  const outPath = path.join(os.tmpdir(), `transcribe-${randomUUID()}${safeExt}`);
+  fs.copyFileSync(inputPath, outPath);
+  return outPath;
+};
+
+const makeOpenAiUploadable = async (filePath: string): Promise<any> => {
+  // Prefer SDK helper if available; otherwise fall back to ReadStream.
+  try {
+    const uploads: any = await import('openai/uploads');
+    if (typeof uploads?.fileFromPath === 'function') {
+      return await uploads.fileFromPath(filePath);
+    }
+  } catch {
+    // ignore
+  }
+  return fs.createReadStream(filePath);
+};
 
 export type WithTimeout = <T>(
   promise: Promise<T>,
@@ -186,6 +297,7 @@ export const alignAudioToSentences = async (params: {
   withTimeout: WithTimeout;
   disableRenderer?: boolean;
 }): Promise<SentenceTiming[]> => {
+  const tempFilesToCleanup: string[] = [];
   const fallback = () => {
     if (params.disableRenderer) {
       return Promise.resolve(
@@ -223,8 +335,71 @@ export const alignAudioToSentences = async (params: {
   }
 
   try {
+    const stat = fs.statSync(params.audioPath);
+    console.log('[RenderVideosService] Audio file stat for alignment', {
+      audioPath: params.audioPath,
+      sizeBytes: stat.size,
+    });
+    if (!stat.size) {
+      console.warn('[RenderVideosService] Audio file is empty, using fallback');
+      return fallback();
+    }
+
     const model = process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-transcribe';
-    const responseFormat = model.startsWith('gpt-4o') ? 'json' : 'verbose_json';
+    // Model compatibility: gpt-4o-transcribe currently supports only 'json' or 'text'.
+    // Whisper supports 'verbose_json' which includes timestamps/segments.
+    const responseFormat: 'json' | 'verbose_json' = model.startsWith('gpt-4o')
+      ? 'json'
+      : 'verbose_json';
+
+    // Ensure OpenAI gets a well-formed, supported audio file.
+    // WAV is supported, but this also helps if upstream produced a weird container/extension.
+    let transcriptionAudioPath = params.audioPath;
+    try {
+      const header = readHeaderBytes(transcriptionAudioPath, 16);
+      const ext = path.extname(transcriptionAudioPath).toLowerCase();
+      const headerIsMp3 = looksLikeMp3Header(header);
+      const headerIsWav = looksLikeWavHeader(header);
+      console.log('[RenderVideosService] Audio header sniff', {
+        ext,
+        headerIsMp3,
+        headerIsWav,
+      });
+
+      // Normalize to an actual MP3 file (both bytes and extension) so the OpenAI
+      // API doesn't receive mismatched containers (e.g. MP3 bytes saved as .wav).
+      const alreadyMp3 = ext === '.mp3' && headerIsMp3;
+      if (!alreadyMp3) {
+        try {
+          transcriptionAudioPath = await transcodeToMp3ForTranscription(
+            transcriptionAudioPath,
+          );
+          tempFilesToCleanup.push(transcriptionAudioPath);
+          console.log('[RenderVideosService] Normalized audio for transcription', {
+            transcriptionAudioPath,
+          });
+        } catch (e: any) {
+          // If it's already MP3 bytes but the extension is wrong, a copy/rename is often enough.
+          if (headerIsMp3 && ext !== '.mp3') {
+            const copied = copyToTempWithExtension(transcriptionAudioPath, '.mp3');
+            tempFilesToCleanup.push(copied);
+            transcriptionAudioPath = copied;
+            console.log(
+              '[RenderVideosService] Copied audio to .mp3 for transcription (no transcode)',
+              { transcriptionAudioPath },
+            );
+          } else {
+            throw e;
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn(
+        '[RenderVideosService] Failed to sniff/transcode audio for transcription; using original',
+        { message: e?.message },
+      );
+      transcriptionAudioPath = params.audioPath;
+    }
 
     console.log(
       '[RenderVideosService] Calling OpenAI audio.transcriptions.create',
@@ -235,11 +410,14 @@ export const alignAudioToSentences = async (params: {
     );
 
     const transcription: any = await params.withTimeout(
-      params.openai.audio.transcriptions.create({
-        file: fs.createReadStream(params.audioPath),
-        model,
-        response_format: responseFormat as any,
-      } as any),
+      (async () => {
+        const file = await makeOpenAiUploadable(transcriptionAudioPath);
+        return await params.openai!.audio.transcriptions.create({
+          file,
+          model,
+          response_format: responseFormat as any,
+        } as any);
+      })(),
       Number(process.env.OPENAI_TRANSCRIBE_TIMEOUT_MS ?? '120000'),
       'OpenAI transcription',
     );
@@ -262,11 +440,14 @@ export const alignAudioToSentences = async (params: {
       );
 
       const whisperTranscription: any = await params.withTimeout(
-        params.openai.audio.transcriptions.create({
-          file: fs.createReadStream(params.audioPath),
-          model: whisperModel,
-          response_format: 'verbose_json' as any,
-        } as any),
+        (async () => {
+          const file = await makeOpenAiUploadable(transcriptionAudioPath);
+          return params.openai!.audio.transcriptions.create({
+            file,
+            model: whisperModel,
+            response_format: 'verbose_json' as any,
+          } as any);
+        })(),
         Number(process.env.OPENAI_TRANSCRIBE_TIMEOUT_MS ?? '120000'),
         'OpenAI Whisper transcription',
       );
@@ -467,5 +648,15 @@ export const alignAudioToSentences = async (params: {
       },
     );
     return fallback();
+  } finally {
+    // Best-effort cleanup for any temp transcode files we created.
+    // (No-op if we didn't create any.)
+    for (const p of tempFilesToCleanup) {
+      try {
+        if (p && p !== params.audioPath && fs.existsSync(p)) fs.unlinkSync(p);
+      } catch {
+        // ignore
+      }
+    }
   }
 };

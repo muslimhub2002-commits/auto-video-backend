@@ -142,11 +142,38 @@ export class ImagesService {
 
       return await this.imagesRepository.save(imageEntity);
     } catch (error: any) {
-      // Log underlying error for debugging while returning a safe message
+      const status =
+        Number(error?.status ?? error?.statusCode ?? error?.code) || null;
+      const message = String(error?.message ?? '').trim();
+
+      // Tinify only supports PNG/JPG. Some providers (e.g. ModelsLab) may return WebP.
+      // In that case, fall back to uploading the original buffer without compression.
+      if (
+        status === 415 ||
+        /file type is not supported/i.test(message) ||
+        /unsupported media type/i.test(message) ||
+        /invalid image file/i.test(message)
+      ) {
+        console.warn(
+          'Tinify rejected image (unsupported type). Uploading uncompressed to Cloudinary.',
+          { status: status ?? undefined, message: message || undefined },
+        );
+
+        return this.saveToCloudinary({
+          buffer: params.buffer,
+          filename: params.filename,
+          user_id: params.user_id,
+          message_id: params.message_id,
+          image_style: params.image_style,
+          image_size: params.image_size,
+          image_quality: params.image_quality,
+          prompt: params.prompt,
+        });
+      }
 
       console.error('Error in saveCompressedToCloudinary:', error);
       throw new InternalServerErrorException(
-        error?.message ?? 'Failed to compress and upload image',
+        message || 'Failed to compress and upload image',
       );
     }
   }

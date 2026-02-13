@@ -1,5 +1,6 @@
 import {
   Body,
+  Get,
   UseInterceptors,
   UploadedFiles,
   Controller,
@@ -7,6 +8,7 @@ import {
   Res,
   HttpCode,
   HttpStatus,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
@@ -35,6 +37,14 @@ type UploadedImageFile = {
 @Controller('ai')
 export class AiController {
   constructor(private readonly aiService: AiService) {}
+
+  // Debug helper: list available Google models for the configured GEMINI_API_KEY.
+  // Useful for discovering Imagen model ids per account/region.
+  @Get('google-models')
+  @UseGuards(JwtAuthGuard)
+  async listGoogleModels(@Query('q') q?: string) {
+    return this.aiService.listGoogleModels({ query: q });
+  }
 
   /**
    * Streams a randomly generated script from the selected model/provider.
