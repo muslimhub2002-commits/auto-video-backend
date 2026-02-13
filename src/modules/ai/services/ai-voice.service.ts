@@ -5,13 +5,53 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { spawn } from 'child_process';
-import ffmpegPath from 'ffmpeg-static';
-import * as ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { AiRuntimeService } from './ai-runtime.service';
 
 @Injectable()
 export class AiVoiceService {
   constructor(private readonly runtime: AiRuntimeService) {}
+
+  private isRunningOnVercel(): boolean {
+    // Vercel sets VERCEL=1 on build/runtime.
+    return String(process.env.VERCEL ?? '').trim() === '1';
+  }
+
+  private async resolveFfmpegPath(): Promise<string> {
+    const envPath = String(process.env.FFMPEG_PATH ?? '').trim();
+    if (envPath) return envPath;
+
+    // Vercel serverless does not ship with a system ffmpeg binary, and bundling
+    // ffmpeg via npm packages will exceed the 250MB unzipped function limit.
+    if (this.isRunningOnVercel()) {
+      throw new BadRequestException(
+        'Google TTS voice generation is not supported on Vercel Serverless (requires ffmpeg). Use an ElevenLabs voiceId (elevenlabs:...) or deploy the backend to a long-running server.',
+      );
+    }
+
+    // IMPORTANT: avoid static imports so Vercel does not bundle ffmpeg binaries.
+    // Use non-literal module names to prevent Node File Trace from pulling them in.
+    try {
+      const installerPkg = ['@ffmpeg-installer', 'ffmpeg'].join('/');
+      const installer: any = await import(installerPkg);
+      const installerPath =
+        installer?.path ?? installer?.default?.path ?? installer?.ffmpegPath;
+      const trimmed = String(installerPath ?? '').trim();
+      if (trimmed) return trimmed;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const staticPkg = ['ffmpeg', 'static'].join('-');
+      const ffmpegStatic: any = await import(staticPkg);
+      const candidate = String(ffmpegStatic?.default ?? ffmpegStatic ?? '').trim();
+      if (candidate) return candidate;
+    } catch {
+      // ignore
+    }
+
+    return 'ffmpeg';
+  }
 
   private get geminiApiKey() {
     return this.runtime.geminiApiKey;
@@ -63,7 +103,7 @@ export class AiVoiceService {
     ): { provider: 'google' | 'elevenlabs'; rawId?: string } => {
       const id = String(idRaw ?? '').trim();
       if (!id) {
-        if ((this.geminiApiKey || '').trim()) {
+        if (!this.isRunningOnVercel() && (this.geminiApiKey || '').trim()) {
           return {
             provider: 'google',
             rawId: this.googleTtsDefaultVoiceName?.trim() || undefined,
@@ -189,12 +229,7 @@ export class AiVoiceService {
   }): Promise<Buffer> {
     const { pcm, sampleRate, channels, kbps = 128 } = params;
 
-    const installerPath = ffmpegInstaller?.path ?? (ffmpegInstaller as any)?.default?.path;
-    const candidatePath =
-      String(installerPath ?? '').trim() ||
-      String(ffmpegPath ?? '').trim() ||
-      String(process.env.FFMPEG_PATH ?? '').trim() ||
-      'ffmpeg';
+    const candidatePath = await this.resolveFfmpegPath();
 
     const args = [
       '-hide_banner',
@@ -269,12 +304,7 @@ export class AiVoiceService {
   private async wavToMp3Async(params: { wav: Buffer; kbps?: number }): Promise<Buffer> {
     const { wav, kbps = 128 } = params;
 
-    const installerPath = ffmpegInstaller?.path ?? (ffmpegInstaller as any)?.default?.path;
-    const candidatePath =
-      String(installerPath ?? '').trim() ||
-      String(ffmpegPath ?? '').trim() ||
-      String(process.env.FFMPEG_PATH ?? '').trim() ||
-      'ffmpeg';
+    const candidatePath = await this.resolveFfmpegPath();
 
     const args = [
       '-hide_banner',

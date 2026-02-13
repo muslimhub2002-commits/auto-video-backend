@@ -1,0 +1,12 @@
+# Reduce Vercel deployment size; serverless function uses file tracing but
+# excluding large local artifacts helps avoid accidental inclusion.
+
+storage/
+remotion/
+coverage/
+.git/
+__dummy__/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

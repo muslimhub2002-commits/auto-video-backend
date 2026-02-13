@@ -2,7 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import express from 'express';
 
-import { AppModule } from '../src/app.module';
+import { AppVercelModule } from '../src/app.vercel.module';
 
 const server = express();
 let isBootstrapped = false;
@@ -13,7 +13,7 @@ async function bootstrap() {
   if (bootstrapPromise) return bootstrapPromise;
 
   bootstrapPromise = (async () => {
-    const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
+    const app = await NestFactory.create(AppVercelModule, new ExpressAdapter(server), {
       logger: ['error', 'warn', 'log'],
     });
 
