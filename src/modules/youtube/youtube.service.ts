@@ -302,7 +302,7 @@ export class YoutubeService {
         requestBody: {
           snippet: {
             title: dto.title,
-            description: dto.description ?? '',
+            description: dto.title ?? '',
             tags,
             categoryId,
             // English metadata + audio language

@@ -14,6 +14,7 @@ import { generateWithModelsLab } from './ai-image/providers/modelslab';
 import { generateWithOpenAi } from './ai-image/providers/openai';
 import { generateWithImagen } from './ai-image/providers/imagen';
 import { generateWithLeonardo } from './ai-image/providers/leonardo';
+import { generateWithGrokImagine } from './ai-image/providers/grok';
 import type {
   CharacterBible,
   CharacterGender,
@@ -28,6 +29,8 @@ export class AiImageService {
     'gpt-image-1-mini',
     'gpt-image-1.5',
   ]);
+
+  private static readonly GROK_IMAGE_MODELS = new Set(['grok-imagine-image']);
 
   private static readonly IMAGEN_MODELS = new Set([
     'imagen-3',
@@ -48,7 +51,7 @@ export class AiImageService {
   constructor(
     private readonly runtime: AiRuntimeService,
     private readonly imagesService: ImagesService,
-  ) {}
+  ) { }
 
   private get llm() {
     return this.runtime.llm;
@@ -61,6 +64,9 @@ export class AiImageService {
   }
   private get openai() {
     return this.runtime.openai;
+  }
+  private get grokApiKey() {
+    return this.runtime.grokApiKey;
   }
   private get geminiApiKey() {
     return this.runtime.geminiApiKey;
@@ -436,6 +442,7 @@ export class AiImageService {
               '1) Allah (or God when clearly used in Islamic context)\n' +
               '2) Any Prophet\n' +
               '3) Any Sahaba / Companion of the Prophet\n\n' +
+              '4) Any Woman' +
               'Rules:\n' +
               '- Use SCRIPT CONTEXT only to resolve pronouns / references for the TARGET SENTENCE.\n' +
               '- If the sentence is talking about any one but Allah, Any Prophet, Sahaba/Companions, return false.\n' +
@@ -495,10 +502,11 @@ export class AiImageService {
       imageModel !== 'leonardo' &&
       !isModelsLab &&
       !AiImageService.OPENAI_IMAGE_MODELS.has(imageModel) &&
+      !AiImageService.GROK_IMAGE_MODELS.has(imageModel) &&
       !AiImageService.IMAGEN_MODELS.has(imageModel)
     ) {
       throw new BadRequestException(
-        `Unsupported imageModel "${dto.imageModel}". Supported: leonardo, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, imagen-3, imagen-4, imagen-4-ultra, and modelslab:<model_id>.`,
+        `Unsupported imageModel "${dto.imageModel}". Supported: leonardo, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, imagen-3, imagen-4, imagen-4-ultra, and modelslab:<model_id>.`,
       );
     }
 
@@ -535,7 +543,6 @@ export class AiImageService {
     // NOTE: this is moved as-is from AiService to preserve behavior.
     // It is intentionally large and will be further split later if desired.
 
-    const subject = dto.subject?.trim() || 'religious (Islam)';
     const style = dto.style?.trim() || 'Anime style, detailed, vibrant, high quality';
 
     const fullScriptContext = dto.script?.trim();
@@ -555,8 +562,7 @@ export class AiImageService {
       sentence: dto.sentence,
       characterBible,
     });
-    const mentionsFemale = this.sentenceMentionsFemale(sentenceText);
-    const enforceNoHumanFigures = mentionResult.mentions || mentionsFemale;
+    const enforceNoHumanFigures = mentionResult.mentions;
     const referencedCharacterKeys = enforceNoHumanFigures ? [] : mentionResult.characterKeys;
     const focusMaleCharacter =
       !enforceNoHumanFigures &&
@@ -567,7 +573,7 @@ export class AiImageService {
       'NO people, NO faces, NO heads, NO hands, NO bodies, NO skin, NO silhouettes, NO characters, NO crowds, NO humanoid statues.';
 
     try {
-      let prompt = dto.prompt?.trim();
+      let prompt = (dto.prompt ?? '').trim();
       if (!prompt) {
         const promptModelRaw = String(dto.promptModel ?? '').trim();
         const promptModel = promptModelRaw || this.model;
@@ -576,23 +582,23 @@ export class AiImageService {
           frameType === 'single'
             ? ''
             : (frameType === 'start'
-                ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
-                : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
-              (continuityPrompt
-                ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
-                : '');
+              ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
+              : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
+            (continuityPrompt
+              ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
+              : '');
 
         const characterRefsBlock =
           referencedCharacterKeys.length && characterBible
             ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
-              referencedCharacterKeys
-                .map((k) => {
-                  const c = characterBible.byKey[k];
-                  return c ? `${c.key}: ${c.description}` : null;
-                })
-                .filter(Boolean)
-                .join('\n') +
-              '\n\n'
+            referencedCharacterKeys
+              .map((k) => {
+                const c = characterBible.byKey[k];
+                return c ? `${c.key}: ${c.description}` : null;
+              })
+              .filter(Boolean)
+              .join('\n') +
+            '\n\n'
             : '';
 
         console.log(mentionResult.mentions, 'mentionsAllah/Prophet/Sahaba');
@@ -626,12 +632,12 @@ export class AiImageService {
                     characterRefsBlock +
                     (frameBlock ? `${frameBlock}\n\n` : '') +
                     `Sentence: "${dto.sentence}"\n` +
-                    `Desired style: ${style} (anime-style artwork).\n\n` +
+                    `Desired style: ${style}.\n\n` +
                     'Important constraints:\n' +
                     '- Do not depict women/females.\n' +
                     (enforceNoHumanFigures
                       ? '- ABSOLUTELY NO humans/human figures: no people, no faces, no hands, no bodies, no silhouettes.\n' +
-                        `${noHumanFiguresRule}\n`
+                      `${noHumanFiguresRule}\n`
                       : focusMaleCharacter
                         ? '- Include the male character(s) implied by the sentence and focus on their action; do not add extra characters beyond what the sentence implies.\n'
                         : '') +
@@ -644,10 +650,24 @@ export class AiImageService {
             })
           )?.trim() || dto.sentence;
       } else {
-        const wantsAnime = /anime/i.test(style);
-        const hasAnime = /anime/i.test(prompt);
-        if (wantsAnime && !hasAnime) {
-          prompt = `${prompt}, ${style}`;
+        prompt = String(prompt ?? '').trim();
+        const styleText = (style ?? '').trim();
+        if (styleText) {
+          const styleHints: RegExp[] = [];
+          if (/\banime\b/i.test(styleText)) styleHints.push(/\banime\b/i);
+          if (/\b(photo(realistic)?|realism|realistic)\b/i.test(styleText)) {
+            styleHints.push(/\b(photo(realistic)?|realism|realistic)\b/i);
+          }
+          if (/\b(cinematic|film|movie)\b/i.test(styleText)) {
+            styleHints.push(/\b(cinematic|film|movie)\b/i);
+          }
+          if (/\bwatercolor\b/i.test(styleText)) styleHints.push(/\bwatercolor\b/i);
+          if (/\b(3d|render|pbr)\b/i.test(styleText)) styleHints.push(/\b(3d|render|pbr)\b/i);
+
+          const hasAnyStyleHint = styleHints.some((re) => re.test(prompt));
+          if (!hasAnyStyleHint) {
+            prompt = `${prompt}, ${styleText}`;
+          }
         }
 
         if (frameType === 'start') {
@@ -715,6 +735,24 @@ export class AiImageService {
         const image = await generateWithOpenAi({
           openai: this.openai,
           imageModel,
+          prompt,
+          isShortForm,
+        });
+
+        return this.persistToCloudinary({
+          userId,
+          buffer: image.buffer,
+          base64: image.base64,
+          prompt,
+          style,
+          isShortForm,
+        });
+      }
+
+      if (AiImageService.GROK_IMAGE_MODELS.has(imageModel)) {
+        const image = await generateWithGrokImagine({
+          grokApiKey: this.grokApiKey,
+          imageModel: imageModel as any,
           prompt,
           isShortForm,
         });

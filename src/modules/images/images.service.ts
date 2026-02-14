@@ -80,13 +80,13 @@ export class ImagesService {
     }
 
     try {
-      const source = tinify.fromBuffer(params.buffer);
-      const compressedBuffer = await source.toBuffer();
+      // const source = tinify.fromBuffer(params.buffer);
+      // const compressedBuffer = await source.toBuffer();
 
       // Compute a content hash of the compressed image to detect duplicates.
       const hash = crypto
         .createHash('sha256')
-        .update(compressedBuffer)
+        .update(params.buffer)
         .digest('hex');
 
       // If an image with the same hash already exists for this user,
@@ -122,7 +122,7 @@ export class ImagesService {
           },
         );
 
-        stream.end(compressedBuffer);
+        stream.end(params.buffer);
       });
 
       const imagePartial: Partial<Image> = {

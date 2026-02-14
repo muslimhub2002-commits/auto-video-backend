@@ -6,6 +6,7 @@ import { LlmRouter } from '../llm/llm-router';
 @Injectable()
 export class AiRuntimeService {
   public readonly openai: OpenAI | null;
+  public readonly grok: OpenAI | null;
   public readonly anthropic: Anthropic | null;
   public readonly llm: LlmRouter;
 
@@ -16,6 +17,8 @@ export class AiRuntimeService {
   public readonly geminiApiKey?: string;
   public readonly geminiTtsModel: string;
 
+  public readonly grokApiKey?: string;
+
   public readonly elevenApiKey?: string;
   public readonly elevenDefaultVoiceId: string;
   public readonly googleTtsDefaultVoiceName?: string;
@@ -25,6 +28,7 @@ export class AiRuntimeService {
 
   constructor() {
     const openaiKey = process.env.OPENAI_API_KEY;
+    const grokKey = process.env.GROK_API_KEY;
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
 
@@ -33,17 +37,23 @@ export class AiRuntimeService {
       String(process.env.GEMINI_TTS_MODEL ?? '').trim() ||
       'gemini-2.5-flash-preview-tts';
 
+    this.grokApiKey = (grokKey || '').trim() || undefined;
+
     this.openai = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
+    this.grok = grokKey
+      ? new OpenAI({ apiKey: grokKey, baseURL: 'https://api.x.ai/v1' })
+      : null;
     this.anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
 
-    if (!this.openai && !this.anthropic && !(geminiKey || '').trim()) {
+    if (!this.openai && !this.grok && !this.anthropic && !(geminiKey || '').trim()) {
       throw new Error(
-        'Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY in the environment.',
+        'Set OPENAI_API_KEY, GROK_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY in the environment.',
       );
     }
 
     this.llm = new LlmRouter({
       openai: this.openai,
+      grok: this.grok,
       anthropic: this.anthropic,
       geminiApiKey: geminiKey,
     });
@@ -58,6 +68,7 @@ export class AiRuntimeService {
     // Used for small classification tasks (cheaper/faster than the main model).
     const defaultCheapModel = ((): string => {
       if ((openaiKey ?? '').trim()) return 'gpt-4o-mini';
+      if ((grokKey ?? '').trim()) return 'grok-3-mini-latest';
       if ((anthropicKey ?? '').trim()) return 'claude-3-haiku-20240307';
       if ((geminiKey ?? '').trim()) return 'gemini-1.5-flash';
       return 'gpt-4o-mini';

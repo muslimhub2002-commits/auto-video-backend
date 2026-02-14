@@ -1,5 +1,5 @@
 export const SUBSCRIBE_SENTENCE =
-  'Please Subscribe & Leave a comment to Help us reach out to more people';
+  'Please Subscribe & Help us reach out to more people';
 
 export const SUBSCRIBE_VIDEO_CLOUDINARY_URL =
   'https://res.cloudinary.com/dgc1yko8i/video/upload/v1768053443/subscribe_ejq4q9.mp4';

@@ -58,10 +58,10 @@ export class GenerateImageDto {
   @IsString()
   @IsOptional()
   @Matches(
-    /^(leonardo|gpt-image-1|gpt-image-1-mini|gpt-image-1\.5|imagen-3|imagen-4|imagen-4-ultra|modelslab:[a-z0-9][a-z0-9-_]{0,40})$/,
+    /^(leonardo|grok-imagine-image|gpt-image-1|gpt-image-1-mini|gpt-image-1\.5|imagen-3|imagen-4|imagen-4-ultra|modelslab:[a-z0-9][a-z0-9-_]{0,40})$/,
     {
       message:
-        'imageModel must be one of: leonardo, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, imagen-3, imagen-4, imagen-4-ultra, or modelslab:<model_id>',
+        'imageModel must be one of: leonardo, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, imagen-3, imagen-4, imagen-4-ultra, or modelslab:<model_id>',
     },
   )
   @MaxLength(50)
