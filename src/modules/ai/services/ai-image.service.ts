@@ -340,7 +340,7 @@ export class AiImageService {
             role: 'user',
             content:
               (script
-                ? `SCRIPT CONTEXT (for pronoun resolution):\n${script.slice(0, 8000)}\n\n`
+                ? `SCRIPT CONTEXT (for pronoun resolution):\n${script}\n\n`
                 : '') +
               `CHARACTER LIST (keys you are allowed to output):\n${characterList}\n\nSENTENCE:\n${sentence}`,
           },
