@@ -38,6 +38,11 @@ export class Sentence {
   @Column({ type: 'boolean', default: false })
   isSuspense: boolean;
 
+  // Optional per-sentence override: if present, the image prompt should reference
+  // exactly these canonical character keys and skip mention/detection logic.
+  @Column({ type: 'jsonb', nullable: true })
+  forced_character_keys: string[] | null;
+
   @ManyToOne(() => Script, (script) => script.sentences, {
     onDelete: 'CASCADE',
   })

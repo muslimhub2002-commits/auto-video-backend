@@ -42,6 +42,18 @@ export class Script {
   @Column({ type: 'varchar', length: 150, nullable: true })
   technique: string | null;
 
+  // Canonical character list extracted during splitting.
+  // Stored so drafts/library restore keeps stable keys + classification flags.
+  @Column({ type: 'jsonb', nullable: true })
+  characters: Array<{
+    key: string;
+    name: string;
+    description: string;
+    isSahaba: boolean;
+    isProphet: boolean;
+    isWoman: boolean;
+  }> | null;
+
   @Column({ type: 'uuid', nullable: false })
   user_id: string;
 

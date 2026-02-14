@@ -83,8 +83,8 @@ export class AiController {
   @Post('split-script')
   @HttpCode(HttpStatus.OK)
   async splitScript(@Body() body: SplitScriptDto) {
-    const sentences = await this.aiService.splitScript(body);
-    return { sentences };
+    const result = await this.aiService.splitScript(body);
+    return result;
   }
 
   /**

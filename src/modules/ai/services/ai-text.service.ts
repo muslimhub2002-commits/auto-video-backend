@@ -204,10 +204,29 @@ export class AiTextService {
         script: string;
         model?: string;
         systemPrompt?: string;
-    }): Promise<string[]> {
+    }): Promise<{
+        sentences: string[];
+        characters: Array<{
+            key: string;
+            name: string;
+            description: string;
+            isSahaba: boolean;
+            isProphet: boolean;
+            isWoman: boolean;
+        }>;
+    }> {
         try {
             const script = dto.script;
             const model = dto.model?.trim() || this.model;
+
+            type ScriptCharacter = {
+                key: string;
+                name: string;
+                description: string;
+                isSahaba: boolean;
+                isProphet: boolean;
+                isWoman: boolean;
+            };
 
             const normalizeSentences = (parsed: unknown): string[] => {
                 if (Array.isArray(parsed)) {
@@ -236,25 +255,72 @@ export class AiTextService {
                 return [];
             };
 
+            const normalizeCharacters = (parsed: unknown): ScriptCharacter[] => {
+                const raw =
+                    parsed && typeof parsed === 'object' && Array.isArray((parsed as any).characters)
+                        ? ((parsed as any).characters as unknown[])
+                        : [];
+
+                const out: ScriptCharacter[] = [];
+                const usedKeys = new Set<string>();
+
+                const coerceBool = (v: any): boolean => {
+                    if (typeof v === 'boolean') return v;
+                    const s = String(v ?? '').trim().toLowerCase();
+                    return s === 'true' || s === 'yes' || s === '1';
+                };
+
+                for (let i = 0; i < raw.length; i += 1) {
+                    const c: any = raw[i] ?? {};
+                    const keyRaw = String(c?.key ?? `C${i + 1}`).trim();
+                    const key = keyRaw || `C${i + 1}`;
+                    if (!key || usedKeys.has(key)) continue;
+
+                    const name = String(c?.name ?? '').trim() || key;
+                    const description = String(c?.description ?? '').trim();
+                    if (!description) continue;
+
+                    out.push({
+                        key,
+                        name,
+                        description,
+                        isSahaba: coerceBool(c?.isSahaba),
+                        isProphet: coerceBool(c?.isProphet),
+                        isWoman: coerceBool(c?.isWoman),
+                    });
+                    usedKeys.add(key);
+                    if (out.length >= 16) break;
+                }
+
+                return out;
+            };
+
             const requiredSplitterPrompt =
-                'You split long scripts into clean sentences. ' +
-                'You cannot write any more or less words than the original script. ' +
-                'Sentences cannot be too short or too long, it can be a little bit long if there is a deep meaning to the sentence. ' +
-                'Always respond with pure JSON as an OBJECT with exactly this shape: {"sentences": string[]}. ' +
-                'No extra keys. No extra text.';
+                'You split long scripts into clean sentences AND extract a canonical character list for later sentence classification.\n' +
+                'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
+                '{"sentences": string[], "characters": [{"key": string, "name": string, "description": string, "isSahaba": boolean, "isProphet": boolean, "isWoman": boolean}]}\n\n' +
+                'Rules:\n' +
+                '- Do NOT add or remove words from the script content; only split it into sentences.\n' +
+                '- Sentences cannot be too short or too long; slightly long is okay if meaning requires it.\n' +
+                '- Characters: include people/human characters that could be visually depicted.\n' +
+                '- Do NOT include Allah/God as a character.\n' +
+                '- Each character description must include facial + physical attributes for consistency.\n' +
+                '- Keys must be short like C1, C2, C3... in first-appearance order.\n' +
+                '- If unsure about any boolean flag, set it to false.\n' +
+                '- No extra keys. No extra text.';
 
             const splitterSystemPrompt = [requiredSplitterPrompt].filter(Boolean).join('\n');
 
             const parsed = await this.llm.completeJson<unknown>({
                 model,
-
                 retries: 2,
                 messages: [
                     { role: 'system', content: splitterSystemPrompt },
                     {
                         role: 'user',
                         content:
-                            'Return ONLY valid JSON in this exact shape: {"sentences": ["sentence 1", "sentence 2", ...]}.\n\n' +
+                            'Return ONLY valid JSON in this exact shape: ' +
+                            '{"sentences": ["sentence 1", "sentence 2", ...], "characters": [{"key":"C1","name":"...","description":"...","isSahaba":false,"isProphet":false,"isWoman":false}]}.\n\n' +
                             script,
                     },
                 ],
@@ -265,7 +331,8 @@ export class AiTextService {
                 throw new Error('Invalid JSON structure for sentences');
             }
 
-            return sentences;
+            const characters = normalizeCharacters(parsed);
+            return { sentences, characters };
         } catch {
             throw new InternalServerErrorException('Failed to split script into sentences');
         }

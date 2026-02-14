@@ -21,9 +21,25 @@ const readHeaderBytes = (filePath: string, length: number): Buffer => {
 };
 
 const looksLikeMp3Header = (buffer: Buffer): boolean => {
-  if (!buffer || buffer.length < 3) return false;
+  if (!buffer || buffer.length < 4) return false;
+  // MP3 can start with an ID3 tag.
   if (buffer.toString('ascii', 0, 3) === 'ID3') return true;
-  return buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
+
+  // Otherwise we expect a valid MPEG audio frame header.
+  if (!(buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0)) return false;
+
+  // Avoid false positives for AAC ADTS (also starts with 0xFF and 0xF1/0xF9).
+  if (looksLikeAacAdtsHeader(buffer)) return false;
+
+  // MPEG header validity checks:
+  // - versionId cannot be 01 (reserved)
+  // - layer cannot be 00 (reserved)
+  const versionId = (buffer[1] >> 3) & 0x3;
+  const layer = (buffer[1] >> 1) & 0x3;
+  if (versionId === 0x1) return false;
+  if (layer === 0x0) return false;
+
+  return true;
 };
 
 const looksLikeWavHeader = (buffer: Buffer): boolean => {
@@ -35,6 +51,40 @@ const looksLikeWavHeader = (buffer: Buffer): boolean => {
   return buffer.toString('ascii', 8, 12) === 'WAVE';
 };
 
+const looksLikeAacAdtsHeader = (buffer: Buffer): boolean => {
+  // ADTS sync word is 12 bits set: 0xFFF.
+  // This commonly manifests as 0xFF 0xF1 or 0xFF 0xF9.
+  if (!buffer || buffer.length < 2) return false;
+  if (buffer[0] !== 0xff) return false;
+  // Upper 4 bits of byte1 must be 0xF.
+  if ((buffer[1] & 0xf0) !== 0xf0) return false;
+  // Layer bits in ADTS are always 00 (bits 2-1).
+  if ((buffer[1] & 0x06) !== 0x00) return false;
+  return true;
+};
+
+const looksLikeMp4Container = (buffer: Buffer): boolean => {
+  // ISO BMFF (mp4/m4a) often has `ftyp` at offset 4.
+  if (!buffer || buffer.length < 12) return false;
+  return buffer.toString('ascii', 4, 8) === 'ftyp';
+};
+
+const looksLikeOgg = (buffer: Buffer): boolean => {
+  if (!buffer || buffer.length < 4) return false;
+  return buffer.toString('ascii', 0, 4) === 'OggS';
+};
+
+const looksLikeWebmOrMatroska = (buffer: Buffer): boolean => {
+  // EBML header for Matroska/WebM: 1A 45 DF A3
+  if (!buffer || buffer.length < 4) return false;
+  return (
+    buffer[0] === 0x1a &&
+    buffer[1] === 0x45 &&
+    buffer[2] === 0xdf &&
+    buffer[3] === 0xa3
+  );
+};
+
 
 const copyToTempWithExtension = (inputPath: string, ext: string): string => {
   const safeExt = ext.startsWith('.') ? ext : `.${ext}`;
@@ -44,16 +94,159 @@ const copyToTempWithExtension = (inputPath: string, ext: string): string => {
 };
 
 const makeOpenAiUploadable = async (filePath: string): Promise<any> => {
-  // Prefer SDK helper if available; otherwise fall back to ReadStream.
-  try {
-    const uploads: any = await import('openai/uploads');
-    if (typeof uploads?.fileFromPath === 'function') {
-      return await uploads.fileFromPath(filePath);
-    }
-  } catch {
-    // ignore
+  // Ensure we pass an Uploadable with a filename.
+  // OpenAI can be picky if the multipart part lacks a name.
+  const openaiPkg: any = await import('openai');
+  const toFile: any = openaiPkg?.toFile;
+  if (typeof toFile === 'function') {
+    return await toFile(fs.createReadStream(filePath), path.basename(filePath));
   }
+
+  // Fallback: most SDK versions accept ReadStream, but this may be less reliable.
   return fs.createReadStream(filePath);
+};
+
+type AudioKind =
+  | 'mp3'
+  | 'wav'
+  | 'mp4'
+  | 'webm'
+  | 'ogg'
+  | 'aac-adts'
+  | 'unknown';
+
+const detectAudioKind = (buffer: Buffer): AudioKind => {
+  if (looksLikeWavHeader(buffer)) return 'wav';
+  if (looksLikeMp4Container(buffer)) return 'mp4';
+  if (looksLikeWebmOrMatroska(buffer)) return 'webm';
+  if (looksLikeOgg(buffer)) return 'ogg';
+  if (looksLikeAacAdtsHeader(buffer)) return 'aac-adts';
+  if (looksLikeMp3Header(buffer)) return 'mp3';
+  return 'unknown';
+};
+
+const transcodeToWavForTranscription = async (inputPath: string) => {
+  const renderer: any = await import('@remotion/renderer');
+  const outPath = path.join(
+    os.tmpdir(),
+    `transcribe-${randomUUID()}-transcoded.wav`,
+  );
+
+  // ffmpeg invocation:
+  // - single channel and 16kHz is a safe speech-friendly choice
+  // - output PCM wav
+  const task = renderer?.RenderInternals?.callFf?.({
+    bin: 'ffmpeg',
+    indent: false,
+    logLevel: 'warn',
+    binariesDirectory: null,
+    cancelSignal: undefined,
+    args: [
+      '-y',
+      '-i',
+      inputPath,
+      '-vn',
+      '-ac',
+      '1',
+      '-ar',
+      '16000',
+      '-f',
+      'wav',
+      outPath,
+    ],
+  });
+
+  if (!task || typeof task.then !== 'function') {
+    throw new Error('Remotion ffmpeg helper not available');
+  }
+
+  await task;
+
+  return outPath;
+};
+
+const ensureOpenAiTranscriptionCompatibleAudio = async (params: {
+  audioPath: string;
+  disableRenderer?: boolean;
+}): Promise<{ audioPath: string; cleanup: string[]; kind: AudioKind }> => {
+  const cleanup: string[] = [];
+  let audioPath = params.audioPath;
+
+  const header = readHeaderBytes(audioPath, 64);
+  const kind = detectAudioKind(header);
+  const ext = path.extname(audioPath).toLowerCase();
+
+  const desiredExt = (() => {
+    switch (kind) {
+      case 'mp3':
+        return '.mp3';
+      case 'wav':
+        return '.wav';
+      case 'mp4':
+        // Could be .mp4 or .m4a; use .m4a to hint audio-only.
+        return '.m4a';
+      case 'webm':
+        return '.webm';
+      case 'ogg':
+        return '.ogg';
+      case 'aac-adts':
+        return '.aac';
+      default:
+        return '';
+    }
+  })();
+
+  console.log('[RenderVideosService] Audio container sniff', {
+    ext,
+    kind,
+    desiredExt,
+  });
+
+  // If we can identify a supported container, we can sometimes fix things by
+  // ensuring the file extension matches what the server expects.
+  const isSupportedByOpenAi =
+    kind === 'mp3' || kind === 'wav' || kind === 'mp4' || kind === 'webm';
+
+  if (isSupportedByOpenAi && desiredExt && ext !== desiredExt) {
+    const copied = copyToTempWithExtension(audioPath, desiredExt);
+    cleanup.push(copied);
+    audioPath = copied;
+    console.log(
+      '[RenderVideosService] Copied audio to correct extension for transcription (no transcode)',
+      { audioPath },
+    );
+
+    return { audioPath, cleanup, kind };
+  }
+
+  // If the container is not supported (or unknown), attempt a WAV transcode
+  // using Remotion's bundled ffmpeg (when allowed).
+  if (!isSupportedByOpenAi) {
+    if (params.disableRenderer) {
+      console.warn(
+        '[RenderVideosService] Audio container not OpenAI-supported and renderer disabled; cannot transcode',
+        { kind },
+      );
+      return { audioPath, cleanup, kind };
+    }
+
+    try {
+      const wavPath = await transcodeToWavForTranscription(audioPath);
+      cleanup.push(wavPath);
+      audioPath = wavPath;
+      console.log(
+        '[RenderVideosService] Transcoded audio to WAV for transcription',
+        { audioPath },
+      );
+    } catch (e: any) {
+      console.warn(
+        '[RenderVideosService] Failed to transcode audio to WAV for transcription; using original',
+        { kind, message: e?.message },
+      );
+    }
+  }
+
+  return { audioPath, cleanup, kind };
 };
 
 export type WithTimeout = <T>(
@@ -296,33 +489,19 @@ export const alignAudioToSentences = async (params: {
       : 'verbose_json';
 
     // Ensure OpenAI gets a well-formed, supported audio file.
-    // WAV is supported, but this also helps if upstream produced a weird container/extension.
+    // Some providers may return AAC ADTS or other containers that are playable
+    // but not accepted by OpenAI; in that case we attempt a WAV transcode.
     let transcriptionAudioPath = params.audioPath;
     try {
-      const header = readHeaderBytes(transcriptionAudioPath, 16);
-      const ext = path.extname(transcriptionAudioPath).toLowerCase();
-      const headerIsMp3 = looksLikeMp3Header(header);
-      const headerIsWav = looksLikeWavHeader(header);
-      console.log('[RenderVideosService] Audio header sniff', {
-        ext,
-        headerIsMp3,
-        headerIsWav,
+      const ensured = await ensureOpenAiTranscriptionCompatibleAudio({
+        audioPath: transcriptionAudioPath,
+        disableRenderer: params.disableRenderer,
       });
-
-      // Keep behavior robust: if the bytes are MP3 but the
-      // extension is wrong, copy to a temp file with a .mp3 extension.
-      if (headerIsMp3 && ext !== '.mp3') {
-        const copied = copyToTempWithExtension(transcriptionAudioPath, '.mp3');
-        tempFilesToCleanup.push(copied);
-        transcriptionAudioPath = copied;
-        console.log(
-          '[RenderVideosService] Copied audio to .mp3 for transcription (no transcode)',
-          { transcriptionAudioPath },
-        );
-      }
+      transcriptionAudioPath = ensured.audioPath;
+      tempFilesToCleanup.push(...ensured.cleanup);
     } catch (e: any) {
       console.warn(
-        '[RenderVideosService] Failed to sniff/transcode audio for transcription; using original',
+        '[RenderVideosService] Failed to ensure transcription-compatible audio; using original',
         { message: e?.message },
       );
       transcriptionAudioPath = params.audioPath;
@@ -336,18 +515,64 @@ export const alignAudioToSentences = async (params: {
       },
     );
 
-    const transcription: any = await params.withTimeout(
-      (async () => {
-        const file = await makeOpenAiUploadable(transcriptionAudioPath);
-        return await params.openai!.audio.transcriptions.create({
-          file,
-          model,
-          response_format: responseFormat as any,
-        } as any);
-      })(),
-      Number(process.env.OPENAI_TRANSCRIBE_TIMEOUT_MS ?? '120000'),
-      'OpenAI transcription',
-    );
+    const createTranscription = async (audioPath: string) => {
+      const file = await makeOpenAiUploadable(audioPath);
+      return await params.openai!.audio.transcriptions.create({
+        file,
+        model,
+        response_format: responseFormat as any,
+      } as any);
+    };
+
+    let transcription: any;
+    try {
+      transcription = await params.withTimeout(
+        createTranscription(transcriptionAudioPath),
+        Number(process.env.OPENAI_TRANSCRIBE_TIMEOUT_MS ?? '120000'),
+        'OpenAI transcription',
+      );
+    } catch (e: any) {
+      const status = Number(e?.status ?? e?.response?.status ?? 0);
+      const msg = String(e?.message ?? '');
+      const looksLikeUnsupported =
+        status === 400 &&
+        /corrupt|unsupported|invalid|cannot decode|decode/iu.test(msg);
+
+      console.warn(
+        '[RenderVideosService] Primary transcription failed',
+        { status, message: msg },
+      );
+
+      // If OpenAI says the audio is corrupted/unsupported, retry once by transcoding to WAV.
+      // This often fixes files that are mislabeled (e.g. AAC ADTS saved as .mp3).
+      if (!params.disableRenderer && looksLikeUnsupported) {
+        try {
+          const wavPath = await transcodeToWavForTranscription(
+            transcriptionAudioPath,
+          );
+          tempFilesToCleanup.push(wavPath);
+          transcriptionAudioPath = wavPath;
+          console.log(
+            '[RenderVideosService] Retrying transcription with WAV-transcoded audio',
+            { transcriptionAudioPath },
+          );
+
+          transcription = await params.withTimeout(
+            createTranscription(transcriptionAudioPath),
+            Number(process.env.OPENAI_TRANSCRIBE_TIMEOUT_MS ?? '120000'),
+            'OpenAI transcription (retry wav)',
+          );
+        } catch (retryErr: any) {
+          console.warn(
+            '[RenderVideosService] WAV retry transcription failed',
+            { message: retryErr?.message },
+          );
+          throw e;
+        }
+      } else {
+        throw e;
+      }
+    }
 
     let segments: any[] = Array.isArray(transcription?.segments)
       ? transcription.segments

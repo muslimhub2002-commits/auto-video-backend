@@ -277,9 +277,24 @@ export class AiVoiceService {
   }
 
   private looksLikeMp3(buffer: Buffer): boolean {
-    if (!buffer || buffer.length < 3) return false;
+    if (!buffer || buffer.length < 4) return false;
     if (buffer.toString('ascii', 0, 3) === 'ID3') return true;
-    return buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
+
+    // AAC ADTS can look superficially similar (0xFF 0xF1/0xF9).
+    const looksLikeAacAdts =
+      buffer[0] === 0xff &&
+      (buffer[1] & 0xf0) === 0xf0 &&
+      (buffer[1] & 0x06) === 0x00;
+    if (looksLikeAacAdts) return false;
+
+    if (!(buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0)) return false;
+
+    const versionId = (buffer[1] >> 3) & 0x3;
+    const layer = (buffer[1] >> 1) & 0x3;
+    if (versionId === 0x1) return false;
+    if (layer === 0x0) return false;
+
+    return true;
   }
 
   private async generateVoiceWithGeminiTts(params: {

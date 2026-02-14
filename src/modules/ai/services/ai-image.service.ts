@@ -420,6 +420,16 @@ export class AiImageService {
   private async sentenceMentionsAllahProphetOrSahaba(params: {
     script?: string | null;
     sentence: string;
+    characters?:
+      | Array<{
+          key: string;
+          name: string;
+          description: string;
+          isSahaba: boolean;
+          isProphet: boolean;
+          isWoman: boolean;
+        }>
+      | null;
     characterBible?: CharacterBible | null;
   }): Promise<{ mentions: boolean; characterKeys: string[] }> {
     const sentence = (params.sentence ?? '').trim();
@@ -427,7 +437,71 @@ export class AiImageService {
 
     const script = (params.script ?? '').trim();
 
+    const canonicalCharacters = (params.characters ?? []).filter(Boolean);
+    const charactersByKey = new Map(
+      canonicalCharacters.map((c) => [String(c.key).trim(), c] as const),
+    );
+
+    const sanitizeKeys = (keys: unknown): string[] => {
+      const arr = Array.isArray(keys) ? keys : [];
+      const out: string[] = [];
+      const used = new Set<string>();
+      for (const k of arr) {
+        const kk = String(k ?? '').trim();
+        if (!kk || used.has(kk)) continue;
+        if (canonicalCharacters.length && !charactersByKey.has(kk)) continue;
+        used.add(kk);
+        out.push(kk);
+        if (out.length >= 3) break;
+      }
+      return out;
+    };
+
     try {
+      // Preferred path: use canonical characters extracted during splitting.
+      if (canonicalCharacters.length) {
+        const parsed = await this.llm.completeJson<unknown>({
+          model: this.cheapModel,
+          retries: 1,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You classify whether the TARGET SENTENCE refers (directly, via pronoun or via possessive pronoun) to Allah/God, and which canonical character(s) it refers to.\n' +
+                'Return ONLY valid JSON with this exact shape: {"mentionsAllah": boolean, "characterKeys": string[]}.\n\n' +
+                'Rules:\n' +
+                'Use SCRIPT CONTEXT to resolve pronouns, possessive pronouns and references to the character keys in the TARGET SENTENCE.\n' 
+            },
+            {
+              role: 'user',
+              content:
+                (script
+                  ? `SCRIPT CONTEXT (for pronouns references):\n${script}\n\n`
+                  : '') +
+                `CANONICAL CHARACTERS (keys you may output):\n${canonicalCharacters
+                  .map(
+                    (c) =>
+                      `${c.key}: ${c.name}`,
+                  )
+                  .join('\n')}\n\n` +
+                `TARGET SENTENCE:\n${sentence}`,
+            },
+          ],
+        });
+
+        const mentionsAllah = Boolean((parsed as any)?.mentionsAllah);
+        const characterKeys = sanitizeKeys((parsed as any)?.characterKeys);
+
+        const mentionsRestrictedCharacter = characterKeys.some((k) => {
+          const c = charactersByKey.get(k);
+          return Boolean(c && (c.isSahaba || c.isProphet || c.isWoman));
+        });
+        console.log(mentionsAllah,characterKeys,'New Payload')
+        const mentions = mentionsAllah || mentionsRestrictedCharacter;
+        return { mentions, characterKeys };
+      }
+
+      // Fallback path: boolean-only classifier.
       const raw = await this.llm.completeText({
         model: this.cheapModel,
         temperature: 0,
@@ -441,11 +515,10 @@ export class AiImageService {
               'Task: Determine whether the TARGET SENTENCE mentions OR refers to any of the following (directly or via pronouns resolved using the provided SCRIPT CONTEXT):\n' +
               '1) Allah (or God when clearly used in Islamic context)\n' +
               '2) Any Prophet\n' +
-              '3) Any Sahaba / Companion of the Prophet\n\n' +
-              '4) Any Woman' +
+              '3) Any Sahaba / Companion of the Prophet\n' +
+              '4) Any Woman\n\n' +
               'Rules:\n' +
               '- Use SCRIPT CONTEXT only to resolve pronouns / references for the TARGET SENTENCE.\n' +
-              '- If the sentence is talking about any one but Allah, Any Prophet, Sahaba/Companions, return false.\n' +
               '- If unclear/ambiguous, return false.',
           },
           {
@@ -460,7 +533,6 @@ export class AiImageService {
 
       const parsed = this.extractBooleanFromModelText(raw);
       const mentions = parsed ?? false;
-      console.log(raw);
       if (mentions) return { mentions: true, characterKeys: [] };
 
       if (params.characterBible && params.characterBible.characters.length) {
@@ -553,17 +625,37 @@ export class AiImageService {
 
     const sentenceText = (dto.sentence ?? '').trim();
 
-    const characterBible = await this.getOrCreateCharacterBible(fullScriptContext);
+    const canonicalCharacters = dto.characters?.length ? dto.characters : null;
+
+    const forcedKeysRaw = Array.isArray(dto.forcedCharacterKeys)
+      ? dto.forcedCharacterKeys.map((k) => String(k ?? '').trim()).filter(Boolean)
+      : [];
+    const forcedKeys = canonicalCharacters?.length
+      ? forcedKeysRaw.filter((k) => canonicalCharacters.some((c) => c.key === k))
+      : [];
+    const hasForcedCharacters = forcedKeys.length > 0;
+
+    const characterBible = canonicalCharacters
+      ? null
+      : await this.getOrCreateCharacterBible(fullScriptContext);
     const scriptEra = await this.getOrCreateEra(fullScriptContext);
     const eraLine = scriptEra ? `Era:${scriptEra}` : '';
 
-    const mentionResult = await this.sentenceMentionsAllahProphetOrSahaba({
-      script: fullScriptContext,
-      sentence: dto.sentence,
-      characterBible,
-    });
-    const enforceNoHumanFigures = mentionResult.mentions;
-    const referencedCharacterKeys = enforceNoHumanFigures ? [] : mentionResult.characterKeys;
+    const mentionResult = hasForcedCharacters
+      ? { mentions: false, characterKeys: forcedKeys }
+      : await this.sentenceMentionsAllahProphetOrSahaba({
+          script: fullScriptContext,
+          sentence: dto.sentence,
+          characters: canonicalCharacters,
+          characterBible,
+        });
+
+    const enforceNoHumanFigures = hasForcedCharacters ? false : mentionResult.mentions;
+    const referencedCharacterKeys = hasForcedCharacters
+      ? forcedKeys
+      : enforceNoHumanFigures
+        ? []
+        : mentionResult.characterKeys;
     const focusMaleCharacter =
       !enforceNoHumanFigures &&
       (this.sentenceContainsMaleCharacter(sentenceText) || referencedCharacterKeys.length > 0);
@@ -588,21 +680,39 @@ export class AiImageService {
               ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
               : '');
 
-        const characterRefsBlock =
-          referencedCharacterKeys.length && characterBible
-            ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
-            referencedCharacterKeys
-              .map((k) => {
-                const c = characterBible.byKey[k];
-                return c ? `${c.key}: ${c.description}` : null;
-              })
-              .filter(Boolean)
-              .join('\n') +
-            '\n\n'
-            : '';
+        const characterRefsBlock = referencedCharacterKeys.length
+          ? (() => {
+              const resolveDescription = (key: string): string | null => {
+                if (canonicalCharacters?.length) {
+                  const c = canonicalCharacters.find((cc) => cc.key === key);
+                  return c ? `${c.key}: ${c.description}` : null;
+                }
+                if (characterBible) {
+                  const c = characterBible.byKey[key];
+                  return c ? `${c.key}: ${c.description}` : null;
+                }
+                return null;
+              };
 
-        console.log(mentionResult.mentions, 'mentionsAllah/Prophet/Sahaba');
-        console.log(referencedCharacterKeys, 'referencedCharacterKeys');
+              const lines = referencedCharacterKeys
+                .map(resolveDescription)
+                .filter(Boolean)
+                .join('\n');
+
+              return lines
+                ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
+                    lines +
+                    '\n\n'
+                : '';
+            })()
+          : '';
+
+        if (!hasForcedCharacters) {
+          console.log(mentionResult.mentions, 'mentionsAllah/Prophet/Sahaba');
+          console.log(referencedCharacterKeys, 'referencedCharacterKeys');
+        } else {
+          console.log(referencedCharacterKeys, 'forced referencedCharacterKeys');
+        }
 
         prompt =
           (

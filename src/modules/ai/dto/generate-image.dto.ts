@@ -3,10 +3,36 @@ import {
   IsIn,
   IsNotEmpty,
   IsOptional,
+  IsArray,
   Matches,
   IsString,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class ScriptCharacterInput {
+  @IsString()
+  @IsNotEmpty()
+  key: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  description: string;
+
+  @IsBoolean()
+  isSahaba: boolean;
+
+  @IsBoolean()
+  isProphet: boolean;
+
+  @IsBoolean()
+  isWoman: boolean;
+}
 
 export class GenerateImageDto {
   @IsString()
@@ -78,4 +104,19 @@ export class GenerateImageDto {
   @IsBoolean()
   @IsOptional()
   isShort?: boolean;
+
+  // Optional canonical script characters extracted during splitting.
+  // Used for safe mention classification and consistent character depiction.
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScriptCharacterInput)
+  @IsOptional()
+  characters?: ScriptCharacterInput[];
+
+  // Optional per-sentence override: if provided, the backend will use these
+  // canonical character keys directly and skip mention/detection checks.
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  forcedCharacterKeys?: string[];
 }

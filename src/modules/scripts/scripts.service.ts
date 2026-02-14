@@ -399,6 +399,7 @@ export class ScriptsService {
       voice_id,
       video_url,
       sentences,
+      characters,
       title: providedTitle,
     } = createScriptDto;
     const trimmedScript = script.trim();
@@ -477,6 +478,10 @@ export class ScriptsService {
         existingScript.reference_scripts = referenceScripts;
       }
 
+      if (characters !== undefined) {
+        existingScript.characters = characters.length > 0 ? (characters as any) : null;
+      }
+
       const updatedScript = await this.scriptRepository.save(existingScript);
 
       if (sentences && sentences.length > 0) {
@@ -498,6 +503,11 @@ export class ScriptsService {
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
             isSuspense,
+            forced_character_keys:
+              Array.isArray((s as any).forced_character_keys) &&
+              (s as any).forced_character_keys.length > 0
+                ? (s as any).forced_character_keys
+                : null,
           });
         });
 
@@ -523,6 +533,7 @@ export class ScriptsService {
       length: cleanedLength ?? null,
       style: cleanedStyle ?? null,
       technique: cleanedTechnique ?? null,
+      characters: characters && characters.length > 0 ? (characters as any) : null,
     });
 
     if (referenceScripts !== undefined) {
@@ -547,6 +558,11 @@ export class ScriptsService {
           end_frame_image_id: s.end_frame_image_id ?? null,
           video_id: s.video_id ?? null,
           isSuspense,
+          forced_character_keys:
+            Array.isArray((s as any).forced_character_keys) &&
+            (s as any).forced_character_keys.length > 0
+              ? (s as any).forced_character_keys
+              : null,
         });
       });
 
@@ -698,6 +714,10 @@ export class ScriptsService {
       }
     }
 
+    if (dto.characters !== undefined) {
+      script.characters = dto.characters && dto.characters.length > 0 ? (dto.characters as any) : null;
+    }
+
     if (dto.title !== undefined) {
       const trimmedTitle = (dto.title ?? '').trim();
       script.title = trimmedTitle ? trimmedTitle : null;
@@ -728,6 +748,11 @@ export class ScriptsService {
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
             isSuspense,
+            forced_character_keys:
+              Array.isArray((s as any).forced_character_keys) &&
+              (s as any).forced_character_keys.length > 0
+                ? (s as any).forced_character_keys
+                : null,
           });
         });
         await this.sentenceRepository.save(sentenceEntities);

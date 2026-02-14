@@ -51,7 +51,17 @@ export class AiService {
     script: string;
     model?: string;
     systemPrompt?: string;
-  }): Promise<string[]> {
+  }): Promise<{
+    sentences: string[];
+    characters: Array<{
+      key: string;
+      name: string;
+      description: string;
+      isSahaba: boolean;
+      isProphet: boolean;
+      isWoman: boolean;
+    }>;
+  }> {
     return this.textService.splitScript(dto);
   }
 

@@ -34,6 +34,35 @@ class CreateSentenceInput {
   @IsBoolean()
   @IsOptional()
   isSuspense?: boolean;
+
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsOptional()
+  forced_character_keys?: string[];
+}
+
+class ScriptCharacterInput {
+  @IsString()
+  @IsNotEmpty()
+  key: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  description: string;
+
+  @IsBoolean()
+  isSahaba: boolean;
+
+  @IsBoolean()
+  isProphet: boolean;
+
+  @IsBoolean()
+  isWoman: boolean;
 }
 
 export class CreateScriptDto {
@@ -88,4 +117,10 @@ export class CreateScriptDto {
   @Type(() => CreateSentenceInput)
   @IsOptional()
   sentences?: CreateSentenceInput[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScriptCharacterInput)
+  @IsOptional()
+  characters?: ScriptCharacterInput[];
 }
