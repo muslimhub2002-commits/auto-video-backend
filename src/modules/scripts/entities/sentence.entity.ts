@@ -35,6 +35,16 @@ export class Sentence {
   @Column({ type: 'uuid', nullable: true })
   video_id: string | null;
 
+  // Optional per-sentence override for the cut/transition to the next sentence.
+  // Null means auto-selection by the renderer.
+  @Column({ type: 'text', nullable: true })
+  transition_to_next: string | null;
+
+  // Optional per-sentence visual effect applied on the media itself.
+  // Null means no effect.
+  @Column({ type: 'text', nullable: true })
+  visual_effect: string | null;
+
   @Column({ type: 'boolean', default: false })
   isSuspense: boolean;
 

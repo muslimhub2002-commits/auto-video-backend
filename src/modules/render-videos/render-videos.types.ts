@@ -3,6 +3,19 @@ export type SentenceInput = {
   isSuspense?: boolean;
   mediaType?: 'image' | 'video';
   videoUrl?: string;
+  transitionToNext?:
+    | 'none'
+    | 'glitch'
+    | 'whip'
+    | 'flash'
+    | 'fade'
+    | 'chromaLeak'
+    | null;
+  visualEffect?:
+    | 'none'
+    | 'colorGrading'
+    | 'animatedLighting'
+    | null;
 };
 
 export type UploadedAsset = {

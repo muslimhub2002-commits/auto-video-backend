@@ -30,6 +30,7 @@ import { SuspenseOverlay } from './SuspenseOverlay';
 export const Scene: React.FC<{
   scene: TimelineScene;
   fontScale: number;
+  showSubtitles: boolean;
   transitionFromPrev: TransitionType;
   transitionToNext: TransitionType;
   seedFromPrev: number;
@@ -40,6 +41,7 @@ export const Scene: React.FC<{
   ({
     scene,
     fontScale,
+    showSubtitles,
     transitionFromPrev,
     transitionToNext,
     seedFromPrev,
@@ -58,6 +60,15 @@ export const Scene: React.FC<{
     const suspenseFilter = isSuspenseOpening
       ? 'grayscale(1) contrast(1.38) brightness(0.88)'
       : undefined;
+
+    const visualEffect = scene.visualEffect ?? null;
+
+    const colorGradingFilter =
+      visualEffect === 'colorGrading'
+        ? 'contrast(1.12) saturate(1.16) brightness(0.98)'
+        : undefined;
+
+    const wrapperFilter = [suspenseFilter, colorGradingFilter].filter(Boolean).join(' ') || undefined;
 
     // Subtle film flicker for the suspense opening.
     const suspenseFlicker = isSuspenseOpening
@@ -278,93 +289,117 @@ export const Scene: React.FC<{
         ? CHROMA_MAX_BLUR_PX * chroma.strength * chromaAlpha
         : 0;
 
+    const mediaContent = scene.videoSrc ? (
+      <OffthreadVideo
+        src={resolveMediaSrc(scene.videoSrc)}
+        muted
+        pauseWhenBuffering
+        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+      />
+    ) : scene.imageSrc ? (
+      <>
+        <GlitchImage
+          src={resolveMediaSrc(scene.imageSrc)}
+          style={imageStyle}
+          frame={frame}
+          durationFrames={scene.durationFrames}
+          seedStart={seedFromPrev}
+          seedEnd={seedToNext}
+          enableStart={transitionFromPrev === 'glitch'}
+          enableEnd={transitionToNext === 'glitch'}
+        />
+
+        {/* Chroma leak overlays */}
+        {chroma && chromaAlpha > 0.001 ? (
+          <>
+            <AbsoluteFill
+              style={{ opacity: 0.6 * chromaAlpha, mixBlendMode: 'screen' }}
+            >
+              <Img
+                src={resolveMediaSrc(scene.imageSrc)}
+                style={{
+                  ...imageStyle,
+                  transform: `${imageStyle.transform ?? ''} translate(${(
+                    chroma.dirX * chromaShift
+                  ).toFixed(2)}px, ${(
+                    -chroma.dirY * chromaShift * 0.35
+                  ).toFixed(2)}px)`,
+                  filter: `blur(${chromaBlur.toFixed(
+                    2,
+                  )}px) saturate(1.4) hue-rotate(-18deg) contrast(1.12)`,
+                }}
+              />
+            </AbsoluteFill>
+
+            <AbsoluteFill
+              style={{ opacity: 0.5 * chromaAlpha, mixBlendMode: 'screen' }}
+            >
+              <Img
+                src={resolveMediaSrc(scene.imageSrc)}
+                style={{
+                  ...imageStyle,
+                  transform: `${imageStyle.transform ?? ''} translate(${(
+                    -chroma.dirX * chromaShift * 1.15
+                  ).toFixed(2)}px, ${(
+                    chroma.dirY * chromaShift * 0.45
+                  ).toFixed(2)}px)`,
+                  filter: `blur(${(chromaBlur * 0.9).toFixed(
+                    2,
+                  )}px) saturate(1.25) hue-rotate(24deg) contrast(1.1)`,
+                }}
+              />
+            </AbsoluteFill>
+
+            {/* Light leak bloom */}
+            <AbsoluteFill
+              style={{
+                opacity: 0.55 * chromaAlpha,
+                mixBlendMode: 'screen',
+                background: `radial-gradient(circle at ${chroma.originX}% ${chroma.originY}%, rgba(255, 80, 200, 0.55) 0%, rgba(80, 160, 255, 0.30) 35%, rgba(0,0,0,0) 68%)`,
+              }}
+            />
+            <AbsoluteFill
+              style={{
+                opacity: 0.25 * chromaAlpha,
+                mixBlendMode: 'screen',
+                background:
+                  'linear-gradient(120deg, rgba(255,0,170,0) 0%, rgba(255,0,170,0.22) 40%, rgba(80,160,255,0.18) 65%, rgba(0,0,0,0) 100%)',
+              }}
+            />
+          </>
+        ) : null}
+      </>
+    ) : null;
+
+    const animatedLightingOn = visualEffect === 'animatedLighting';
+    const lightingSeed = mulberry32((scene.index + 1) * 4409)();
+    const lightingX = ((frame * 0.55 + lightingSeed * 320) % 100 + 100) % 100;
+    const lightingY = (35 + 25 * Math.sin(frame * 0.03 + lightingSeed * 8)) % 100;
+    const lightingAlpha = 0.22 + 0.10 * Math.sin(frame * 0.045 + lightingSeed * 12);
+
+    const mediaLayer = mediaContent ? (
+      <AbsoluteFill style={{ ...backgroundStyle, filter: wrapperFilter }}>
+        {mediaContent}
+        {animatedLightingOn ? (
+          <AbsoluteFill
+            style={{
+              opacity: Math.max(0, Math.min(0.42, lightingAlpha)),
+              mixBlendMode: 'screen',
+              background: `radial-gradient(circle at ${lightingX.toFixed(
+                2,
+              )}% ${lightingY.toFixed(
+                2,
+              )}%, rgba(255, 80, 200, 0.55) 0%, rgba(80, 160, 255, 0.30) 38%, rgba(0,0,0,0) 70%)`,
+              pointerEvents: 'none',
+            }}
+          />
+        ) : null}
+      </AbsoluteFill>
+    ) : null;
+
     return (
       <AbsoluteFill style={{ backgroundColor: 'black' }}>
-        {scene.videoSrc ? (
-          <AbsoluteFill style={{ ...backgroundStyle, filter: suspenseFilter }}>
-            <OffthreadVideo
-              src={resolveMediaSrc(scene.videoSrc)}
-              muted
-              pauseWhenBuffering
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            />
-          </AbsoluteFill>
-        ) : (
-          scene.imageSrc && (
-            <AbsoluteFill style={{ ...backgroundStyle, filter: suspenseFilter }}>
-              <GlitchImage
-                src={resolveMediaSrc(scene.imageSrc)}
-                style={imageStyle}
-                frame={frame}
-                durationFrames={scene.durationFrames}
-                seedStart={seedFromPrev}
-                seedEnd={seedToNext}
-                enableStart={transitionFromPrev === 'glitch'}
-                enableEnd={transitionToNext === 'glitch'}
-              />
-
-              {/* Chroma leak overlays */}
-              {chroma && chromaAlpha > 0.001 ? (
-                <>
-                  <AbsoluteFill
-                    style={{ opacity: 0.6 * chromaAlpha, mixBlendMode: 'screen' }}
-                  >
-                    <Img
-                      src={resolveMediaSrc(scene.imageSrc)}
-                      style={{
-                        ...imageStyle,
-                        transform: `${imageStyle.transform ?? ''} translate(${(
-                          chroma.dirX * chromaShift
-                        ).toFixed(2)}px, ${(
-                          -chroma.dirY * chromaShift * 0.35
-                        ).toFixed(2)}px)`,
-                        filter: `blur(${chromaBlur.toFixed(
-                          2,
-                        )}px) saturate(1.4) hue-rotate(-18deg) contrast(1.12)`,
-                      }}
-                    />
-                  </AbsoluteFill>
-
-                  <AbsoluteFill
-                    style={{ opacity: 0.5 * chromaAlpha, mixBlendMode: 'screen' }}
-                  >
-                    <Img
-                      src={resolveMediaSrc(scene.imageSrc)}
-                      style={{
-                        ...imageStyle,
-                        transform: `${imageStyle.transform ?? ''} translate(${(
-                          -chroma.dirX * chromaShift * 1.15
-                        ).toFixed(2)}px, ${(
-                          chroma.dirY * chromaShift * 0.45
-                        ).toFixed(2)}px)`,
-                        filter: `blur(${(chromaBlur * 0.9).toFixed(
-                          2,
-                        )}px) saturate(1.25) hue-rotate(24deg) contrast(1.1)`,
-                      }}
-                    />
-                  </AbsoluteFill>
-
-                  {/* Light leak bloom */}
-                  <AbsoluteFill
-                    style={{
-                      opacity: 0.55 * chromaAlpha,
-                      mixBlendMode: 'screen',
-                      background: `radial-gradient(circle at ${chroma.originX}% ${chroma.originY}%, rgba(255, 80, 200, 0.55) 0%, rgba(80, 160, 255, 0.30) 35%, rgba(0,0,0,0) 68%)`,
-                    }}
-                  />
-                  <AbsoluteFill
-                    style={{
-                      opacity: 0.25 * chromaAlpha,
-                      mixBlendMode: 'screen',
-                      background:
-                        'linear-gradient(120deg, rgba(255,0,170,0) 0%, rgba(255,0,170,0.22) 40%, rgba(80,160,255,0.18) 65%, rgba(0,0,0,0) 100%)',
-                    }}
-                  />
-                </>
-              ) : null}
-            </AbsoluteFill>
-          )
-        )}
+        {mediaLayer}
 
         {/* Suspense opening overlay */}
         {isSuspenseOpening ? (
@@ -385,33 +420,35 @@ export const Scene: React.FC<{
           />
         ) : null}
 
-        <AbsoluteFill
-          style={{
-            justifyContent: 'flex-end',
-            padding: 48,
-            pointerEvents: 'none',
-          }}
-        >
-          <div
+        {showSubtitles ? (
+          <AbsoluteFill
             style={{
-              maxWidth: 980,
-              alignSelf: 'center',
-              color: 'white',
-              padding: '18px 22px',
-              borderRadius: 18,
-              fontSize: 55 * fontScale,
-              fontWeight: 700,
-              fontFamily: 'Oswald, system-ui, sans-serif',
-              lineHeight: 1.15,
-              marginBottom: '150px',
-              textAlign: 'center',
-              textShadow: '0 2px 10px rgba(0,0,0,0.55)',
-              opacity: 1,
+              justifyContent: 'flex-end',
+              padding: 48,
+              pointerEvents: 'none',
             }}
           >
-            {scene.text}
-          </div>
-        </AbsoluteFill>
+            <div
+              style={{
+                maxWidth: 980,
+                alignSelf: 'center',
+                color: 'white',
+                padding: '18px 22px',
+                borderRadius: 18,
+                fontSize: 55 * fontScale,
+                fontWeight: 700,
+                fontFamily: 'Oswald, system-ui, sans-serif',
+                lineHeight: 1.15,
+                marginBottom: '150px',
+                textAlign: 'center',
+                textShadow: '0 2px 10px rgba(0,0,0,0.55)',
+                opacity: 1,
+              }}
+            >
+              {scene.text}
+            </div>
+          </AbsoluteFill>
+        ) : null}
 
         {/* Fade overlay below flash so flash isn't darkened if both ever overlap */}
         {fadeAlpha > 0.001 ? (

@@ -45,7 +45,12 @@ const looksLikeMp3Header = (buffer: Buffer): boolean => {
 const looksLikeWavHeader = (buffer: Buffer): boolean => {
   if (!buffer || buffer.length < 12) return false;
   const riff = buffer.toString('ascii', 0, 4);
-  if (riff !== 'RIFF' && riff !== 'RF64' && riff !== 'BW64' && riff !== 'RIFX') {
+  if (
+    riff !== 'RIFF' &&
+    riff !== 'RF64' &&
+    riff !== 'BW64' &&
+    riff !== 'RIFX'
+  ) {
     return false;
   }
   return buffer.toString('ascii', 8, 12) === 'WAVE';
@@ -85,10 +90,12 @@ const looksLikeWebmOrMatroska = (buffer: Buffer): boolean => {
   );
 };
 
-
 const copyToTempWithExtension = (inputPath: string, ext: string): string => {
   const safeExt = ext.startsWith('.') ? ext : `.${ext}`;
-  const outPath = path.join(os.tmpdir(), `transcribe-${randomUUID()}${safeExt}`);
+  const outPath = path.join(
+    os.tmpdir(),
+    `transcribe-${randomUUID()}${safeExt}`,
+  );
   fs.copyFileSync(inputPath, outPath);
   return outPath;
 };
@@ -538,10 +545,10 @@ export const alignAudioToSentences = async (params: {
         status === 400 &&
         /corrupt|unsupported|invalid|cannot decode|decode/iu.test(msg);
 
-      console.warn(
-        '[RenderVideosService] Primary transcription failed',
-        { status, message: msg },
-      );
+      console.warn('[RenderVideosService] Primary transcription failed', {
+        status,
+        message: msg,
+      });
 
       // If OpenAI says the audio is corrupted/unsupported, retry once by transcoding to WAV.
       // This often fixes files that are mislabeled (e.g. AAC ADTS saved as .mp3).
@@ -563,10 +570,9 @@ export const alignAudioToSentences = async (params: {
             'OpenAI transcription (retry wav)',
           );
         } catch (retryErr: any) {
-          console.warn(
-            '[RenderVideosService] WAV retry transcription failed',
-            { message: retryErr?.message },
-          );
+          console.warn('[RenderVideosService] WAV retry transcription failed', {
+            message: retryErr?.message,
+          });
           throw e;
         }
       } else {

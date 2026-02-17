@@ -301,8 +301,8 @@ export class YoutubeService {
         part: ['snippet', 'status'],
         requestBody: {
           snippet: {
-            title: dto.title,
-            description: dto.title ?? '',
+            title: `${dto.title} #allah #shorts`,
+            description: `${dto.title} #allah #shorts` || '',
             tags,
             categoryId,
             // English metadata + audio language

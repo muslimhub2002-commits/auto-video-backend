@@ -9,7 +9,9 @@ export const generateWithOpenAi = async (params: {
   isShortForm: boolean;
 }): Promise<ImagePayload> => {
   if (!params.openai) {
-    throw new InternalServerErrorException('OPENAI_API_KEY is not configured on the server');
+    throw new InternalServerErrorException(
+      'OPENAI_API_KEY is not configured on the server',
+    );
   }
 
   const primarySize = params.isShortForm ? '1024x1792' : '1792x1024';
@@ -43,7 +45,9 @@ export const generateWithOpenAi = async (params: {
   }
 
   if (!buffer || !base64) {
-    throw new InternalServerErrorException('OpenAI image generation did not return an image');
+    throw new InternalServerErrorException(
+      'OpenAI image generation did not return an image',
+    );
   }
 
   return { buffer, base64 };

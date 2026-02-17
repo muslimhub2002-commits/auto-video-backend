@@ -7,15 +7,20 @@ import {
   Post,
   ServiceUnavailableException,
   MethodNotAllowedException,
+  UploadedFile,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import {
+  FileFieldsInterceptor,
+  FileInterceptor,
+} from '@nestjs/platform-express';
 import type { Multer } from 'multer';
 import { ensureUuid } from '../../common/errors/ensure-uuid';
 import { CreateRenderVideoDto } from './dto/create-render-video.dto';
 import { CreateRenderVideoUrlDto } from './dto/create-render-video-url.dto';
 import { RenderVideosService } from './render-videos.service';
+import type { SentenceInput } from './render-videos.types';
 
 const SUBSCRIBE_SENTENCE =
   'Please Subscribe & Help us reach out to more people';
@@ -53,8 +58,51 @@ export class RenderVideosController {
           method: 'GET',
           path: '/videos/:id',
         },
+        uploadFinalVideo: {
+          method: 'POST',
+          path: '/videos/upload',
+          contentType: 'multipart/form-data',
+          fields: ['video (file)'],
+        },
       },
     });
+  }
+
+  @Post('upload')
+  @UseInterceptors(
+    FileInterceptor('video', {
+      limits: {
+        files: 1,
+        // Allow larger uploads; adjust if needed.
+        fileSize: 250 * 1024 * 1024,
+        fields: 10,
+      },
+    }),
+  )
+  async uploadFinalVideo(@UploadedFile() video?: Multer.File) {
+    if (this.renderVideosService.isServerlessRuntime()) {
+      throw new ServiceUnavailableException(
+        'Uploading videos is not supported on serverless runtimes when Cloudinary video uploads are disabled.',
+      );
+    }
+
+    if (!video?.buffer?.length) {
+      throw new BadRequestException('Missing `video` upload');
+    }
+
+    const job = await this.renderVideosService.createUploadedVideoJob({
+      videoFile: {
+        buffer: video.buffer,
+        originalName: video.originalname,
+        mimeType: video.mimetype,
+      },
+    });
+
+    return {
+      id: job.id,
+      status: job.status,
+      videoUrl: job.videoPath,
+    };
   }
 
   @Post('url')
@@ -69,10 +117,19 @@ export class RenderVideosController {
       throw new BadRequestException('Missing `audioUrl`');
     }
 
-    const sentences = body.sentences;
-    if (!Array.isArray(sentences) || sentences.length === 0) {
+    const urlSentences = body.sentences;
+    if (!Array.isArray(urlSentences) || urlSentences.length === 0) {
       throw new BadRequestException('`sentences` must be a non-empty array');
     }
+
+    const sentences: SentenceInput[] = urlSentences.map((s) => ({
+      text: s.text,
+      isSuspense: s.isSuspense,
+      mediaType: 'image',
+      ...(s.transitionToNext != null
+        ? { transitionToNext: s.transitionToNext }
+        : {}),
+    }));
 
     const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls : [];
     if (imageUrls.length !== sentences.length) {
@@ -92,6 +149,7 @@ export class RenderVideosController {
       isShort: body.isShort,
       useLowerFps: !!body.useLowerFps,
       useLowerResolution: !!body.useLowerResolution,
+      addSubtitles: body.addSubtitles,
       enableGlitchTransitions: !!body.enableGlitchTransitions,
     });
 
@@ -125,6 +183,12 @@ export class RenderVideosController {
       images?: Multer.File[];
     },
   ) {
+    if (this.renderVideosService.isServerlessRuntime()) {
+      throw new ServiceUnavailableException(
+        'Video rendering jobs cannot run reliably on serverless runtimes when Cloudinary video uploads are disabled. Deploy the backend to a long-running server (Render/Railway/Fly).',
+      );
+    }
+
     const voice = files.voiceOver?.[0];
     const images = files.images ?? [];
 
@@ -133,6 +197,19 @@ export class RenderVideosController {
       isSuspense?: boolean;
       mediaType?: 'image' | 'video';
       videoUrl?: string;
+      transitionToNext?:
+        | 'none'
+        | 'glitch'
+        | 'whip'
+        | 'flash'
+        | 'fade'
+        | 'chromaLeak'
+        | null;
+      visualEffect?:
+        | 'none'
+        | 'colorGrading'
+        | 'animatedLighting'
+        | null;
     }>;
     try {
       sentences = JSON.parse(body.sentences) as Array<{
@@ -140,6 +217,19 @@ export class RenderVideosController {
         isSuspense?: boolean;
         mediaType?: 'image' | 'video';
         videoUrl?: string;
+        transitionToNext?:
+          | 'none'
+          | 'glitch'
+          | 'whip'
+          | 'flash'
+          | 'fade'
+          | 'chromaLeak'
+          | null;
+        visualEffect?:
+          | 'none'
+          | 'colorGrading'
+          | 'animatedLighting'
+          | null;
       }>;
     } catch {
       throw new BadRequestException('Invalid `sentences` JSON');
@@ -149,12 +239,45 @@ export class RenderVideosController {
       throw new BadRequestException('`sentences` must be a non-empty array');
     }
 
+    const allowedTransitions = new Set([
+      'none',
+      'glitch',
+      'whip',
+      'flash',
+      'fade',
+      'chromaLeak',
+    ] as const);
+
+    const allowedVisualEffects = new Set([
+      'none',
+      'colorGrading',
+      'animatedLighting',
+    ] as const);
+
     for (const [idx, s] of sentences.entries()) {
       const mediaType = s?.mediaType;
       if (mediaType && mediaType !== 'image' && mediaType !== 'video') {
         throw new BadRequestException(
           `Invalid mediaType for sentence ${idx + 1}. Expected 'image' or 'video'.`,
         );
+      }
+
+      const t = (s as any)?.transitionToNext;
+      if (t != null) {
+        if (typeof t !== 'string' || !allowedTransitions.has(t as any)) {
+          throw new BadRequestException(
+            `Invalid transitionToNext for sentence ${idx + 1}.`,
+          );
+        }
+      }
+
+      const ve = (s as any)?.visualEffect;
+      if (ve != null) {
+        if (typeof ve !== 'string' || !allowedVisualEffects.has(ve as any)) {
+          throw new BadRequestException(
+            `Invalid visualEffect for sentence ${idx + 1}.`,
+          );
+        }
       }
 
       if (mediaType === 'video') {
@@ -201,6 +324,10 @@ export class RenderVideosController {
     const useLowerFps = body.useLowerFps === 'true';
     const useLowerResolution = body.useLowerResolution === 'true';
     const enableGlitchTransitions = body.enableGlitchTransitions === 'true';
+    const addSubtitles =
+      typeof body.addSubtitles === 'string'
+        ? body.addSubtitles === 'true'
+        : undefined;
     const isShort =
       typeof body.isShort === 'string' ? body.isShort === 'true' : undefined;
 
@@ -227,6 +354,7 @@ export class RenderVideosController {
       isShort,
       useLowerFps,
       useLowerResolution,
+      addSubtitles,
       enableGlitchTransitions,
     });
 

@@ -51,7 +51,26 @@ export class AiImageService {
   constructor(
     private readonly runtime: AiRuntimeService,
     private readonly imagesService: ImagesService,
-  ) { }
+  ) {}
+
+  private static readonly NO_TEXT_PROMPT_SUFFIX =
+    'No text, no letters, no words, no captions, no subtitles, no watermark, no logo, no signature, no symbols, no numbers.';
+
+  private enforceNoTextInPrompt(raw: string): string {
+    const prompt = String(raw ?? '').trim();
+    if (!prompt) return prompt;
+
+    const lowered = prompt.toLowerCase();
+    const alreadyHasNoTextRule =
+      lowered.includes('no text') ||
+      lowered.includes('no letters') ||
+      lowered.includes('do not add any textual') ||
+      lowered.includes('no watermark') ||
+      lowered.includes('no logo');
+
+    if (alreadyHasNoTextRule) return prompt;
+    return `${prompt}, ${AiImageService.NO_TEXT_PROMPT_SUFFIX}`;
+  }
 
   private get llm() {
     return this.runtime.llm;
@@ -89,16 +108,6 @@ export class AiImageService {
     );
   }
 
-  private sentenceMentionsFemale(text: string): boolean {
-    const s = (text ?? '').trim();
-    if (!s) return false;
-    return (
-      /\b(she|her|hers|herself)\b/i.test(s) ||
-      /\b(woman|women|female|girl|mother|mom|wife|sister|daughter|aunt|queen|princess)\b/i.test(
-        s,
-      )
-    );
-  }
 
   private hashScriptForCache(script: string): string {
     return createHash('sha1').update(script, 'utf8').digest('hex');
@@ -116,7 +125,9 @@ export class AiImageService {
     return capped;
   }
 
-  private async getOrCreateEra(scriptRaw?: string | null): Promise<string | null> {
+  private async getOrCreateEra(
+    scriptRaw?: string | null,
+  ): Promise<string | null> {
     const script = (scriptRaw ?? '').trim();
     if (!script) return null;
 
@@ -196,7 +207,9 @@ export class AiImageService {
       .map((c: any, idx: number) => {
         const key = String(c?.key ?? `C${idx + 1}`).trim() || `C${idx + 1}`;
         const name = String(c?.name ?? '').trim() || key;
-        const genderRaw = String(c?.gender ?? '').trim().toLowerCase();
+        const genderRaw = String(c?.gender ?? '')
+          .trim()
+          .toLowerCase();
         const gender: CharacterGender =
           genderRaw === 'male' || genderRaw === 'm'
             ? 'male'
@@ -266,12 +279,15 @@ export class AiImageService {
       this.characterBibleCache.set(key, { bible, expiresAt: now + ttlMs });
       return bible;
     } catch (error: any) {
-      console.error('Character bible extraction failed (cheap model). Falling back.', {
-        message: error?.message,
-        status: error?.status,
-        code: error?.code,
-        type: error?.type,
-      });
+      console.error(
+        'Character bible extraction failed (cheap model). Falling back.',
+        {
+          message: error?.message,
+          status: error?.status,
+          code: error?.code,
+          type: error?.type,
+        },
+      );
 
       try {
         const bible = await tryModel(this.model);
@@ -291,7 +307,10 @@ export class AiImageService {
 
         const empty: CharacterBible = { characters: [], byKey: {} };
         const ttlMs = 5 * 60 * 1000;
-        this.characterBibleCache.set(key, { bible: empty, expiresAt: now + ttlMs });
+        this.characterBibleCache.set(key, {
+          bible: empty,
+          expiresAt: now + ttlMs,
+        });
         return empty;
       }
     }
@@ -313,7 +332,9 @@ export class AiImageService {
 
     const nameToKey = new Map<string, string>();
     for (const c of params.bible.characters) {
-      const nameKey = String(c.name ?? '').trim().toLowerCase();
+      const nameKey = String(c.name ?? '')
+        .trim()
+        .toLowerCase();
       if (nameKey) nameToKey.set(nameKey, c.key);
     }
 
@@ -347,12 +368,15 @@ export class AiImageService {
         ],
       });
     } catch (error: any) {
-      console.error('Character key mapping failed; skipping character injection for this sentence.', {
-        message: error?.message,
-        status: error?.status,
-        code: error?.code,
-        type: error?.type,
-      });
+      console.error(
+        'Character key mapping failed; skipping character injection for this sentence.',
+        {
+          message: error?.message,
+          status: error?.status,
+          code: error?.code,
+          type: error?.type,
+        },
+      );
       return [];
     }
 
@@ -377,7 +401,9 @@ export class AiImageService {
 
       const lowered = s.toLowerCase();
       for (const c of params.bible.characters) {
-        const cn = String(c.name ?? '').trim().toLowerCase();
+        const cn = String(c.name ?? '')
+          .trim()
+          .toLowerCase();
         if (!cn) continue;
         if (cn === lowered || cn.includes(lowered) || lowered.includes(cn)) {
           if (params.bible.byKey[c.key]) return c.key;
@@ -394,7 +420,9 @@ export class AiImageService {
     return Array.from(new Set<string>(normalizedKeys)).slice(0, 3);
   }
 
-  private extractBooleanFromModelText(raw: string | null | undefined): boolean | null {
+  private extractBooleanFromModelText(
+    raw: string | null | undefined,
+  ): boolean | null {
     const text = (raw ?? '').trim().toLowerCase();
     if (!text) return null;
 
@@ -405,7 +433,7 @@ export class AiImageService {
       const parsed = JSON.parse(text);
       if (typeof parsed === 'boolean') return parsed;
       if (parsed && typeof parsed === 'object') {
-        const v = (parsed as any).mentions ?? (parsed as any).result ?? (parsed as any).value;
+        const v = parsed.mentions ?? parsed.result ?? parsed.value;
         if (typeof v === 'boolean') return v;
       }
     } catch {
@@ -420,16 +448,14 @@ export class AiImageService {
   private async sentenceMentionsAllahProphetOrSahaba(params: {
     script?: string | null;
     sentence: string;
-    characters?:
-      | Array<{
-          key: string;
-          name: string;
-          description: string;
-          isSahaba: boolean;
-          isProphet: boolean;
-          isWoman: boolean;
-        }>
-      | null;
+    characters?: Array<{
+      key: string;
+      name: string;
+      description: string;
+      isSahaba: boolean;
+      isProphet: boolean;
+      isWoman: boolean;
+    }> | null;
     characterBible?: CharacterBible | null;
   }): Promise<{ mentions: boolean; characterKeys: string[] }> {
     const sentence = (params.sentence ?? '').trim();
@@ -470,7 +496,7 @@ export class AiImageService {
                 'You classify whether the TARGET SENTENCE refers (directly, via pronoun or via possessive pronoun) to Allah/God, and which canonical character(s) it refers to.\n' +
                 'Return ONLY valid JSON with this exact shape: {"mentionsAllah": boolean, "characterKeys": string[]}.\n\n' +
                 'Rules:\n' +
-                'Use SCRIPT CONTEXT to resolve pronouns, possessive pronouns and references to the character keys in the TARGET SENTENCE.\n' 
+                'Use SCRIPT CONTEXT to resolve pronouns, possessive pronouns and references to the character keys in the TARGET SENTENCE.\n',
             },
             {
               role: 'user',
@@ -479,10 +505,7 @@ export class AiImageService {
                   ? `SCRIPT CONTEXT (for pronouns references):\n${script}\n\n`
                   : '') +
                 `CANONICAL CHARACTERS (keys you may output):\n${canonicalCharacters
-                  .map(
-                    (c) =>
-                      `${c.key}: ${c.name}`,
-                  )
+                  .map((c) => `${c.key}: ${c.name}`)
                   .join('\n')}\n\n` +
                 `TARGET SENTENCE:\n${sentence}`,
             },
@@ -496,7 +519,7 @@ export class AiImageService {
           const c = charactersByKey.get(k);
           return Boolean(c && (c.isSahaba || c.isProphet || c.isWoman));
         });
-        console.log(mentionsAllah,characterKeys,'New Payload')
+        console.log(mentionsAllah, characterKeys, 'New Payload');
         const mentions = mentionsAllah || mentionsRestrictedCharacter;
         return { mentions, characterKeys };
       }
@@ -563,7 +586,9 @@ export class AiImageService {
     isModelsLab: boolean;
     modelslabModelId: string;
   } {
-    const imageModelRaw = String(dto.imageModel ?? '').trim().toLowerCase();
+    const imageModelRaw = String(dto.imageModel ?? '')
+      .trim()
+      .toLowerCase();
     const imageModel = imageModelRaw || 'leonardo';
     const isModelsLab = imageModel.startsWith('modelslab:');
     const modelslabModelId = isModelsLab
@@ -592,7 +617,12 @@ export class AiImageService {
     prompt: string;
     style: string;
     isShortForm: boolean;
-  }): Promise<{ prompt: string; imageBase64: string; imageUrl: string; savedImageId: string }> {
+  }): Promise<{
+    prompt: string;
+    imageBase64: string;
+    imageUrl: string;
+    savedImageId: string;
+  }> {
     const saved = await this.imagesService.saveCompressedToCloudinary({
       buffer: params.buffer,
       filename: `ai-${Date.now()}.png`,
@@ -615,12 +645,15 @@ export class AiImageService {
     // NOTE: this is moved as-is from AiService to preserve behavior.
     // It is intentionally large and will be further split later if desired.
 
-    const style = dto.style?.trim() || 'Anime style, detailed, vibrant, high quality';
+    const style =
+      dto.style?.trim() || 'Anime style, detailed, vibrant, high quality';
 
     const fullScriptContext = dto.script?.trim();
 
     const frameType: 'single' | 'start' | 'end' =
-      dto.frameType === 'start' || dto.frameType === 'end' ? dto.frameType : 'single';
+      dto.frameType === 'start' || dto.frameType === 'end'
+        ? dto.frameType
+        : 'single';
     const continuityPrompt = dto.continuityPrompt?.trim();
 
     const sentenceText = (dto.sentence ?? '').trim();
@@ -628,10 +661,14 @@ export class AiImageService {
     const canonicalCharacters = dto.characters?.length ? dto.characters : null;
 
     const forcedKeysRaw = Array.isArray(dto.forcedCharacterKeys)
-      ? dto.forcedCharacterKeys.map((k) => String(k ?? '').trim()).filter(Boolean)
+      ? dto.forcedCharacterKeys
+          .map((k) => String(k ?? '').trim())
+          .filter(Boolean)
       : [];
     const forcedKeys = canonicalCharacters?.length
-      ? forcedKeysRaw.filter((k) => canonicalCharacters.some((c) => c.key === k))
+      ? forcedKeysRaw.filter((k) =>
+          canonicalCharacters.some((c) => c.key === k),
+        )
       : [];
     const hasForcedCharacters = forcedKeys.length > 0;
 
@@ -650,7 +687,9 @@ export class AiImageService {
           characterBible,
         });
 
-    const enforceNoHumanFigures = hasForcedCharacters ? false : mentionResult.mentions;
+    const enforceNoHumanFigures = hasForcedCharacters
+      ? false
+      : mentionResult.mentions;
     const referencedCharacterKeys = hasForcedCharacters
       ? forcedKeys
       : enforceNoHumanFigures
@@ -658,7 +697,8 @@ export class AiImageService {
         : mentionResult.characterKeys;
     const focusMaleCharacter =
       !enforceNoHumanFigures &&
-      (this.sentenceContainsMaleCharacter(sentenceText) || referencedCharacterKeys.length > 0);
+      (this.sentenceContainsMaleCharacter(sentenceText) ||
+        referencedCharacterKeys.length > 0);
 
     const noHumanFiguresRule =
       'ABSOLUTE RULE: Do NOT depict any humans or human-like figures. ' +
@@ -674,11 +714,11 @@ export class AiImageService {
           frameType === 'single'
             ? ''
             : (frameType === 'start'
-              ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
-              : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
-            (continuityPrompt
-              ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
-              : '');
+                ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
+                : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
+              (continuityPrompt
+                ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
+                : '');
 
         const characterRefsBlock = referencedCharacterKeys.length
           ? (() => {
@@ -711,7 +751,10 @@ export class AiImageService {
           console.log(mentionResult.mentions, 'mentionsAllah/Prophet/Sahaba');
           console.log(referencedCharacterKeys, 'referencedCharacterKeys');
         } else {
-          console.log(referencedCharacterKeys, 'forced referencedCharacterKeys');
+          console.log(
+            referencedCharacterKeys,
+            'forced referencedCharacterKeys',
+          );
         }
 
         prompt =
@@ -727,7 +770,8 @@ export class AiImageService {
                     'You are a visual prompt engineer for image generation models. ' +
                     'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
                     'Make the result composition-rich, varied, imaginative, and cinematic (avoid generic defaults unless the sentence truly calls for it). ' +
-                    'Use the provided Era line ONLY to infer time period and cultural details. ' +
+                    'ABSOLUTE RULE: Do not add any textual elements in the image. ' +
+                    AiImageService.NO_TEXT_PROMPT_SUFFIX +
                     (frameBlock ? frameBlock + '\n' : '') +
                     (enforceNoHumanFigures
                       ? noHumanFiguresRule
@@ -738,16 +782,20 @@ export class AiImageService {
                 {
                   role: 'user',
                   content:
-                    (eraLine ? `SCRIPT ERA (use ONLY for era/time):\n${eraLine}\n\n` : '') +
+                    (eraLine
+                      ? `SCRIPT ERA (use ONLY for era/time):\n${eraLine}\n\n`
+                      : '') +
                     characterRefsBlock +
                     (frameBlock ? `${frameBlock}\n\n` : '') +
                     `Sentence: "${dto.sentence}"\n` +
                     `Desired style: ${style}.\n\n` +
                     'Important constraints:\n' +
                     '- Do not depict women/females.\n' +
+                    '- Do not add any textual elements in the image.\n' +
+                    `- ${AiImageService.NO_TEXT_PROMPT_SUFFIX}\n` +
                     (enforceNoHumanFigures
                       ? '- ABSOLUTELY NO humans/human figures: no people, no faces, no hands, no bodies, no silhouettes.\n' +
-                      `${noHumanFiguresRule}\n`
+                        `${noHumanFiguresRule}\n`
                       : focusMaleCharacter
                         ? '- Include the male character(s) implied by the sentence and focus on their action; do not add extra characters beyond what the sentence implies.\n'
                         : '') +
@@ -771,8 +819,10 @@ export class AiImageService {
           if (/\b(cinematic|film|movie)\b/i.test(styleText)) {
             styleHints.push(/\b(cinematic|film|movie)\b/i);
           }
-          if (/\bwatercolor\b/i.test(styleText)) styleHints.push(/\bwatercolor\b/i);
-          if (/\b(3d|render|pbr)\b/i.test(styleText)) styleHints.push(/\b(3d|render|pbr)\b/i);
+          if (/\bwatercolor\b/i.test(styleText))
+            styleHints.push(/\bwatercolor\b/i);
+          if (/\b(3d|render|pbr)\b/i.test(styleText))
+            styleHints.push(/\b(3d|render|pbr)\b/i);
 
           const hasAnyStyleHint = styleHints.some((re) => re.test(prompt));
           if (!hasAnyStyleHint) {
@@ -790,7 +840,10 @@ export class AiImageService {
           if (!hasEndFrame) {
             prompt = `${prompt}, END FRAME of the same scene, same environment as the start frame, slightly progressed action`;
           }
-          if (continuityPrompt && !prompt.toLowerCase().includes('continuity')) {
+          if (
+            continuityPrompt &&
+            !prompt.toLowerCase().includes('continuity')
+          ) {
             prompt = `${prompt}, continuity to match: ${continuityPrompt}`;
           }
         }
@@ -809,11 +862,18 @@ export class AiImageService {
             .filter(Boolean)
             .map((c) => `${c.key} (${c.description})`)
             .join(', ');
-          if (characterSuffix && !prompt.includes('CHARACTER') && !prompt.includes('C1')) {
+          if (
+            characterSuffix &&
+            !prompt.includes('CHARACTER') &&
+            !prompt.includes('C1')
+          ) {
             prompt = `${prompt}, character details: ${characterSuffix}`;
           }
         }
       }
+
+      // Enforce a strong "no text" constraint in the final prompt sent to providers.
+      prompt = this.enforceNoTextInPrompt(prompt);
 
       const isShortForm = this.computeIsShortForm(dto);
       const width = isShortForm ? 768 : 1344;
@@ -823,7 +883,9 @@ export class AiImageService {
         this.validateAndNormalizeImageModel(dto);
 
       if (isModelsLab) {
-        const apiKey = String(process.env.STABLE_DIFFUSION_API_KEY ?? '').trim();
+        const apiKey = String(
+          process.env.STABLE_DIFFUSION_API_KEY ?? '',
+        ).trim();
         const image = await generateWithModelsLab({
           apiKey,
           modelId: modelslabModelId,
@@ -903,7 +965,8 @@ export class AiImageService {
         height,
       });
 
-      prompt = leonardo.prompt;
+      // Some providers return a modified prompt; re-apply constraints.
+      prompt = this.enforceNoTextInPrompt(leonardo.prompt);
 
       return this.persistToCloudinary({
         userId,
@@ -925,7 +988,8 @@ export class AiImageService {
         error: err?.error,
       });
 
-      const upstreamMessage = err?.error?.message || err?.message || 'Failed to generate image';
+      const upstreamMessage =
+        err?.error?.message || err?.message || 'Failed to generate image';
 
       if (err?.status === 400) {
         throw new BadRequestException(upstreamMessage);

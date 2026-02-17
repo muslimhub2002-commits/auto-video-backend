@@ -10,7 +10,9 @@ export const generateWithImagen = async (params: {
   isShortForm: boolean;
 }): Promise<ImagePayload> => {
   if (!params.geminiApiKey) {
-    throw new InternalServerErrorException('GEMINI_API_KEY is not configured on the server');
+    throw new InternalServerErrorException(
+      'GEMINI_API_KEY is not configured on the server',
+    );
   }
 
   const ai = new GoogleGenAI({ apiKey: params.geminiApiKey });
@@ -65,7 +67,9 @@ export const generateWithImagen = async (params: {
     const parsed = parseUpstreamJsonMessage(err);
     const code = parsed?.error?.code ?? parsed?.code;
     const status = parsed?.error?.status ?? parsed?.status;
-    const message = String(parsed?.error?.message ?? parsed?.message ?? err?.message ?? '') || '';
+    const message =
+      String(parsed?.error?.message ?? parsed?.message ?? err?.message ?? '') ||
+      '';
 
     return (
       code === 404 ||
@@ -98,7 +102,9 @@ export const generateWithImagen = async (params: {
       params.imageModel === 'imagen-3'
         ? ' Set GEMINI_IMAGEN_3_MODEL to a valid Imagen 3 model id for your account/region.'
         : '';
-    throw new InternalServerErrorException(`No supported Imagen model id found (tried: ${tried}).${hint}`);
+    throw new InternalServerErrorException(
+      `No supported Imagen model id found (tried: ${tried}).${hint}`,
+    );
   }
 
   const candidates =
@@ -109,7 +115,8 @@ export const generateWithImagen = async (params: {
     imagenResponse?.data?.generatedImages ||
     [];
 
-  const first = Array.isArray(candidates) && candidates.length > 0 ? candidates[0] : null;
+  const first =
+    Array.isArray(candidates) && candidates.length > 0 ? candidates[0] : null;
   const firstImage = first?.image ?? first;
 
   const coerceToBuffer = (value: any): Buffer | null => {
@@ -139,7 +146,9 @@ export const generateWithImagen = async (params: {
       model: usedImagenModelId,
       responseKeys: imagenResponse ? Object.keys(imagenResponse) : null,
     });
-    throw new InternalServerErrorException('Imagen image generation did not return an image');
+    throw new InternalServerErrorException(
+      'Imagen image generation did not return an image',
+    );
   }
 
   return { buffer, base64: buffer.toString('base64') };

@@ -14,17 +14,23 @@ export const generateWithLeonardo = async (params: {
   height: number;
 }): Promise<{ prompt: string; image: ImagePayload }> => {
   if (!params.leonardoApiKey) {
-    throw new InternalServerErrorException('LEONARDO_API_KEY is not configured on the server');
+    throw new InternalServerErrorException(
+      'LEONARDO_API_KEY is not configured on the server',
+    );
   }
 
   if (!params.leonardoModelId) {
-    throw new InternalServerErrorException('LEONARDO_MODEL_ID is not configured on the server');
+    throw new InternalServerErrorException(
+      'LEONARDO_MODEL_ID is not configured on the server',
+    );
   }
 
   const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   const safeReplacementForTerm = (termRaw: string): string => {
-    const t = String(termRaw ?? '').trim().toLowerCase();
+    const t = String(termRaw ?? '')
+      .trim()
+      .toLowerCase();
     if (!t) return 'redacted';
     if (t === 'slave') return 'captive';
     if (t === 'slaves') return 'captives';
@@ -47,7 +53,9 @@ export const generateWithLeonardo = async (params: {
     return out;
   };
 
-  const extractModerationTermFromLeonardoError = (errorText: string): string | null => {
+  const extractModerationTermFromLeonardoError = (
+    errorText: string,
+  ): string | null => {
     const raw = String(errorText ?? '').trim();
     if (!raw) return null;
 
@@ -55,7 +63,7 @@ export const generateWithLeonardo = async (params: {
     try {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        msg = String((parsed as any).error ?? (parsed as any).message ?? raw);
+        msg = String(parsed.error ?? parsed.message ?? raw);
       }
     } catch {
       // ignore
@@ -103,7 +111,9 @@ export const generateWithLeonardo = async (params: {
             leonardoPrompt = replaced;
             createResponse = retryResponse;
           } else {
-            const retryErrorText = await retryResponse.text().catch(() => errorText);
+            const retryErrorText = await retryResponse
+              .text()
+              .catch(() => errorText);
             console.error('Leonardo create generation failed (retry)', {
               status: retryResponse.status,
               statusText: retryResponse.statusText,
@@ -125,7 +135,9 @@ export const generateWithLeonardo = async (params: {
     });
 
     if (createResponse.status === 400) {
-      throw new BadRequestException('Invalid request to Leonardo image generation API');
+      throw new BadRequestException(
+        'Invalid request to Leonardo image generation API',
+      );
     }
 
     if (createResponse.status === 403) {
@@ -138,10 +150,14 @@ export const generateWithLeonardo = async (params: {
     }
 
     if (createResponse.status === 401) {
-      throw new UnauthorizedException('Unauthorized to call Leonardo image generation API');
+      throw new UnauthorizedException(
+        'Unauthorized to call Leonardo image generation API',
+      );
     }
 
-    throw new InternalServerErrorException('Failed to start image generation using Leonardo');
+    throw new InternalServerErrorException(
+      'Failed to start image generation using Leonardo',
+    );
   }
 
   const createJson = await createResponse.json();
@@ -153,11 +169,16 @@ export const generateWithLeonardo = async (params: {
     createJson?.id;
 
   if (!generationId) {
-    console.error('Leonardo create generation unexpected response', { body: createJson });
-    throw new InternalServerErrorException('Leonardo did not return a generation id');
+    console.error('Leonardo create generation unexpected response', {
+      body: createJson,
+    });
+    throw new InternalServerErrorException(
+      'Leonardo did not return a generation id',
+    );
   }
 
-  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const delay = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
 
   let imageUrl: string | undefined;
   const maxAttempts = 30;
@@ -188,9 +209,14 @@ export const generateWithLeonardo = async (params: {
       statusJson?.generation ||
       statusJson;
 
-    const status = generation?.status || generation?.state || statusJson?.status;
+    const status =
+      generation?.status || generation?.state || statusJson?.status;
 
-    if (status === 'COMPLETE' || status === 'FINISHED' || status === 'succeeded') {
+    if (
+      status === 'COMPLETE' ||
+      status === 'FINISHED' ||
+      status === 'succeeded'
+    ) {
       const candidateImages =
         generation?.generated_images ||
         generation?.images ||
@@ -212,7 +238,9 @@ export const generateWithLeonardo = async (params: {
   }
 
   if (!imageUrl) {
-    throw new InternalServerErrorException('Timed out waiting for Leonardo image generation');
+    throw new InternalServerErrorException(
+      'Timed out waiting for Leonardo image generation',
+    );
   }
 
   const buffer = await downloadImageToBuffer(imageUrl, 'Leonardo');

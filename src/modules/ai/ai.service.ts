@@ -8,11 +8,13 @@ import { AiTextService } from './services/ai-text.service';
 import { AiImageService } from './services/ai-image.service';
 import { AiVoiceService } from './services/ai-voice.service';
 import { AiVideoService } from './services/ai-video.service';
+import { AiYoutubeService } from './services/ai-youtube.service';
 
 @Injectable()
 export class AiService {
   constructor(
     private readonly textService: AiTextService,
+    private readonly youtubeService: AiYoutubeService,
     private readonly imageService: AiImageService,
     private readonly voiceService: AiVoiceService,
     private readonly videoService: AiVideoService,
@@ -33,8 +35,18 @@ export class AiService {
   generateVideoFromUploadedFrames(params: {
     userId: string;
     dto: GenerateVideoFromFramesDto;
-    startFrameFile?: { buffer?: Buffer; mimetype?: string; size?: number; originalname?: string };
-    endFrameFile?: { buffer?: Buffer; mimetype?: string; size?: number; originalname?: string };
+    startFrameFile?: {
+      buffer?: Buffer;
+      mimetype?: string;
+      size?: number;
+      originalname?: string;
+    };
+    endFrameFile?: {
+      buffer?: Buffer;
+      mimetype?: string;
+      size?: number;
+      originalname?: string;
+    };
   }): Promise<{ videoUrl: string }> {
     return this.videoService.generateVideoFromUploadedFrames(params);
   }
@@ -81,8 +93,11 @@ export class AiService {
     return this.textService.generateTitleForScript(script);
   }
 
-  generateYoutubeSeo(script: string): Promise<{ title: string; description: string; tags: string[] }> {
-    return this.textService.generateYoutubeSeo(script);
+  generateYoutubeSeo(
+    script: string,
+    options?: { useWebSearch?: boolean },
+  ): Promise<{ title: string; description: string; tags: string[] }> {
+    return this.youtubeService.generateYoutubeSeo(script, options);
   }
 
   generateImageForSentence(dto: GenerateImageDto, userId: string) {

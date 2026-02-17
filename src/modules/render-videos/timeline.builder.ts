@@ -24,6 +24,7 @@ export const buildTimeline = (params: {
   isShort?: boolean;
   useLowerFps?: boolean;
   useLowerResolution?: boolean;
+  addSubtitles?: boolean;
   enableGlitchTransitions?: boolean;
 }) => {
   const baseFps = 30;
@@ -104,6 +105,7 @@ export const buildTimeline = (params: {
       index,
       text: s.text,
       isSuspense: !!s.isSuspense,
+      ...(s.visualEffect != null ? { visualEffect: s.visualEffect } : {}),
       imageSrc:
         isSubscribe || wantsSentenceVideo
           ? undefined
@@ -114,6 +116,9 @@ export const buildTimeline = (params: {
           ? String(s.videoUrl)
           : undefined,
       startFrame,
+      ...(s.transitionToNext != null
+        ? { transitionToNext: s.transitionToNext }
+        : {}),
       durationFrames,
       useGlitch: index === glitchSceneIndex,
     };
@@ -131,6 +136,7 @@ export const buildTimeline = (params: {
     fps,
     durationInFrames,
     audioSrc: params.audioSrc,
+    addSubtitles: params.addSubtitles,
     assets: {
       backgroundMusicSrc: BACKGROUND_AUDIO_CLOUDINARY_URL,
       glitchSfxSrc: GLITCH_FX_CLOUDINARY_URL,

@@ -206,7 +206,7 @@ export class AiController {
   /**
    * Generates a voice-over audio clip.
    * - ElevenLabs: MP3
-    * - AI Studio (Gemini TTS): MP3 or WAV
+   * - AI Studio (Gemini TTS): MP3 or WAV
    */
   @Post('generate-voice')
   @HttpCode(HttpStatus.OK)
@@ -248,7 +248,8 @@ export class AiController {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Transfer-Encoding', 'chunked');
 
-    const stream = await this.aiService.createVoiceStyleInstructionsStream(body);
+    const stream =
+      await this.aiService.createVoiceStyleInstructionsStream(body);
 
     try {
       for await (const chunk of stream) {
@@ -267,7 +268,9 @@ export class AiController {
   @Post('youtube-seo')
   @HttpCode(HttpStatus.OK)
   async youtubeSeo(@Body() body: YoutubeSeoDto) {
-    const result = await this.aiService.generateYoutubeSeo(body.script);
+    const result = await this.aiService.generateYoutubeSeo(body.script, {
+      useWebSearch: body.useWebSearch,
+    });
     return result;
   }
 }

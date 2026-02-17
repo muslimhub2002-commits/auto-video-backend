@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { RenderJob } from './entities/render-job.entity';
@@ -35,9 +40,7 @@ import {
   safeRmDir as safeRmDirExternal,
 } from './utils/fs.utils';
 import {
-  ensureCloudinaryConfigured as ensureCloudinaryConfiguredExternal,
   uploadBufferToCloudinary as uploadBufferToCloudinaryExternal,
-  uploadVideoFileToCloudinary,
 } from './utils/cloudinary.utils';
 import {
   REMOTION_BACKGROUND_REL,
@@ -114,8 +117,15 @@ export class RenderVideosService implements OnModuleInit {
     isShort?: boolean;
     useLowerFps?: boolean;
     useLowerResolution?: boolean;
+    addSubtitles?: boolean;
     enableGlitchTransitions?: boolean;
   }) {
+    if (this.isServerlessRuntime()) {
+      throw new ServiceUnavailableException(
+        'Video rendering requires persistent storage. Cloudinary video uploads are disabled, so rendering is not supported on serverless runtimes.',
+      );
+    }
+
     const job = this.jobsRepo.create({
       status: 'queued',
       error: null,
@@ -130,6 +140,43 @@ export class RenderVideosService implements OnModuleInit {
     void this.processJob(job.id, params);
 
     return job;
+  }
+
+  async createUploadedVideoJob(params: { videoFile: UploadedAsset }) {
+    if (this.isServerlessRuntime()) {
+      throw new ServiceUnavailableException(
+        'Uploading videos requires persistent storage. Cloudinary video uploads are disabled, so uploads are not supported on serverless runtimes.',
+      );
+    }
+
+    const job = this.jobsRepo.create({
+      status: 'queued',
+      error: null,
+      // audioPath is required by the DB schema; uploads don't have audio.
+      audioPath: '',
+      videoPath: null,
+      timeline: null,
+      lastProgressAt: new Date(),
+    });
+    await this.jobsRepo.save(job);
+
+    try {
+      const outputFsPath = this.getVideoFsPath(job.id);
+      fs.writeFileSync(outputFsPath, params.videoFile.buffer);
+
+      job.status = 'completed';
+      job.videoPath = this.getPublicVideoUrl(job.id);
+      job.lastProgressAt = new Date();
+      await this.jobsRepo.save(job);
+    } catch (err: any) {
+      await this.jobsRepo.save({
+        id: job.id,
+        status: 'failed',
+        error: err?.message || 'Failed to upload video',
+      } as any);
+    }
+
+    return this.getJob(job.id);
   }
 
   async getJob(id: string) {
@@ -161,6 +208,7 @@ export class RenderVideosService implements OnModuleInit {
     isShort?: boolean;
     useLowerFps?: boolean;
     useLowerResolution?: boolean;
+    addSubtitles?: boolean;
     enableGlitchTransitions?: boolean;
   }) {
     return buildTimelineExternal(params);
@@ -260,10 +308,6 @@ export class RenderVideosService implements OnModuleInit {
     return withTimeoutExternal(promise, ms, label);
   }
 
-  private ensureCloudinaryConfigured() {
-    ensureCloudinaryConfiguredExternal();
-  }
-
   private async uploadBufferToCloudinary(params: {
     buffer: Buffer;
     folder: string;
@@ -294,6 +338,22 @@ export class RenderVideosService implements OnModuleInit {
       `http://127.0.0.1:${process.env.PORT ?? 3000}`;
     const fileName = `${jobId}.mp4`;
     return `${baseUrl}/static/videos/${fileName}`;
+  }
+
+  private getPublicAudioUrl(params: { jobId: string; ext: string }) {
+    const baseUrl =
+      process.env.REMOTION_ASSET_BASE_URL ??
+      `http://127.0.0.1:${process.env.PORT ?? 3000}`;
+    const safeExt = params.ext.startsWith('.') ? params.ext : `.${params.ext}`;
+    return `${baseUrl}/static/render-inputs/audio/${params.jobId}${safeExt}`;
+  }
+
+  private getAudioFsPath(params: { jobId: string; ext: string }) {
+    const root = this.getStorageRoot();
+    const dir = join(root, 'render-inputs', 'audio');
+    this.ensureDir(dir);
+    const safeExt = params.ext.startsWith('.') ? params.ext : `.${params.ext}`;
+    return join(dir, `${params.jobId}${safeExt}`);
   }
 
   getVideoFsPath(jobId: string) {
@@ -361,6 +421,7 @@ export class RenderVideosService implements OnModuleInit {
       isShort?: boolean;
       useLowerFps?: boolean;
       useLowerResolution?: boolean;
+      addSubtitles?: boolean;
       enableGlitchTransitions?: boolean;
     },
   ) {
@@ -386,20 +447,18 @@ export class RenderVideosService implements OnModuleInit {
       let audioMimeType: string | undefined;
 
       if (hasAudioBuffer && params.audioFile) {
-        // Upload audio to Cloudinary and use the URL inside Remotion.
-        const uploadedAudio = await this.uploadBufferToCloudinary({
-          buffer: params.audioFile.buffer,
-          folder: 'auto-video-generator/render-inputs/audio',
-          resource_type: 'video',
-        });
-        job.audioPath = uploadedAudio.secure_url;
-        await this.jobsRepo.save(job);
-
         audioBuffer = params.audioFile.buffer;
         audioName = params.audioFile.originalName || 'audio.mp3';
         audioMimeType = params.audioFile.mimeType;
+
+        // Persist voiceover audio locally so Lambda-mode can fetch it via public URL.
+        // (Cloudinary uploads are disabled.)
+        const ext = extname(audioName || '') || '.mp3';
+        const audioFsPath = this.getAudioFsPath({ jobId, ext });
+        fs.writeFileSync(audioFsPath, audioBuffer);
+        job.audioPath = this.getPublicAudioUrl({ jobId, ext });
+        await this.jobsRepo.save(job);
       } else {
-        // audioUrl must be a public URL; if it's not Cloudinary, re-host it on Cloudinary.
         const downloaded = await this.downloadUrlToBuffer({
           url: String(params.audioUrl),
           maxBytes: 30 * 1024 * 1024,
@@ -409,17 +468,9 @@ export class RenderVideosService implements OnModuleInit {
         audioMimeType = downloaded.mimeType;
         audioName = 'audio.mp3';
 
-        const audioUrlString = String(params.audioUrl);
-        if (this.isCloudinaryUrl(audioUrlString)) {
-          job.audioPath = audioUrlString;
-        } else {
-          const uploadedAudio = await this.uploadBufferToCloudinary({
-            buffer: audioBuffer,
-            folder: 'auto-video-generator/render-inputs/audio',
-            resource_type: 'video',
-          });
-          job.audioPath = uploadedAudio.secure_url;
-        }
+        // Use the provided URL directly (must be publicly accessible).
+        // Cloudinary re-hosting is intentionally disabled.
+        job.audioPath = String(params.audioUrl);
         await this.jobsRepo.save(job);
       }
 
@@ -455,10 +506,7 @@ export class RenderVideosService implements OnModuleInit {
       );
 
       if (useLambdaTestMode) {
-        // Voiceover: always Cloudinary URL
-        if (!job.audioPath) {
-          throw new Error('audioPath missing after Cloudinary upload');
-        }
+        if (!job.audioPath) throw new Error('audioPath is missing');
         voiceoverAudioSrc = job.audioPath;
 
         subscribeVideoSrc = hasSubscribeSentence
@@ -525,8 +573,11 @@ export class RenderVideosService implements OnModuleInit {
         const prepared = this.prepareRemotionPublicDir(jobId);
         const jobDir = prepared.jobDir;
         publicDir = prepared.publicDir;
+        // Windows can intermittently throw EPERM when Remotion's bundler copies/reads
+        // mp4 files from the job-scoped publicDir (Temp bundle). To keep local renders
+        // stable, prefer the CDN URL for the subscribe clip.
         subscribeVideoSrc = hasSubscribeSentence
-          ? prepared.subscribeVideoSrc
+          ? SUBSCRIBE_VIDEO_CLOUDINARY_URL
           : null;
         publicDirToClean = jobDir;
 
@@ -555,12 +606,7 @@ export class RenderVideosService implements OnModuleInit {
           join(jobDir, REMOTION_SUSPENSE_GLITCH_SFX_REL),
         );
 
-        if (hasSubscribeSentence) {
-          this.safeCopyFile(
-            join(remotionAssetsDir, 'subscribe.mp4'),
-            join(jobDir, REMOTION_SUBSCRIBE_VIDEO_REL),
-          );
-        }
+        // Intentionally do not materialize subscribe.mp4 locally; we use Cloudinary instead.
 
         const chromaDownloaded = await this.downloadUrlToBuffer({
           url: CHROMA_LEAK_SFX_CLOUDINARY_URL,
@@ -652,6 +698,7 @@ export class RenderVideosService implements OnModuleInit {
         isShort: params.isShort,
         useLowerFps: params.useLowerFps,
         useLowerResolution: params.useLowerResolution,
+        addSubtitles: params.addSubtitles,
         enableGlitchTransitions: params.enableGlitchTransitions,
       });
 
@@ -667,26 +714,27 @@ export class RenderVideosService implements OnModuleInit {
         'Remotion render',
       );
 
-      const videoUrl = await uploadVideoFileToCloudinary({
-        filePath: outputFsPath,
-        folder: 'auto-video-generator/videos',
-        timeoutMs: 20 * 60_000,
-      });
-
-      try {
-        fs.unlinkSync(outputFsPath);
-      } catch {
-        // ignore
-      }
+      // Cloudinary uploads are disabled; keep the MP4 on disk and serve via /static.
+      const videoUrl = this.getPublicVideoUrl(jobId);
 
       job.status = 'completed';
       job.videoPath = videoUrl;
       await this.jobsRepo.save(job);
     } catch (err: any) {
+      const stack = typeof err?.stack === 'string' ? err.stack : '';
+      const message = typeof err?.message === 'string' ? err.message : '';
+      const combined = (
+        stack ||
+        message ||
+        'Failed to process render job'
+      ).trim();
+      // Keep DB payload bounded.
+      const bounded =
+        combined.length > 4000 ? `${combined.slice(0, 4000)}…` : combined;
       await this.jobsRepo.save({
         id: jobId,
         status: 'failed',
-        error: err?.message || 'Failed to process render job',
+        error: bounded,
       });
     } finally {
       if (stopHeartbeat) stopHeartbeat();

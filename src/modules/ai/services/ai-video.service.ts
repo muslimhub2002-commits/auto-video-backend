@@ -3,9 +3,11 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import { extname, join, sep } from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { GenerateVideoFromFramesDto } from '../dto/generate-video-from-frames.dto';
-import { uploadBufferToCloudinary } from '../../render-videos/utils/cloudinary.utils';
 import { AiRuntimeService } from './ai-runtime.service';
 
 type UploadedImageFile = {
@@ -23,7 +25,9 @@ export class AiVideoService {
     return this.runtime.geminiApiKey;
   }
 
-  async listGoogleModels(params?: { query?: string }): Promise<{ models: any[] }> {
+  async listGoogleModels(params?: {
+    query?: string;
+  }): Promise<{ models: any[] }> {
     if (!this.geminiApiKey) {
       throw new InternalServerErrorException(
         'GEMINI_API_KEY is not configured on the server',
@@ -35,8 +39,10 @@ export class AiVideoService {
 
     const callList = async () => {
       if (typeof modelsApi?.list === 'function') return modelsApi.list({});
-      if (typeof modelsApi?.listModels === 'function') return modelsApi.listModels({});
-      if (typeof (ai as any).listModels === 'function') return (ai as any).listModels({});
+      if (typeof modelsApi?.listModels === 'function')
+        return modelsApi.listModels({});
+      if (typeof (ai as any).listModels === 'function')
+        return (ai as any).listModels({});
       throw new InternalServerErrorException(
         'GoogleGenAI ListModels is not available in this SDK version',
       );
@@ -52,11 +58,13 @@ export class AiVideoService {
 
     const models: any[] = Array.isArray(candidates)
       ? candidates
-      : Array.isArray((candidates as any)?.models)
-        ? (candidates as any).models
+      : Array.isArray(candidates?.models)
+        ? candidates.models
         : [];
 
-    const q = String(params?.query ?? '').trim().toLowerCase();
+    const q = String(params?.query ?? '')
+      .trim()
+      .toLowerCase();
     const filtered = q
       ? models.filter((m) => {
           const name = String(m?.name ?? m?.id ?? '').toLowerCase();
@@ -106,7 +114,9 @@ export class AiVideoService {
 
     const requestedModel = requestedModelRaw || 'veo-3.0-fast-generate-001';
 
-    const finalEndFrame = params.isLooping ? params.startFrame : params.endFrame;
+    const finalEndFrame = params.isLooping
+      ? params.startFrame
+      : params.endFrame;
     const hasSecondFrame = Boolean(finalEndFrame);
 
     // Veo 3 uses `endFrame` while older variants use `lastFrame`.
@@ -184,10 +194,16 @@ export class AiVideoService {
         try {
           operation = await callGenerate();
         } catch (fallbackErr: unknown) {
-          if (hasSecondFrame && isFrameParamUnsupported(fallbackErr, 'lastFrame')) {
+          if (
+            hasSecondFrame &&
+            isFrameParamUnsupported(fallbackErr, 'lastFrame')
+          ) {
             setSecondFrame('endFrame');
             operation = await callGenerate();
-          } else if (hasSecondFrame && isFrameParamUnsupported(fallbackErr, 'endFrame')) {
+          } else if (
+            hasSecondFrame &&
+            isFrameParamUnsupported(fallbackErr, 'endFrame')
+          ) {
             setSecondFrame('lastFrame');
             operation = await callGenerate();
           } else {
@@ -202,7 +218,9 @@ export class AiVideoService {
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     while (!operation.done) {
       await sleep(10_000);
-      operation = await (ai as any).operations.getVideosOperation({ operation });
+      operation = await (ai as any).operations.getVideosOperation({
+        operation,
+      });
     }
 
     const videos = operation?.response?.generatedVideos;
@@ -246,13 +264,20 @@ export class AiVideoService {
 
     const isLooping = Boolean(params.dto?.isLooping);
 
-    const fromUploaded = (file: UploadedImageFile | undefined, label: string) => {
+    const fromUploaded = (
+      file: UploadedImageFile | undefined,
+      label: string,
+    ) => {
       if (!file) return null;
       const mimeType = String(file.mimetype ?? '').trim();
       if (!mimeType || !mimeType.startsWith('image/')) {
         throw new BadRequestException(`${label} must be an image`);
       }
-      if (!file.buffer || !(file.buffer instanceof Buffer) || file.buffer.length === 0) {
+      if (
+        !file.buffer ||
+        !(file.buffer instanceof Buffer) ||
+        file.buffer.length === 0
+      ) {
         throw new BadRequestException(`${label} is missing file data`);
       }
       return { buffer: file.buffer, mimeType };
@@ -280,12 +305,25 @@ export class AiVideoService {
       endFrame: end,
     });
 
-    const uploaded = await uploadBufferToCloudinary({
-      buffer: generated.buffer,
-      folder: 'auto-video-generator/sentence-videos',
-      resource_type: 'video',
-    });
+    const baseUrl =
+      process.env.REMOTION_ASSET_BASE_URL ??
+      `http://127.0.0.1:${process.env.PORT ?? 3000}`;
 
-    return { videoUrl: uploaded.secure_url };
+    const fromMime = () => {
+      const mt = String(generated.mimeType ?? '').toLowerCase();
+      if (mt.includes('webm')) return '.webm';
+      if (mt.includes('quicktime')) return '.mov';
+      return '.mp4';
+    };
+
+    const ext = extname(String(generated.uri ?? '').trim()) || fromMime();
+    const fileName = `${randomUUID()}${ext}`;
+    const relPath = join('sentence-videos', fileName);
+    const absDir = join(process.cwd(), 'storage', 'sentence-videos');
+    fs.mkdirSync(absDir, { recursive: true });
+    fs.writeFileSync(join(process.cwd(), 'storage', relPath), generated.buffer);
+
+    const normalized = relPath.split(sep).join('/');
+    return { videoUrl: `${baseUrl}/static/${normalized}` };
   }
 }

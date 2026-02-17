@@ -3,12 +3,24 @@ import {
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
   ValidateNested,
 } from 'class-validator';
+
+const ALLOWED_TRANSITIONS = [
+  'none',
+  'glitch',
+  'whip',
+  'flash',
+  'fade',
+  'chromaLeak',
+] as const;
+
+const ALLOWED_VISUAL_EFFECTS = ['colorGrading', 'animatedLighting'] as const;
 
 class UpdateSentenceInput {
   @IsString()
@@ -30,6 +42,14 @@ class UpdateSentenceInput {
   @IsUUID()
   @IsOptional()
   video_id?: string;
+
+  @IsIn(ALLOWED_TRANSITIONS)
+  @IsOptional()
+  transition_to_next?: (typeof ALLOWED_TRANSITIONS)[number] | null;
+
+  @IsIn(ALLOWED_VISUAL_EFFECTS)
+  @IsOptional()
+  visual_effect?: (typeof ALLOWED_VISUAL_EFFECTS)[number] | null;
 
   @IsBoolean()
   @IsOptional()

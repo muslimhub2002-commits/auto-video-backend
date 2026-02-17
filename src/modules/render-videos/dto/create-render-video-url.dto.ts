@@ -2,6 +2,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -19,6 +20,29 @@ class SentenceDto {
   @IsOptional()
   @IsBoolean()
   isSuspense?: boolean;
+
+  @IsOptional()
+  @IsIn(['none', 'glitch', 'whip', 'flash', 'fade', 'chromaLeak'])
+  transitionToNext?:
+    | 'none'
+    | 'glitch'
+    | 'whip'
+    | 'flash'
+    | 'fade'
+    | 'chromaLeak'
+    | null;
+
+  @IsOptional()
+  @IsIn([
+    'none',
+    'colorGrading',
+    'animatedLighting',
+  ])
+  visualEffect?:
+    | 'none'
+    | 'colorGrading'
+    | 'animatedLighting'
+    | null;
 }
 
 export class CreateRenderVideoUrlDto {
@@ -47,6 +71,9 @@ export class CreateRenderVideoUrlDto {
 
   @IsOptional()
   enableZoomRotateTransitions?: boolean;
+
+  @IsOptional()
+  addSubtitles?: boolean;
 
   @IsOptional()
   isShort?: boolean;

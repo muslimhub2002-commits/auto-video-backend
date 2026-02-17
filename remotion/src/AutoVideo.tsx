@@ -2,7 +2,6 @@ import React from 'react';
 import {
   AbsoluteFill,
   Audio,
-  Html5Audio,
   Sequence,
   delayRender,
   continueRender,
@@ -40,9 +39,25 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   const voiceOverVolume = 1; // +0.5 louder than the 0.5 background track (max 1.0)
   const suspenseOpeningScene = timeline.scenes[0];
   const isSuspenseOpening = Boolean(suspenseOpeningScene?.isSuspense);
-  const cutTransitions = React.useMemo(() => buildCutTransitions(timeline.scenes), [
-    timeline.scenes,
-  ]);
+  const cutTransitions = React.useMemo(() => {
+    const base = buildCutTransitions(timeline.scenes);
+    return base.map((t, idx) => {
+      if (idx === 0) return 'none';
+      const prev = timeline.scenes[idx - 1];
+      const next = timeline.scenes[idx];
+      const override = prev?.transitionToNext;
+      if (override == null) return t;
+
+      const isImageToImage =
+        !!prev?.imageSrc &&
+        !!next?.imageSrc &&
+        !prev?.videoSrc &&
+        !next?.videoSrc;
+
+      return isImageToImage ? override : t;
+    });
+  }, [timeline.scenes]);
+  const showSubtitles = timeline.addSubtitles !== false;
 
   // Preload remote media so we don't show the black background while assets fetch.
   const preloadHandle = React.useMemo(
@@ -105,7 +120,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   return (
     <AbsoluteFill>
       {timeline.audioSrc && (
-        <Html5Audio src={resolveMediaSrc(timeline.audioSrc)} volume={voiceOverVolume} />
+        <Audio src={resolveMediaSrc(timeline.audioSrc)} volume={voiceOverVolume} />
       )}
       {backgroundMusicSrc ? (
         <Audio src={resolveMediaSrc(backgroundMusicSrc)} />
@@ -232,6 +247,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             <Scene
               scene={scene}
               fontScale={fontScale}
+              showSubtitles={showSubtitles}
               transitionFromPrev={transitionFromPrev}
               transitionToNext={transitionToNext}
               seedFromPrev={seedFromPrev}

@@ -3,6 +3,12 @@ export type TimelineScene = {
   text: string;
   imageSrc?: string; // static file path (publicDir) or absolute URL
   videoSrc?: string; // static file path (publicDir) or absolute URL
+  transitionToNext?: 'none' | 'glitch' | 'whip' | 'flash' | 'fade' | 'chromaLeak' | null;
+  visualEffect?:
+    | 'none'
+    | 'colorGrading'
+    | 'animatedLighting'
+    | null;
   startFrame: number;
   durationFrames: number;
   useGlitch?: boolean; // Apply glitch transition effect
@@ -15,6 +21,7 @@ export type Timeline = {
   fps: number;
   durationInFrames: number;
   audioSrc: string; // static file path (publicDir) or absolute URL
+  addSubtitles?: boolean;
   scenes: TimelineScene[];
   // Optional asset URLs for production renders (CDN/Cloudinary/S3). If omitted,
   // the composition falls back to local `staticFile()` assets.

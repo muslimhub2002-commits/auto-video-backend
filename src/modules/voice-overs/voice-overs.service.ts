@@ -184,7 +184,9 @@ export class VoiceOversService {
       folder: 'auto-video-generator/voice-previews',
       overwrite: false,
       format: (() => {
-        const name = String(voiceResult.filename ?? '').trim().toLowerCase();
+        const name = String(voiceResult.filename ?? '')
+          .trim()
+          .toLowerCase();
         const match = /\.([a-z0-9]+)$/.exec(name);
         return match?.[1];
       })(),

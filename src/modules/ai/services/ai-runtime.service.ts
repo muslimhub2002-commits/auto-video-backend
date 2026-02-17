@@ -43,9 +43,16 @@ export class AiRuntimeService {
     this.grok = grokKey
       ? new OpenAI({ apiKey: grokKey, baseURL: 'https://api.x.ai/v1' })
       : null;
-    this.anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
+    this.anthropic = anthropicKey
+      ? new Anthropic({ apiKey: anthropicKey })
+      : null;
 
-    if (!this.openai && !this.grok && !this.anthropic && !(geminiKey || '').trim()) {
+    if (
+      !this.openai &&
+      !this.grok &&
+      !this.anthropic &&
+      !(geminiKey || '').trim()
+    ) {
       throw new Error(
         'Set OPENAI_API_KEY, GROK_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY in the environment.',
       );

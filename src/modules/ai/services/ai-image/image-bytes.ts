@@ -56,7 +56,11 @@ export const isLikelyImageBuffer = (buf: Buffer): boolean => {
     buf[7] === 0x70
   ) {
     const brand = buf.slice(8, 12).toString('ascii');
-    if (['avif', 'avis', 'mif1', 'msf1', 'heic', 'heix', 'hevc', 'hevx'].includes(brand)) {
+    if (
+      ['avif', 'avis', 'mif1', 'msf1', 'heic', 'heix', 'hevc', 'hevx'].includes(
+        brand,
+      )
+    ) {
       return true;
     }
   }
@@ -67,8 +71,13 @@ export const isLikelyImageBuffer = (buf: Buffer): boolean => {
   return false;
 };
 
-export const normalizeBase64Image = (raw: string): { base64: string; buffer: Buffer } => {
-  const noDataUri = String(raw ?? '').replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '');
+export const normalizeBase64Image = (
+  raw: string,
+): { base64: string; buffer: Buffer } => {
+  const noDataUri = String(raw ?? '').replace(
+    /^data:image\/[a-zA-Z0-9.+-]+;base64,/,
+    '',
+  );
   let normalized = noDataUri.replace(/\s+/g, '');
   normalized = normalized.replace(/-/g, '+').replace(/_/g, '/');
 
@@ -80,9 +89,14 @@ export const normalizeBase64Image = (raw: string): { base64: string; buffer: Buf
   return { base64: normalized, buffer };
 };
 
-export const downloadImageToBuffer = async (url: string, label: string): Promise<Buffer> => {
+export const downloadImageToBuffer = async (
+  url: string,
+  label: string,
+): Promise<Buffer> => {
   const imgResp = await fetch(url, { method: 'GET' } as any);
-  const contentType = String(imgResp.headers?.get?.('content-type') ?? '').toLowerCase();
+  const contentType = String(
+    imgResp.headers?.get?.('content-type') ?? '',
+  ).toLowerCase();
 
   if (!imgResp.ok) {
     const errorText = await imgResp.text().catch(() => '');
@@ -93,7 +107,9 @@ export const downloadImageToBuffer = async (url: string, label: string): Promise
       url,
       contentType: contentType || undefined,
     });
-    throw new InternalServerErrorException(`Failed to download ${label} generated image`);
+    throw new InternalServerErrorException(
+      `Failed to download ${label} generated image`,
+    );
   }
 
   if (
@@ -108,7 +124,9 @@ export const downloadImageToBuffer = async (url: string, label: string): Promise
       contentType,
       bodySnippet: bodyText.slice(0, 300),
     });
-    throw new InternalServerErrorException(`${label} returned an invalid image URL payload`);
+    throw new InternalServerErrorException(
+      `${label} returned an invalid image URL payload`,
+    );
   }
 
   return Buffer.from(await imgResp.arrayBuffer());

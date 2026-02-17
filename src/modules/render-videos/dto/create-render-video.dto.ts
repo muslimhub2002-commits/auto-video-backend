@@ -34,6 +34,10 @@ export class CreateRenderVideoDto {
 
   @IsOptional()
   @IsString()
+  addSubtitles?: string;
+
+  @IsOptional()
+  @IsString()
   enableGlitchTransitions?: string;
 
   @IsOptional()

@@ -18,12 +18,16 @@ export class AiVoiceService {
     if (!value) return { base: '', params: {} };
 
     const [baseRaw, ...rest] = value.split(';');
-    const base = String(baseRaw ?? '').trim().toLowerCase();
+    const base = String(baseRaw ?? '')
+      .trim()
+      .toLowerCase();
 
     const params: Record<string, string> = {};
     for (const seg of rest) {
       const [kRaw, vRaw] = String(seg ?? '').split('=');
-      const key = String(kRaw ?? '').trim().toLowerCase();
+      const key = String(kRaw ?? '')
+        .trim()
+        .toLowerCase();
       const val = String(vRaw ?? '').trim();
       if (key) params[key] = val;
     }
@@ -36,8 +40,14 @@ export class AiVoiceService {
     sampleRate: number;
     channels: number;
   }): Buffer {
-    const sampleRate = Number.isFinite(params.sampleRate) && params.sampleRate > 0 ? params.sampleRate : 24000;
-    const channels = Number.isFinite(params.channels) && params.channels > 0 ? params.channels : 1;
+    const sampleRate =
+      Number.isFinite(params.sampleRate) && params.sampleRate > 0
+        ? params.sampleRate
+        : 24000;
+    const channels =
+      Number.isFinite(params.channels) && params.channels > 0
+        ? params.channels
+        : 1;
     const bitsPerSample = 16;
 
     const byteRate = sampleRate * channels * (bitsPerSample / 8);
@@ -80,7 +90,7 @@ export class AiVoiceService {
     const value = String(raw ?? '').trim();
     if (!value) return '';
     // Strip parameters: "audio/wav;codec=..." -> "audio/wav"
-    return value.split(';')[0]!.trim().toLowerCase();
+    return value.split(';')[0].trim().toLowerCase();
   }
 
   private extensionFromMimeType(mimeTypeRaw: string): string {
@@ -150,7 +160,9 @@ export class AiVoiceService {
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     const text = script?.trim();
     if (!text) {
-      throw new BadRequestException('Script text is required to generate voice');
+      throw new BadRequestException(
+        'Script text is required to generate voice',
+      );
     }
 
     const decideProvider = (
@@ -172,7 +184,10 @@ export class AiVoiceService {
       }
 
       if (id.startsWith('elevenlabs:')) {
-        return { provider: 'elevenlabs', rawId: id.slice('elevenlabs:'.length) };
+        return {
+          provider: 'elevenlabs',
+          rawId: id.slice('elevenlabs:'.length),
+        };
       }
 
       // Backwards compatibility:
@@ -197,7 +212,8 @@ export class AiVoiceService {
       return result;
     }
 
-    const elevenVoiceId = String(chosen.rawId ?? '').trim() || this.elevenDefaultVoiceId;
+    const elevenVoiceId =
+      String(chosen.rawId ?? '').trim() || this.elevenDefaultVoiceId;
     const buffer = await this.generateVoiceWithElevenLabs({
       text,
       voiceId: elevenVoiceId,
@@ -267,7 +283,10 @@ export class AiVoiceService {
         message: err?.message,
         stack: err?.stack,
       });
-      if (err instanceof BadRequestException || err instanceof UnauthorizedException) {
+      if (
+        err instanceof BadRequestException ||
+        err instanceof UnauthorizedException
+      ) {
         throw err;
       }
       throw new InternalServerErrorException(
@@ -374,7 +393,9 @@ export class AiVoiceService {
         }
 
         if (response.status === 401 || response.status === 403) {
-          throw new UnauthorizedException('Unauthorized to call Gemini TTS API');
+          throw new UnauthorizedException(
+            'Unauthorized to call Gemini TTS API',
+          );
         }
 
         throw new InternalServerErrorException(
@@ -427,8 +448,12 @@ export class AiVoiceService {
       if (declaredMimeTypeFull) {
         const parsed = this.parseMimeType(declaredMimeTypeFull);
         if (parsed.base === 'audio/pcm' || parsed.base === 'audio/l16') {
-          const rateRaw = parsed.params['rate'] ?? parsed.params['samplerate'] ?? parsed.params['sample_rate'];
-          const channelsRaw = parsed.params['channels'] ?? parsed.params['channel'];
+          const rateRaw =
+            parsed.params['rate'] ??
+            parsed.params['samplerate'] ??
+            parsed.params['sample_rate'];
+          const channelsRaw =
+            parsed.params['channels'] ?? parsed.params['channel'];
           const sampleRate = Number.parseInt(String(rateRaw ?? ''), 10);
           const channels = Number.parseInt(String(channelsRaw ?? ''), 10);
 
@@ -437,7 +462,11 @@ export class AiVoiceService {
             sampleRate: Number.isFinite(sampleRate) ? sampleRate : 24000,
             channels: Number.isFinite(channels) ? channels : 1,
           });
-          return { buffer: wav, mimeType: 'audio/wav', filename: 'voice-over.wav' };
+          return {
+            buffer: wav,
+            mimeType: 'audio/wav',
+            filename: 'voice-over.wav',
+          };
         }
       }
 
@@ -453,11 +482,19 @@ export class AiVoiceService {
       }
 
       if (this.looksLikeMp3(audioBytes)) {
-        return { buffer: audioBytes, mimeType: 'audio/mpeg', filename: 'voice-over.mp3' };
+        return {
+          buffer: audioBytes,
+          mimeType: 'audio/mpeg',
+          filename: 'voice-over.mp3',
+        };
       }
 
       if (this.looksLikeWav(audioBytes)) {
-        return { buffer: audioBytes, mimeType: 'audio/wav', filename: 'voice-over.wav' };
+        return {
+          buffer: audioBytes,
+          mimeType: 'audio/wav',
+          filename: 'voice-over.wav',
+        };
       }
 
       // Return the raw bytes even if we can't identify the container.
@@ -475,7 +512,10 @@ export class AiVoiceService {
         stack: err?.stack,
       });
 
-      if (err instanceof BadRequestException || err instanceof UnauthorizedException) {
+      if (
+        err instanceof BadRequestException ||
+        err instanceof UnauthorizedException
+      ) {
         throw err;
       }
 

@@ -3,7 +3,11 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { downloadImageToBuffer, isLikelyImageBuffer, normalizeBase64Image } from '../image-bytes';
+import {
+  downloadImageToBuffer,
+  isLikelyImageBuffer,
+  normalizeBase64Image,
+} from '../image-bytes';
 import type { ImagePayload } from '../types';
 
 const XAI_BASE_URL = 'https://api.x.ai/v1';
@@ -67,7 +71,9 @@ export const generateWithGrokImagine = async (params: {
 }): Promise<ImagePayload> => {
   const apiKey = String(params.grokApiKey ?? '').trim();
   if (!apiKey) {
-    throw new InternalServerErrorException('GROK_API_KEY is not configured on the server');
+    throw new InternalServerErrorException(
+      'GROK_API_KEY is not configured on the server',
+    );
   }
 
   const aspectRatio = params.isShortForm ? '9:16' : '16:9';
@@ -94,13 +100,17 @@ export const generateWithGrokImagine = async (params: {
 
   const first = payload?.data?.[0];
   if (!first) {
-    throw new InternalServerErrorException('xAI image generation did not return an image');
+    throw new InternalServerErrorException(
+      'xAI image generation did not return an image',
+    );
   }
 
   if (first.b64_json) {
     const { base64, buffer } = normalizeBase64Image(String(first.b64_json));
     if (!isLikelyImageBuffer(buffer)) {
-      throw new InternalServerErrorException('xAI returned invalid base64 image bytes');
+      throw new InternalServerErrorException(
+        'xAI returned invalid base64 image bytes',
+      );
     }
     return { buffer, base64 };
   }
@@ -111,5 +121,7 @@ export const generateWithGrokImagine = async (params: {
     return { buffer, base64 };
   }
 
-  throw new InternalServerErrorException('xAI image generation did not return an image');
+  throw new InternalServerErrorException(
+    'xAI image generation did not return an image',
+  );
 };

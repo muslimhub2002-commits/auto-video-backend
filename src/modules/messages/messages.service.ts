@@ -7,9 +7,6 @@ import { Video } from '../videos/entities/video.entity';
 import { SaveGenerationDto } from './dto/save-generation.dto';
 import { AiService } from '../ai/ai.service';
 import { ScriptsService } from '../scripts/scripts.service';
-import { RenderVideosService } from '../render-videos/render-videos.service';
-import { v2 as cloudinary } from 'cloudinary';
-import * as fs from 'fs';
 
 @Injectable()
 export class MessagesService {
@@ -20,7 +17,6 @@ export class MessagesService {
     private readonly messageRepository: Repository<Message>,
     @InjectRepository(Video)
     private readonly videoRepository: Repository<Video>,
-    private readonly renderVideosService: RenderVideosService,
     private readonly aiService: AiService,
     private readonly scriptsService: ScriptsService,
   ) {}
@@ -90,46 +86,7 @@ export class MessagesService {
 
     let finalVideoUrl = video_url;
 
-    // Derive the render job id from the local video URL so we can
-    // locate the rendered file on disk and upload it to Cloudinary
-    // only when the user explicitly saves the generation.
-    const jobIdFromUrl = this.extractJobIdFromVideoUrl(video_url);
-
-    if (jobIdFromUrl) {
-      const hasCloudinary =
-        !!process.env.CLOUDINARY_CLOUD_NAME &&
-        !!process.env.CLOUDINARY_API_KEY &&
-        !!process.env.CLOUDINARY_CLOUD_SECRET;
-
-      const localPath = this.renderVideosService.getVideoFsPath(jobIdFromUrl);
-
-      if (hasCloudinary && fs.existsSync(localPath)) {
-        cloudinary.config({
-          cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-          api_key: process.env.CLOUDINARY_API_KEY,
-          api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
-        });
-
-        try {
-          const uploadResult: any = await cloudinary.uploader.upload(
-            localPath,
-            {
-              folder: 'auto-video-generator/videos',
-              resource_type: 'video',
-              overwrite: false,
-              use_filename: false,
-            },
-          );
-
-          if (uploadResult?.secure_url) {
-            finalVideoUrl = uploadResult.secure_url as string;
-          }
-        } catch (e) {
-          // Graceful fallback: keep original local/served URL
-        }
-      }
-      // else: missing Cloudinary config or file not found — keep original URL
-    }
+    // Cloudinary video uploads are disabled; keep the provided video URL.
 
     const title = await this.aiService.generateTitleForScript(trimmedScript);
 
@@ -196,17 +153,4 @@ export class MessagesService {
     };
   }
 
-  private extractJobIdFromVideoUrl(videoUrl: string): string | null {
-    try {
-      const url = new URL(videoUrl);
-      const segments = url.pathname.split('/').filter(Boolean);
-      if (segments.length === 0) return null;
-      const fileName = segments[segments.length - 1];
-      const dotIndex = fileName.lastIndexOf('.');
-      if (dotIndex <= 0) return null;
-      return fileName.substring(0, dotIndex);
-    } catch {
-      return null;
-    }
-  }
 }

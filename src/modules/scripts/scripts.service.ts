@@ -4,6 +4,9 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import * as fs from 'fs';
+import { extname, join, sep } from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Script } from './entities/script.entity';
@@ -19,7 +22,6 @@ import {
 import { UpdateSentenceMediaDto } from './dto/update-sentence-media.dto';
 import { GenerateSentenceVideoDto } from './dto/generate-sentence-video.dto';
 import { SaveSentenceVideoDto } from './dto/save-sentence-video.dto';
-import { uploadBufferToCloudinary } from '../render-videos/utils/cloudinary.utils';
 
 type UploadedImageFile = {
   buffer: Buffer;
@@ -48,6 +50,38 @@ export class ScriptsService {
     private readonly videoRepository: Repository<VideoEntity>,
     private readonly aiService: AiService,
   ) {}
+
+  private getPublicBaseUrl() {
+    return (
+      process.env.REMOTION_ASSET_BASE_URL ??
+      `http://127.0.0.1:${process.env.PORT ?? 3000}`
+    );
+  }
+
+  private getStorageRoot() {
+    return join(process.cwd(), 'storage');
+  }
+
+  private ensureDir(dir: string) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  private toStaticUrl(relPath: string) {
+    const normalized = relPath.split(sep).join('/');
+    return `${this.getPublicBaseUrl()}/static/${normalized}`;
+  }
+
+  private inferVideoExt(params: {
+    originalName?: string;
+    mimeType?: string;
+  }) {
+    const fromName = extname(String(params.originalName ?? '').trim());
+    if (fromName) return fromName;
+    const mt = String(params.mimeType ?? '').toLowerCase();
+    if (mt.includes('webm')) return '.webm';
+    if (mt.includes('quicktime')) return '.mov';
+    return '.mp4';
+  }
 
   private async downloadUrlToBuffer(params: {
     url: string;
@@ -141,13 +175,17 @@ export class ScriptsService {
         throw new BadRequestException('Video file must be a video');
       }
 
-      const uploaded = await uploadBufferToCloudinary({
-        buffer: file!.buffer,
-        folder: 'auto-video-generator/sentence-videos',
-        resource_type: 'video',
+      const ext = this.inferVideoExt({
+        originalName: file?.originalname,
+        mimeType,
       });
+      const fileName = `${randomUUID()}${ext}`;
+      const relPath = join('sentence-videos', fileName);
+      const absDir = join(this.getStorageRoot(), 'sentence-videos');
+      this.ensureDir(absDir);
+      fs.writeFileSync(join(this.getStorageRoot(), relPath), file!.buffer);
 
-      finalVideoUrl = uploaded.secure_url;
+      finalVideoUrl = this.toStaticUrl(relPath);
     } else {
       finalVideoUrl = this.assertHttpUrl(dto?.videoUrl ?? '', 'videoUrl');
     }
@@ -277,14 +315,16 @@ export class ScriptsService {
         : undefined,
     });
 
-    const uploaded = await uploadBufferToCloudinary({
-      buffer: generated.buffer,
-      folder: 'auto-video-generator/sentence-videos',
-      resource_type: 'video',
-    });
+    const ext = this.inferVideoExt({ mimeType: generated.mimeType });
+    const fileName = `${randomUUID()}${ext}`;
+    const relPath = join('sentence-videos', fileName);
+    const absDir = join(this.getStorageRoot(), 'sentence-videos');
+    this.ensureDir(absDir);
+    fs.writeFileSync(join(this.getStorageRoot(), relPath), generated.buffer);
+    const finalVideoUrl = this.toStaticUrl(relPath);
 
     const videoEntity = this.videoRepository.create({
-      video: uploaded.secure_url,
+      video: finalVideoUrl,
       user_id: userId,
       video_type: 'gemini',
       video_size: VideoSize.PORTRAIT,
@@ -479,7 +519,8 @@ export class ScriptsService {
       }
 
       if (characters !== undefined) {
-        existingScript.characters = characters.length > 0 ? (characters as any) : null;
+        existingScript.characters =
+          characters.length > 0 ? (characters as any) : null;
       }
 
       const updatedScript = await this.scriptRepository.save(existingScript);
@@ -502,6 +543,8 @@ export class ScriptsService {
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
+            transition_to_next: (s as any).transition_to_next ?? null,
+            visual_effect: (s as any).visual_effect ?? null,
             isSuspense,
             forced_character_keys:
               Array.isArray((s as any).forced_character_keys) &&
@@ -533,7 +576,8 @@ export class ScriptsService {
       length: cleanedLength ?? null,
       style: cleanedStyle ?? null,
       technique: cleanedTechnique ?? null,
-      characters: characters && characters.length > 0 ? (characters as any) : null,
+      characters:
+        characters && characters.length > 0 ? (characters as any) : null,
     });
 
     if (referenceScripts !== undefined) {
@@ -557,6 +601,8 @@ export class ScriptsService {
           start_frame_image_id: s.start_frame_image_id ?? null,
           end_frame_image_id: s.end_frame_image_id ?? null,
           video_id: s.video_id ?? null,
+          transition_to_next: (s as any).transition_to_next ?? null,
+          visual_effect: (s as any).visual_effect ?? null,
           isSuspense,
           forced_character_keys:
             Array.isArray((s as any).forced_character_keys) &&
@@ -715,7 +761,10 @@ export class ScriptsService {
     }
 
     if (dto.characters !== undefined) {
-      script.characters = dto.characters && dto.characters.length > 0 ? (dto.characters as any) : null;
+      script.characters =
+        dto.characters && dto.characters.length > 0
+          ? (dto.characters as any)
+          : null;
     }
 
     if (dto.title !== undefined) {
@@ -747,6 +796,8 @@ export class ScriptsService {
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
+            transition_to_next: (s as any).transition_to_next ?? null,
+            visual_effect: (s as any).visual_effect ?? null,
             isSuspense,
             forced_character_keys:
               Array.isArray((s as any).forced_character_keys) &&

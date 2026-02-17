@@ -3,7 +3,11 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { downloadImageToBuffer, isLikelyImageBuffer, normalizeBase64Image } from '../image-bytes';
+import {
+  downloadImageToBuffer,
+  isLikelyImageBuffer,
+  normalizeBase64Image,
+} from '../image-bytes';
 import type { ImagePayload } from '../types';
 
 export const generateWithModelsLab = async (params: {
@@ -14,12 +18,16 @@ export const generateWithModelsLab = async (params: {
 }): Promise<ImagePayload> => {
   const apiKey = String(params.apiKey ?? '').trim();
   if (!apiKey) {
-    throw new InternalServerErrorException('STABLE_DIFFUSION_API_KEY is not configured on the server');
+    throw new InternalServerErrorException(
+      'STABLE_DIFFUSION_API_KEY is not configured on the server',
+    );
   }
 
   const modelId = String(params.modelId ?? '').trim();
   if (!modelId) {
-    throw new BadRequestException('Invalid ModelsLab imageModel. Expected format: modelslab:<model_id>');
+    throw new BadRequestException(
+      'Invalid ModelsLab imageModel. Expected format: modelslab:<model_id>',
+    );
   }
 
   const sdWidth = params.isShortForm ? 576 : 1024;
@@ -63,7 +71,9 @@ export const generateWithModelsLab = async (params: {
     errorText = await resp.text().catch(() => '');
   }
 
-  const coerceDetail = (payload: any): { status: string; id: string | null; detail: string } => {
+  const coerceDetail = (
+    payload: any,
+  ): { status: string; id: string | null; detail: string } => {
     const status = String(payload?.status ?? '').toLowerCase();
     const id = payload?.id != null ? String(payload.id) : null;
     const msg = String(
@@ -85,14 +95,17 @@ export const generateWithModelsLab = async (params: {
       body: errorText,
       model_id: modelId,
     });
-    throw new InternalServerErrorException('Failed to generate image using Stable Diffusion (ModelsLab)');
+    throw new InternalServerErrorException(
+      'Failed to generate image using Stable Diffusion (ModelsLab)',
+    );
   }
 
   const initial = json ?? {};
   let { status, id, detail } = coerceDetail(initial);
 
   if (status === 'processing' && id) {
-    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const delay = (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms));
 
     let fetchUrl = isFluxFamily
       ? `https://modelslab.com/api/v7/images/fetch/${encodeURIComponent(id)}`
@@ -160,7 +173,9 @@ export const generateWithModelsLab = async (params: {
         detail: detail || null,
         model_id: modelId,
       });
-      throw new InternalServerErrorException(detail || 'Stable Diffusion (ModelsLab) did not finish in time');
+      throw new InternalServerErrorException(
+        detail || 'Stable Diffusion (ModelsLab) did not finish in time',
+      );
     }
   }
 
@@ -175,17 +190,24 @@ export const generateWithModelsLab = async (params: {
     });
 
     if (/invalid\s+api\s*key|unauthorized|forbidden/i.test(detail)) {
-      throw new UnauthorizedException(detail || 'ModelsLab request was unauthorized');
+      throw new UnauthorizedException(
+        detail || 'ModelsLab request was unauthorized',
+      );
     }
 
     throw new BadRequestException(
-      detail || `Stable Diffusion (ModelsLab) returned a non-success status: ${status || 'unknown'}`,
+      detail ||
+        `Stable Diffusion (ModelsLab) returned a non-success status: ${status || 'unknown'}`,
     );
   }
 
   const output0 =
-    (Array.isArray(json?.output) && json.output.length > 0 ? json.output[0] : null) ??
-    (Array.isArray(json?.proxy_links) && json.proxy_links.length > 0 ? json.proxy_links[0] : null);
+    (Array.isArray(json?.output) && json.output.length > 0
+      ? json.output[0]
+      : null) ??
+    (Array.isArray(json?.proxy_links) && json.proxy_links.length > 0
+      ? json.proxy_links[0]
+      : null);
 
   const candidateStrings: string[] = [];
   const pushCandidate = (value: any) => {
@@ -200,12 +222,12 @@ export const generateWithModelsLab = async (params: {
         continue;
       }
       if (item && typeof item === 'object') {
-        pushCandidate((item as any).url);
-        pushCandidate((item as any).link);
-        pushCandidate((item as any).image);
-        pushCandidate((item as any).base64);
-        pushCandidate((item as any).b64);
-        pushCandidate((item as any).b64_json);
+        pushCandidate(item.url);
+        pushCandidate(item.link);
+        pushCandidate(item.image);
+        pushCandidate(item.base64);
+        pushCandidate(item.b64);
+        pushCandidate(item.b64_json);
       }
     }
   };
@@ -215,7 +237,9 @@ export const generateWithModelsLab = async (params: {
   pushCandidate(output0);
 
   if (candidateStrings.length === 0) {
-    throw new InternalServerErrorException('Stable Diffusion (ModelsLab) did not return an image');
+    throw new InternalServerErrorException(
+      'Stable Diffusion (ModelsLab) did not return an image',
+    );
   }
 
   let imgBuffer: Buffer | null = null;
@@ -244,7 +268,8 @@ export const generateWithModelsLab = async (params: {
       base64 = decoded.base64;
       break;
     } catch (e: any) {
-      lastProblem = String(e?.message ?? e) || 'failed to parse image candidate';
+      lastProblem =
+        String(e?.message ?? e) || 'failed to parse image candidate';
       continue;
     }
   }
@@ -255,7 +280,9 @@ export const generateWithModelsLab = async (params: {
       lastProblem,
       candidates: candidateStrings.slice(0, 5),
     });
-    throw new InternalServerErrorException('Stable Diffusion (ModelsLab) did not return a usable image');
+    throw new InternalServerErrorException(
+      'Stable Diffusion (ModelsLab) did not return a usable image',
+    );
   }
 
   return { buffer: imgBuffer, base64 };
