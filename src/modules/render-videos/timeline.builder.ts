@@ -1,16 +1,32 @@
 import type { SentenceInput, SentenceTiming } from './render-videos.types';
 import {
-  BACKGROUND_AUDIO_CLOUDINARY_URL,
-  CAMERA_CLICK_CLOUDINARY_URL,
+  SUBSCRIBE_SENTENCE,
   CHROMA_LEAK_SFX_CLOUDINARY_URL,
   GLITCH_FX_CLOUDINARY_URL,
-  SUBSCRIBE_SENTENCE,
-  SUBSCRIBE_VIDEO_CLOUDINARY_URL,
   WHOOSH_CLOUDINARY_URL,
+  CAMERA_CLICK_CLOUDINARY_URL,
 } from './render-videos.constants';
 
 export const isShortScript = (scriptLength: string) => {
-  return scriptLength.trim().toLowerCase().startsWith('30');
+  const s = String(scriptLength ?? '').trim().toLowerCase();
+  if (!s) return false;
+
+  const secondsMatch = /([0-9]+(?:\.[0-9]+)?)\s*second/u.exec(s);
+  if (secondsMatch?.[1]) {
+    const seconds = Number(secondsMatch[1]);
+    if (!Number.isFinite(seconds)) return false;
+    return seconds / 60 <= 3;
+  }
+
+  const minutesMatch = /([0-9]+(?:\.[0-9]+)?)\s*minute/u.exec(s);
+  if (minutesMatch?.[1]) {
+    const minutes = Number(minutesMatch[1]);
+    if (!Number.isFinite(minutes)) return false;
+    return minutes <= 3;
+  }
+
+  // Fallback: preserve legacy behavior for unexpected strings.
+  return s.startsWith('30');
 };
 
 export const buildTimeline = (params: {
@@ -26,7 +42,18 @@ export const buildTimeline = (params: {
   useLowerResolution?: boolean;
   addSubtitles?: boolean;
   enableGlitchTransitions?: boolean;
+  backgroundMusicSrc?: string | null;
+  backgroundMusicVolume?: number;
+  useRemoteAssets?: boolean;
 }) => {
+  const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+  const backgroundMusicVolume =
+    typeof params.backgroundMusicVolume === 'number' &&
+    Number.isFinite(params.backgroundMusicVolume)
+      ? clamp01(params.backgroundMusicVolume)
+      : 1;
+
   const baseFps = 30;
   const fps = params.useLowerFps ? 24 : baseFps;
   const isShort =
@@ -130,6 +157,41 @@ export const buildTimeline = (params: {
         scenes[scenes.length - 1].durationFrames
       : Math.ceil(T * fps);
 
+  const useRemoteAssets = params.useRemoteAssets === true;
+
+  // Only include `assets` overrides when needed.
+  // - In local renders, prefer Remotion's `staticFile()` defaults from `remotion/public/*`.
+  // - In Lambda/serverless renders, remote CDN URLs may be preferred for performance.
+  const assets: {
+    backgroundMusicSrc?: string | null;
+    backgroundMusicVolume?: number;
+    glitchSfxSrc?: string;
+    whooshSfxSrc?: string;
+    cameraClickSfxSrc?: string;
+    chromaLeakSfxSrc?: string;
+    suspenseGlitchSfxSrc?: string;
+  } = {};
+
+  if (typeof params.backgroundMusicSrc !== 'undefined') {
+    assets.backgroundMusicSrc = params.backgroundMusicSrc;
+  }
+
+  if (
+    typeof params.backgroundMusicVolume === 'number' &&
+    Number.isFinite(params.backgroundMusicVolume)
+  ) {
+    assets.backgroundMusicVolume = backgroundMusicVolume;
+  }
+
+  if (useRemoteAssets) {
+    assets.chromaLeakSfxSrc = CHROMA_LEAK_SFX_CLOUDINARY_URL;
+    assets.glitchSfxSrc = GLITCH_FX_CLOUDINARY_URL;
+    assets.whooshSfxSrc = WHOOSH_CLOUDINARY_URL;
+    assets.cameraClickSfxSrc = CAMERA_CLICK_CLOUDINARY_URL;
+    // Leave unset (or empty) to let the composition fall back to local `staticFile()`.
+    assets.suspenseGlitchSfxSrc = '';
+  }
+
   return {
     width,
     height,
@@ -137,16 +199,7 @@ export const buildTimeline = (params: {
     durationInFrames,
     audioSrc: params.audioSrc,
     addSubtitles: params.addSubtitles,
-    assets: {
-      backgroundMusicSrc: BACKGROUND_AUDIO_CLOUDINARY_URL,
-      glitchSfxSrc: GLITCH_FX_CLOUDINARY_URL,
-      whooshSfxSrc: WHOOSH_CLOUDINARY_URL,
-      cameraClickSfxSrc: CAMERA_CLICK_CLOUDINARY_URL,
-      chromaLeakSfxSrc: CHROMA_LEAK_SFX_CLOUDINARY_URL,
-      // Leave unset (or empty) to let the composition fall back to local `staticFile()`.
-      suspenseGlitchSfxSrc: '',
-      subscribeVideoSrc: SUBSCRIBE_VIDEO_CLOUDINARY_URL,
-    },
+    assets: Object.keys(assets).length > 0 ? assets : undefined,
     scenes,
   };
 };

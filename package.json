@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.72.1",
+    "@elevenlabs/elevenlabs-js": "^2.36.0",
     "@google/genai": "^1.40.0",
     "@google/generative-ai": "^0.24.0",
     "@nestjs/cli": "^11.0.0",

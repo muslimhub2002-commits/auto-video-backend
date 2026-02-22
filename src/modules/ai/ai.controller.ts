@@ -23,6 +23,8 @@ import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
 import { YoutubeSeoDto } from './dto/youtube-seo.dto';
 import { GenerateVideoFromFramesDto } from './dto/generate-video-from-frames.dto';
+import { GenerateVideoFromTextDto } from './dto/generate-video-from-text.dto';
+import { GenerateVideoFromReferenceImageDto } from './dto/generate-video-from-reference-image.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User } from '../users/entities/user.entity';
@@ -199,6 +201,63 @@ export class AiController {
       startFrameFile,
       endFrameFile,
     });
+
+    return result;
+  }
+
+  /**
+   * Generates a short video clip from text only.
+   * This endpoint does not persist scripts/sentences/videos in the DB.
+   */
+  @Post('generate-video-from-text')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async generateVideoFromText(
+    @GetUser() user: User,
+    @Body() body: GenerateVideoFromTextDto,
+  ) {
+    const result = await this.aiService.generateVideoFromText({
+      userId: user.id,
+      dto: body,
+    });
+    return result;
+  }
+
+  /**
+   * Generates a short video clip from a reference image + prompt.
+   * This endpoint does not persist scripts/sentences/videos in the DB.
+   */
+  @Post('generate-video-from-reference-image')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [{ name: 'referenceImage', maxCount: 1 }],
+      {
+        limits: {
+          fileSize: 12 * 1024 * 1024,
+          files: 1,
+        },
+      },
+    ),
+  )
+  async generateVideoFromReferenceImage(
+    @GetUser() user: User,
+    @Body() body: GenerateVideoFromReferenceImageDto,
+    @UploadedFiles()
+    files: {
+      referenceImage?: UploadedImageFile[];
+    },
+  ) {
+    const referenceImageFile = files?.referenceImage?.[0];
+
+    const result = await this.aiService.generateVideoFromUploadedReferenceImage(
+      {
+        userId: user.id,
+        dto: body,
+        referenceImageFile,
+      },
+    );
 
     return result;
   }

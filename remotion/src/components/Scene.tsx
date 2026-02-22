@@ -50,7 +50,8 @@ export const Scene: React.FC<{
     whipDirToNext,
   }) => {
     const frame = useCurrentFrame();
-    const { fps, width } = useVideoConfig();
+    const { fps, width, height } = useVideoConfig();
+    const isShort = height > width;
 
     // Inside a <Sequence>, useCurrentFrame() is already relative to the Sequence start.
     // Clamp to 0 to ensure each scene starts at default scale.
@@ -435,11 +436,11 @@ export const Scene: React.FC<{
                 color: 'white',
                 padding: '18px 22px',
                 borderRadius: 18,
-                fontSize: 55 * fontScale,
+                fontSize: 60 * fontScale,
                 fontWeight: 700,
                 fontFamily: 'Oswald, system-ui, sans-serif',
                 lineHeight: 1.15,
-                marginBottom: '150px',
+                marginBottom: isShort ? '400px' : '10px',
                 textAlign: 'center',
                 textShadow: '0 2px 10px rgba(0,0,0,0.55)',
                 opacity: 1,

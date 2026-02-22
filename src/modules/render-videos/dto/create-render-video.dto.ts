@@ -43,4 +43,18 @@ export class CreateRenderVideoDto {
   @IsOptional()
   @IsString()
   enableZoomRotateTransitions?: string;
+
+  // Optional background soundtrack override.
+  // - omit => use default soundtrack
+  // - "__none__" => mute background music
+  // - otherwise => absolute URL (e.g. Cloudinary)
+  @IsOptional()
+  @IsString()
+  backgroundMusicSrc?: string;
+
+  // Optional background soundtrack volume override.
+  // Comes from FormData as a string. Expected normalized 0..1.
+  @IsOptional()
+  @IsNumberString()
+  backgroundMusicVolume?: string;
 }

@@ -6,11 +6,24 @@ export const downloadUrlToBuffer = async (params: {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
-    const res = await fetch(params.url, {
-      method: 'GET',
-      redirect: 'follow',
-      signal: controller.signal,
-    });
+    let res: Response;
+    try {
+      res = await fetch(params.url, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      const reason =
+        err?.name === 'AbortError'
+          ? 'Request timed out'
+          : typeof err?.message === 'string'
+            ? err.message
+            : String(err);
+      throw new Error(
+        `Failed to download ${params.label} from ${params.url}: ${reason}`,
+      );
+    }
 
     if (!res.ok) {
       throw new Error(

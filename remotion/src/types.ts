@@ -26,7 +26,8 @@ export type Timeline = {
   // Optional asset URLs for production renders (CDN/Cloudinary/S3). If omitted,
   // the composition falls back to local `staticFile()` assets.
   assets?: {
-    backgroundMusicSrc?: string;
+    backgroundMusicSrc?: string | null;
+    backgroundMusicVolume?: number;
     glitchSfxSrc?: string;
     whooshSfxSrc?: string;
     cameraClickSfxSrc?: string;

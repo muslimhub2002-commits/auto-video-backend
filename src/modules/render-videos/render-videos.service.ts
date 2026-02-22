@@ -119,6 +119,8 @@ export class RenderVideosService implements OnModuleInit {
     useLowerResolution?: boolean;
     addSubtitles?: boolean;
     enableGlitchTransitions?: boolean;
+    backgroundMusicSrc?: string | null;
+    backgroundMusicVolume?: number;
   }) {
     if (this.isServerlessRuntime()) {
       throw new ServiceUnavailableException(
@@ -210,6 +212,9 @@ export class RenderVideosService implements OnModuleInit {
     useLowerResolution?: boolean;
     addSubtitles?: boolean;
     enableGlitchTransitions?: boolean;
+    backgroundMusicSrc?: string | null;
+    backgroundMusicVolume?: number;
+    useRemoteAssets?: boolean;
   }) {
     return buildTimelineExternal(params);
   }
@@ -423,6 +428,8 @@ export class RenderVideosService implements OnModuleInit {
       useLowerResolution?: boolean;
       addSubtitles?: boolean;
       enableGlitchTransitions?: boolean;
+      backgroundMusicSrc?: string | null;
+      backgroundMusicVolume?: number;
     },
   ) {
     const tempDir = this.createTempDir('auto-video-generator-');
@@ -573,12 +580,9 @@ export class RenderVideosService implements OnModuleInit {
         const prepared = this.prepareRemotionPublicDir(jobId);
         const jobDir = prepared.jobDir;
         publicDir = prepared.publicDir;
-        // Windows can intermittently throw EPERM when Remotion's bundler copies/reads
-        // mp4 files from the job-scoped publicDir (Temp bundle). To keep local renders
-        // stable, prefer the CDN URL for the subscribe clip.
-        subscribeVideoSrc = hasSubscribeSentence
-          ? SUBSCRIBE_VIDEO_CLOUDINARY_URL
-          : null;
+        // Prefer local assets in local rendering (avoids network/proxy failures).
+        // If copying the subscribe clip fails on Windows (rare EPERM cases), fall back to CDN.
+        subscribeVideoSrc = hasSubscribeSentence ? prepared.subscribeVideoSrc : null;
         publicDirToClean = jobDir;
 
         // Materialize required Remotion assets into the job-scoped publicDir.
@@ -606,17 +610,66 @@ export class RenderVideosService implements OnModuleInit {
           join(jobDir, REMOTION_SUSPENSE_GLITCH_SFX_REL),
         );
 
-        // Intentionally do not materialize subscribe.mp4 locally; we use Cloudinary instead.
+        if (hasSubscribeSentence) {
+          try {
+            this.safeCopyFile(
+              join(remotionAssetsDir, 'subscribe.mp4'),
+              join(jobDir, REMOTION_SUBSCRIBE_VIDEO_REL),
+            );
+            subscribeVideoSrc = prepared.subscribeVideoSrc;
+          } catch {
+            // If local copying fails (rare Windows file locking), avoid falling back
+            // to a remote URL because that can fail in restricted/offline environments.
+            subscribeVideoSrc = null;
+          }
+        }
 
-        const chromaDownloaded = await this.downloadUrlToBuffer({
-          url: CHROMA_LEAK_SFX_CLOUDINARY_URL,
-          maxBytes: 20 * 1024 * 1024,
-          label: 'chroma leak sfx',
-        });
-        fs.writeFileSync(
-          join(jobDir, REMOTION_CHROMA_LEAK_SFX_REL),
-          chromaDownloaded.buffer,
-        );
+        // If a custom background soundtrack URL was provided, download it into the job-scoped
+        // Remotion publicDir so rendering does not depend on network access/timeouts.
+        // (Remotion renderer downloads remote media during render and can time out; pre-downloading
+        // keeps renders stable on Windows and in restricted networks.)
+        let effectiveBackgroundMusicSrc: string | null | undefined =
+          params.backgroundMusicSrc;
+        if (
+          typeof params.backgroundMusicSrc === 'string' &&
+          /^https?:\/\//i.test(params.backgroundMusicSrc.trim())
+        ) {
+          const url = params.backgroundMusicSrc.trim();
+          try {
+            const downloaded = await this.downloadUrlToBuffer({
+              url,
+              maxBytes: 25 * 1024 * 1024,
+              label: 'background music',
+            });
+
+            const mime = String(downloaded.mimeType ?? '').toLowerCase();
+            const extFromMime = () => {
+              if (mime.includes('audio/mpeg') || mime.includes('audio/mp3')) return '.mp3';
+              if (mime.includes('audio/wav')) return '.wav';
+              if (mime.includes('audio/aac')) return '.aac';
+              if (mime.includes('audio/ogg')) return '.ogg';
+              if (mime.includes('audio/mp4') || mime.includes('audio/x-m4a')) return '.m4a';
+              return '';
+            };
+
+            const ext =
+              extFromMime() ||
+              extname(url.split('?')[0] || '').toLowerCase() ||
+              '.mp3';
+
+            const rel = `audio/background_custom${ext}`;
+            this.ensureDir(join(jobDir, 'audio'));
+            fs.writeFileSync(join(jobDir, rel), downloaded.buffer);
+            effectiveBackgroundMusicSrc = rel;
+          } catch {
+            // If the custom URL can't be reached (DNS/firewall/offline), don't fail the render.
+            // Fall back to the composition's local default background track.
+            effectiveBackgroundMusicSrc = undefined;
+          }
+        }
+
+        // Reassign so the timeline uses the local asset path.
+        params.backgroundMusicSrc = effectiveBackgroundMusicSrc;
 
         voiceoverAudioSrc = REMOTION_VOICEOVER_REL;
 
@@ -700,6 +753,9 @@ export class RenderVideosService implements OnModuleInit {
         useLowerResolution: params.useLowerResolution,
         addSubtitles: params.addSubtitles,
         enableGlitchTransitions: params.enableGlitchTransitions,
+        backgroundMusicSrc: params.backgroundMusicSrc,
+        backgroundMusicVolume: params.backgroundMusicVolume,
+        useRemoteAssets: useLambdaTestMode,
       });
 
       job.timeline = timeline;

@@ -12,6 +12,7 @@ import { Video } from '../../videos/entities/video.entity';
 import { Chat } from '../../chats/entities/chat.entity';
 import { Script } from '../../scripts/entities/script.entity';
 import { ScriptTemplate } from '../../scripts/entities/script-template.entity';
+import { BackgroundSoundtrack } from '../../background-soundtracks/entities/background-soundtrack.entity';
 
 @Entity('users')
 export class User {
@@ -71,4 +72,7 @@ export class User {
 
   @OneToMany(() => ScriptTemplate, (template) => template.user)
   script_templates: ScriptTemplate[];
+
+  @OneToMany(() => BackgroundSoundtrack, (soundtrack) => soundtrack.user)
+  background_soundtracks: BackgroundSoundtrack[];
 }

@@ -575,10 +575,49 @@ export class AiImageService {
   }
 
   private computeIsShortForm(dto: GenerateImageDto): boolean {
-    const rawLength = dto.scriptLength?.toLowerCase() ?? '';
-    return typeof dto.isShort === 'boolean'
-      ? dto.isShort
-      : rawLength.includes('30 second') || rawLength.includes('1 minute');
+    const rawLength = String(dto.scriptLength ?? '').trim().toLowerCase();
+
+    const parsedMinutes: number | null = (() => {
+      const secondsMatch = /([0-9]+(?:\.[0-9]+)?)\s*second/u.exec(rawLength);
+      if (secondsMatch?.[1]) {
+        const seconds = Number(secondsMatch[1]);
+        return Number.isFinite(seconds) ? seconds / 60 : null;
+      }
+
+      const minutesMatch = /([0-9]+(?:\.[0-9]+)?)\s*minute/u.exec(rawLength);
+      if (minutesMatch?.[1]) {
+        const minutes = Number(minutesMatch[1]);
+        return Number.isFinite(minutes) ? minutes : null;
+      }
+
+      return null;
+    })();
+
+    // Hard rule: scripts longer than 3 minutes are treated as non-short.
+    if (
+      typeof parsedMinutes === 'number' &&
+      Number.isFinite(parsedMinutes) &&
+      parsedMinutes > 3
+    ) {
+      return false;
+    }
+
+    // Respect explicit overrides for <= 3 minutes.
+    if (typeof dto.isShort === 'boolean') {
+      return dto.isShort;
+    }
+
+    if (typeof parsedMinutes === 'number' && Number.isFinite(parsedMinutes)) {
+      return parsedMinutes <= 3;
+    }
+
+    // Fallback for older/unknown strings.
+    return (
+      rawLength.includes('30 second') ||
+      rawLength.includes('1 minute') ||
+      rawLength.includes('2 minute') ||
+      rawLength.includes('3 minute')
+    );
   }
 
   private validateAndNormalizeImageModel(dto: GenerateImageDto): {

@@ -23,8 +23,18 @@ import { buildCutTransitions, getCutSeed, pickWhipDirection } from './utils/tran
 
 export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   // Treat empty strings from the backend as "unset" so local `staticFile()` defaults work.
+  const rawBackgroundMusicSrc = timeline.assets?.backgroundMusicSrc;
   const backgroundMusicSrc =
-    timeline.assets?.backgroundMusicSrc || DEFAULT_BACKGROUND_MUSIC_SRC;
+    rawBackgroundMusicSrc === null
+      ? null
+      : rawBackgroundMusicSrc || DEFAULT_BACKGROUND_MUSIC_SRC;
+
+  const rawBackgroundMusicVolume = timeline.assets?.backgroundMusicVolume;
+  const backgroundMusicVolume =
+    typeof rawBackgroundMusicVolume === 'number' &&
+    Number.isFinite(rawBackgroundMusicVolume)
+      ? Math.max(0, Math.min(1, rawBackgroundMusicVolume))
+      : 1;
   const glitchSfxSrc = timeline.assets?.glitchSfxSrc || DEFAULT_GLITCH_FX_URL;
   const whooshSfxSrc = timeline.assets?.whooshSfxSrc || DEFAULT_WHOOSH_SFX_URL;
   const cameraClickSfxSrc =
@@ -123,7 +133,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         <Audio src={resolveMediaSrc(timeline.audioSrc)} volume={voiceOverVolume} />
       )}
       {backgroundMusicSrc ? (
-        <Audio src={resolveMediaSrc(backgroundMusicSrc)} />
+        <Audio src={resolveMediaSrc(backgroundMusicSrc)} volume={backgroundMusicVolume} loop />
       ) : null}
 
       {/* Suspense opening SFX: plays once and stops when audio ends (or at end of scene). */}

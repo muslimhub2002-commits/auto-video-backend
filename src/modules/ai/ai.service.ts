@@ -4,6 +4,8 @@ import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
 import { GenerateVideoFromFramesDto } from './dto/generate-video-from-frames.dto';
+import { GenerateVideoFromTextDto } from './dto/generate-video-from-text.dto';
+import { GenerateVideoFromReferenceImageDto } from './dto/generate-video-from-reference-image.dto';
 import { AiTextService } from './services/ai-text.service';
 import { AiImageService } from './services/ai-image.service';
 import { AiVoiceService } from './services/ai-voice.service';
@@ -49,6 +51,26 @@ export class AiService {
     };
   }): Promise<{ videoUrl: string }> {
     return this.videoService.generateVideoFromUploadedFrames(params);
+  }
+
+  generateVideoFromText(params: {
+    userId: string;
+    dto: GenerateVideoFromTextDto;
+  }): Promise<{ videoUrl: string }> {
+    return this.videoService.generateVideoFromText(params);
+  }
+
+  generateVideoFromUploadedReferenceImage(params: {
+    userId: string;
+    dto: GenerateVideoFromReferenceImageDto;
+    referenceImageFile?: {
+      buffer?: Buffer;
+      mimetype?: string;
+      size?: number;
+      originalname?: string;
+    };
+  }): Promise<{ videoUrl: string }> {
+    return this.videoService.generateVideoFromUploadedReferenceImage(params);
   }
 
   listGoogleModels(params?: { query?: string }): Promise<{ models: any[] }> {

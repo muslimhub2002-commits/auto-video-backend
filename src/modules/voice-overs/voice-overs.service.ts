@@ -4,12 +4,16 @@ import {
   InternalServerErrorException,
   BadRequestException,
   NotFoundException,
+  UnauthorizedException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
 import { VoiceOver } from './entities/voice-over.entity';
 import { AiService } from '../ai/ai.service';
 import { v2 as cloudinary } from 'cloudinary';
+import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 
 type VoiceProvider = 'elevenlabs' | 'google';
 
@@ -146,7 +150,9 @@ export class VoiceOversService {
     voiceId: string,
   ): Promise<{ preview_url: string }> {
     const raw = String(voiceId ?? '').trim();
-    const candidates = raw.includes(':') ? [raw] : [raw, `google:${raw}`];
+    const candidates = raw.includes(':')
+      ? [raw]
+      : [raw, `google:${raw}`, `elevenlabs:${raw}`];
 
     const voice = await this.voiceOverRepository.findOne({
       where: { voice_id: In(candidates) },
@@ -158,12 +164,6 @@ export class VoiceOversService {
 
     if (voice.preview_url) {
       return { preview_url: voice.preview_url };
-    }
-
-    if (voice.provider !== 'google') {
-      throw new BadRequestException(
-        `Preview generation is only supported for AI Studio voices. Voice provider is: ${voice.provider}`,
-      );
     }
 
     const previewText =
@@ -361,6 +361,164 @@ export class VoiceOversService {
     pageToken = data.next_page_token ?? null;
 
     return { imported, updated };
+  }
+
+  async importOneFromElevenLabs(voiceId: string): Promise<VoiceOver> {
+    const provider: VoiceProvider = 'elevenlabs';
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) {
+      throw new InternalServerErrorException(
+        'ELEVENLABS_API_KEY is not configured on the server',
+      );
+    }
+
+    const rawInput = String(voiceId ?? '').trim();
+    if (!rawInput) {
+      throw new BadRequestException('voiceId is required');
+    }
+
+    const rawId = this.stripNamespace(provider, rawInput);
+    if (!rawId) {
+      throw new BadRequestException('voiceId is required');
+    }
+
+    // Prefer the official SDK (it auto-reads ELEVENLABS_API_KEY by default).
+    let voice: Partial<ElevenLabsVoice> | null = null;
+    try {
+      const client = new ElevenLabsClient({
+        apiKey,
+      });
+
+      // Note: withSettings is deprecated upstream, but harmless.
+      const result = await client.voices.get(rawId as any, {
+        withSettings: true as any,
+      } as any);
+      voice = (result ?? null) as any;
+    } catch (error) {
+      this.logger.warn(
+        `ElevenLabs SDK fetch failed for voice ${rawId}; falling back to HTTP: ${(error as any)?.message ?? error}`,
+      );
+
+      const url = `https://api.elevenlabs.io/v1/voices/${encodeURIComponent(rawId)}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      });
+
+      if (response.status === 404) {
+        // Best-effort cross-check: if the voice isn't in the caller's voice list,
+        // it's usually because the voice belongs to a different account / isn't added
+        // to the user's Voices list (e.g., copied from Voice Library) or the API key is for another workspace.
+        try {
+          const listRes = await fetch('https://api.elevenlabs.io/v1/voices', {
+            method: 'GET',
+            headers: {
+              'xi-api-key': apiKey,
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+          });
+
+          if (listRes.ok) {
+            const listData = (await listRes.json()) as ElevenLabsVoicesResponse;
+            const ids = (listData.voices ?? [])
+              .map((v) => String(v.voice_id ?? '').trim())
+              .filter(Boolean);
+            const inAccount = ids.includes(rawId);
+            throw new NotFoundException(
+              inAccount
+                ? `ElevenLabs voice could not be fetched: ${rawId}. It appears in your voice list, but the details endpoint returned 404.`
+                : `ElevenLabs voice not found in your account: ${rawId}. Make sure this voice is in your ElevenLabs Voices list and that ELEVENLABS_API_KEY is for the same account/workspace.`,
+            );
+          }
+        } catch (e) {
+          // ignore list-check errors and fall through
+        }
+
+        throw new NotFoundException(
+          `ElevenLabs voice not found or not accessible with this API key: ${rawId}`,
+        );
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        throw new UnauthorizedException(
+          'Unauthorized to call ElevenLabs API. Check ELEVENLABS_API_KEY.',
+        );
+      }
+
+      if (response.status === 400 || response.status === 422) {
+        throw new BadRequestException('Invalid ElevenLabs voiceId');
+      }
+
+      if (response.status === 429) {
+        throw new HttpException(
+          'Rate limited by ElevenLabs. Please try again shortly.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
+      if (!response.ok) {
+        const text = await response.text();
+        this.logger.error(
+          `Failed to fetch ElevenLabs voice ${rawId}: ${response.status} ${response.statusText} - ${text}`,
+        );
+        throw new InternalServerErrorException('Failed to fetch ElevenLabs voice');
+      }
+
+      voice = (await response.json()) as Partial<ElevenLabsVoice>;
+    }
+
+    if (!voice) {
+      throw new InternalServerErrorException('Failed to fetch ElevenLabs voice');
+    }
+    const resolvedRawId = String(voice.voice_id ?? rawId).trim();
+    if (!resolvedRawId) {
+      throw new InternalServerErrorException('ElevenLabs response missing voice_id');
+    }
+
+    const nextVoiceId = this.namespacedVoiceId(provider, resolvedRawId);
+    const existing = await this.voiceOverRepository.findOne({
+      where: [{ voice_id: nextVoiceId }, { voice_id: resolvedRawId }],
+    });
+
+    const labels = (voice.labels || {}) as Record<string, string>;
+
+    const payload: Partial<VoiceOver> = {
+      provider,
+      voice_id: nextVoiceId,
+      name: String(voice.name ?? '').trim() || nextVoiceId,
+      preview_url: (voice.preview_url as string | undefined) ?? null,
+      description: (voice.description as string | undefined) ?? null,
+      category: (voice.category as string | undefined) ?? null,
+      gender:
+        (voice.gender as string | undefined) ?? (labels.gender as string) ?? null,
+      accent:
+        (voice.accent as string | undefined) ?? (labels.accent as string) ?? null,
+      descriptive: (labels.descriptive as string) ?? null,
+      use_case: (labels.use_case as string) ?? null,
+    };
+
+    if (existing) {
+      if (!String(existing.voice_id ?? '').includes(':')) {
+        payload.voice_id = nextVoiceId;
+      }
+      await this.voiceOverRepository.update({ id: existing.id }, payload);
+    } else {
+      await this.voiceOverRepository.save(this.voiceOverRepository.create(payload));
+    }
+
+    const saved = await this.voiceOverRepository.findOne({
+      where: { voice_id: nextVoiceId },
+    });
+    if (!saved) {
+      throw new InternalServerErrorException('Failed to save imported voice');
+    }
+
+    return saved;
   }
 
   async syncAllFromGoogleTts(): Promise<{ imported: number; updated: number }> {

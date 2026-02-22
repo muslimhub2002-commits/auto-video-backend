@@ -17,11 +17,13 @@ import { RenderVideosModule } from './modules/render-videos/render-videos.module
 import { VoiceOversModule } from './modules/voice-overs/voice-overs.module';
 import { ImagesModule } from './modules/images/images.module';
 import { VoicesModule } from './modules/voices/voices.module';
+import { BackgroundSoundtracksModule } from './modules/background-soundtracks/background-soundtracks.module';
 import { ScriptsModule } from './modules/scripts/scripts.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { ChatsModule } from './modules/chats/chats.module';
 import { RenderJob } from './modules/render-videos/entities/render-job.entity';
 import { YoutubeModule } from './modules/youtube/youtube.module';
+import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/background-soundtrack.entity';
 
 @Module({
   imports: [
@@ -48,6 +50,7 @@ import { YoutubeModule } from './modules/youtube/youtube.module';
         User,
         Image,
         Voice,
+        BackgroundSoundtrack,
         VoiceOver,
         Video,
         Chat,
@@ -65,6 +68,7 @@ import { YoutubeModule } from './modules/youtube/youtube.module';
     VoiceOversModule,
     ImagesModule,
     VoicesModule,
+    BackgroundSoundtracksModule,
     ScriptsModule,
     MessagesModule,
     ChatsModule,

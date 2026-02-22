@@ -4,6 +4,7 @@ import {
   Post,
   Patch,
   Param,
+  Body,
   HttpCode,
   HttpStatus,
   UseGuards,
@@ -12,6 +13,7 @@ import {
 import { VoiceOversService } from './voice-overs.service';
 import { VoiceOver } from './entities/voice-over.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ImportElevenLabsVoiceDto } from './dto/import-elevenlabs-voice.dto';
 
 @Controller('voice-overs')
 export class VoiceOversController {
@@ -28,6 +30,14 @@ export class VoiceOversController {
     @Query('provider') provider?: string,
   ): Promise<{ imported: number; updated: number }> {
     return this.voiceOversService.syncAll({ provider });
+  }
+
+  @Post('elevenlabs/import')
+  @HttpCode(HttpStatus.OK)
+  async importElevenLabsVoice(
+    @Body() body: ImportElevenLabsVoiceDto,
+  ): Promise<VoiceOver> {
+    return this.voiceOversService.importOneFromElevenLabs(body.voiceId);
   }
 
   @Patch('favorite/:voiceId')

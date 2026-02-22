@@ -78,6 +78,19 @@ export class CreateRenderVideoUrlDto {
   @IsOptional()
   isShort?: boolean;
 
+  // Optional background soundtrack override.
+  // - omit => use default soundtrack
+  // - null => mute background music
+  // - string => absolute URL
+  @IsOptional()
+  @IsString()
+  backgroundMusicSrc?: string | null;
+
+  // Optional background soundtrack volume override. Expected normalized 0..1.
+  @IsOptional()
+  @IsNumber()
+  backgroundMusicVolume?: number;
+
   @IsUrl({ require_tld: false })
   audioUrl: string;
 

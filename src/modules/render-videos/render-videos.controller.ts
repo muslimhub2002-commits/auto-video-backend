@@ -20,6 +20,15 @@ import { ensureUuid } from '../../common/errors/ensure-uuid';
 import { CreateRenderVideoDto } from './dto/create-render-video.dto';
 import { CreateRenderVideoUrlDto } from './dto/create-render-video-url.dto';
 import { RenderVideosService } from './render-videos.service';
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+const normalizeVolume = (raw: number) => {
+  if (!Number.isFinite(raw)) return undefined;
+  // Be forgiving: accept 0..1 (normalized) or 0..100 (percent).
+  if (raw > 1 && raw <= 100) return clamp01(raw / 100);
+  return clamp01(raw);
+};
 import type { SentenceInput } from './render-videos.types';
 
 const SUBSCRIBE_SENTENCE =
@@ -138,6 +147,11 @@ export class RenderVideosController {
       );
     }
 
+    const backgroundMusicVolume =
+      typeof body.backgroundMusicVolume === 'number'
+        ? normalizeVolume(body.backgroundMusicVolume)
+        : undefined;
+
     const job = await this.renderVideosService.createJob({
       audioFile: null,
       audioUrl: body.audioUrl,
@@ -151,6 +165,13 @@ export class RenderVideosController {
       useLowerResolution: !!body.useLowerResolution,
       addSubtitles: body.addSubtitles,
       enableGlitchTransitions: !!body.enableGlitchTransitions,
+      backgroundMusicSrc:
+        typeof body.backgroundMusicSrc === 'string'
+          ? body.backgroundMusicSrc
+          : body.backgroundMusicSrc === null
+            ? null
+            : undefined,
+      backgroundMusicVolume,
     });
 
     return { id: job.id, status: job.status, isShort: body.isShort ?? null };
@@ -331,6 +352,24 @@ export class RenderVideosController {
     const isShort =
       typeof body.isShort === 'string' ? body.isShort === 'true' : undefined;
 
+    const rawBackgroundMusicSrc = String(body.backgroundMusicSrc ?? '').trim();
+    const backgroundMusicSrc =
+      rawBackgroundMusicSrc === '__none__'
+        ? null
+        : rawBackgroundMusicSrc
+          ? rawBackgroundMusicSrc
+          : undefined;
+
+    const rawBackgroundMusicVolume = String(
+      (body as any).backgroundMusicVolume ?? '',
+    ).trim();
+    const parsedBackgroundMusicVolume = rawBackgroundMusicVolume
+      ? Number(rawBackgroundMusicVolume)
+      : NaN;
+    const backgroundMusicVolume = Number.isFinite(parsedBackgroundMusicVolume)
+      ? normalizeVolume(parsedBackgroundMusicVolume)
+      : undefined;
+
     const job = await this.renderVideosService.createJob({
       audioFile: voice
         ? {
@@ -356,6 +395,8 @@ export class RenderVideosController {
       useLowerResolution,
       addSubtitles,
       enableGlitchTransitions,
+      backgroundMusicSrc,
+      backgroundMusicVolume,
     });
 
     return { id: job.id, status: job.status, isShort: isShort ?? null };
