@@ -32,10 +32,47 @@ async function bootstrap() {
   // cross-origin downloads of /static/videos/*.mp4 and the YouTube Cloudinary step can appear to "hang".)
   const allowedProdOrigins = new Set(['https://auto-video-frontend.vercel.app']);
 
+  const safeParseOrigin = (origin: string) => {
+    try {
+      return new URL(origin);
+    } catch {
+      return null;
+    }
+  };
+
+  const normalizeOrigin = (origin: string) => {
+    const url = safeParseOrigin(origin);
+    if (!url) return null;
+
+    // Origin header is scheme + host (+ port). Normalize default ports away.
+    const protocol = url.protocol.toLowerCase();
+    const hostname = url.hostname.toLowerCase();
+    const port = url.port;
+    const isDefaultPort =
+      (protocol === 'https:' && (port === '' || port === '443')) ||
+      (protocol === 'http:' && (port === '' || port === '80'));
+
+    return `${protocol}//${hostname}${isDefaultPort ? '' : `:${port}`}`;
+  };
+
+  // Allow Vercel preview deployments for this frontend as well.
+  // Examples: auto-video-frontend-git-main-<user>.vercel.app
+  const isAllowedVercelFrontendHost = (hostname: string) => {
+    const host = hostname.toLowerCase();
+    if (host === 'auto-video-frontend.vercel.app') return true;
+    return /^auto-video-frontend(-.+)?\.vercel\.app$/i.test(host);
+  };
+
   const isAllowedOrigin = (origin?: string) => {
     if (!origin) return true;
-    if (allowedProdOrigins.has(origin)) return true;
     if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
+
+    const normalized = normalizeOrigin(origin);
+    if (normalized && allowedProdOrigins.has(normalized)) return true;
+
+    const parsed = safeParseOrigin(origin);
+    if (parsed && isAllowedVercelFrontendHost(parsed.hostname)) return true;
+
     return false;
   };
 
