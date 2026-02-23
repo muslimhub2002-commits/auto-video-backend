@@ -23,6 +23,7 @@ import { Script } from './modules/scripts/entities/script.entity';
 import { Sentence } from './modules/scripts/entities/sentence.entity';
 import { ScriptTemplate } from './modules/scripts/entities/script-template.entity';
 import { RenderJob } from './modules/render-videos/entities/render-job.entity';
+import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/background-soundtrack.entity';
 
 /**
  * Vercel deployment module.
@@ -56,6 +57,7 @@ import { RenderJob } from './modules/render-videos/entities/render-job.entity';
         User,
         Image,
         Voice,
+        BackgroundSoundtrack,
         VoiceOver,
         Video,
         Chat,
