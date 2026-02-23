@@ -40,8 +40,14 @@ import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/
       database: process.env.DB_NAME,
       autoLoadEntities: true,
       synchronize: true,
-      // Enable SSL only when explicitly requested (e.g. for cloud DBs)
-      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : true,
+      ssl:
+        process.env.DB_SSL === 'true'
+          ? { rejectUnauthorized: false }
+          : process.env.DB_SSL === 'false'
+            ? false
+            : process.env.NODE_ENV === 'production'
+              ? { rejectUnauthorized: false }
+              : false,
       extra: {
         max: 5,
       },
