@@ -89,6 +89,31 @@ export class BackgroundSoundtracksService {
     return updated;
   }
 
+  async setVolumeById(params: {
+    user_id: string;
+    soundtrackId: string;
+    volumePercent: number;
+  }): Promise<BackgroundSoundtrack> {
+    const soundtrackId = String(params.soundtrackId ?? '').trim();
+    if (!soundtrackId) {
+      throw new NotFoundException('Soundtrack not found');
+    }
+
+    const raw = Number(params.volumePercent);
+    const volumePercent = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 100;
+
+    const target = await this.repo.findOne({
+      where: { id: soundtrackId, user_id: params.user_id },
+    });
+
+    if (!target) {
+      throw new NotFoundException('Soundtrack not found');
+    }
+
+    target.volume_percent = volumePercent;
+    return this.repo.save(target);
+  }
+
   private ensureCloudinaryConfigured() {
     if (
       !process.env.CLOUDINARY_CLOUD_NAME ||

@@ -18,6 +18,7 @@ import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BackgroundSoundtracksService } from './background-soundtracks.service';
 import { CreateBackgroundSoundtrackDto } from './dto/create-background-soundtrack.dto';
+import { UpdateBackgroundSoundtrackVolumeDto } from './dto/update-background-soundtrack-volume.dto';
 
 @Controller('background-soundtracks')
 export class BackgroundSoundtracksController {
@@ -133,5 +134,26 @@ export class BackgroundSoundtracksController {
     }
 
     return this.service.setFavoriteById({ user_id, soundtrackId });
+  }
+
+  @Patch('volume/:soundtrackId')
+  @UseGuards(JwtAuthGuard)
+  async setVolume(
+    @Req() req: Request,
+    @Param('soundtrackId') soundtrackId: string,
+    @Body() body: UpdateBackgroundSoundtrackVolumeDto,
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    return this.service.setVolumeById({
+      user_id,
+      soundtrackId,
+      volumePercent: body?.volumePercent,
+    });
   }
 }

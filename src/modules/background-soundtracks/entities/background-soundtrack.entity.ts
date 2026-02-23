@@ -34,6 +34,9 @@ export class BackgroundSoundtrack {
   @Column({ type: 'boolean', default: false })
   is_favorite: boolean;
 
+  @Column({ type: 'float', default: 100 })
+  volume_percent: number;
+
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
 
