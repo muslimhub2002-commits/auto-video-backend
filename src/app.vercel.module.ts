@@ -7,23 +7,11 @@ import { AiModule } from './modules/ai/ai.module';
 import { VoiceOversModule } from './modules/voice-overs/voice-overs.module';
 import { ImagesModule } from './modules/images/images.module';
 import { VoicesModule } from './modules/voices/voices.module';
+import { BackgroundSoundtracksModule } from './modules/background-soundtracks/background-soundtracks.module';
 import { ScriptsModule } from './modules/scripts/scripts.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { ChatsModule } from './modules/chats/chats.module';
 import { YoutubeModule } from './modules/youtube/youtube.module';
-
-import { User } from './modules/users/entities/user.entity';
-import { Image } from './modules/images/entities/image.entity';
-import { Voice } from './modules/voices/entities/voice.entity';
-import { VoiceOver } from './modules/voice-overs/entities/voice-over.entity';
-import { Video } from './modules/videos/entities/video.entity';
-import { Chat } from './modules/chats/entities/chat.entity';
-import { Message } from './modules/messages/entities/message.entity';
-import { Script } from './modules/scripts/entities/script.entity';
-import { Sentence } from './modules/scripts/entities/sentence.entity';
-import { ScriptTemplate } from './modules/scripts/entities/script-template.entity';
-import { RenderJob } from './modules/render-videos/entities/render-job.entity';
-import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/background-soundtrack.entity';
 
 /**
  * Vercel deployment module.
@@ -53,20 +41,6 @@ import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/
               ? { rejectUnauthorized: false }
               : false,
       extra: { max: 5 },
-      entities: [
-        User,
-        Image,
-        Voice,
-        BackgroundSoundtrack,
-        VoiceOver,
-        Video,
-        Chat,
-        Message,
-        RenderJob,
-        Script,
-        Sentence,
-        ScriptTemplate,
-      ],
     }),
 
     AuthModule,
@@ -74,6 +48,7 @@ import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/
     VoiceOversModule,
     ImagesModule,
     VoicesModule,
+    BackgroundSoundtracksModule,
     ScriptsModule,
     MessagesModule,
     ChatsModule,
