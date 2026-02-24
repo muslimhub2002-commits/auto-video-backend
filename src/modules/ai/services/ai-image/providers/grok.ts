@@ -67,7 +67,7 @@ export const generateWithGrokImagine = async (params: {
   grokApiKey: string | null | undefined;
   imageModel: 'grok-imagine-image';
   prompt: string;
-  isShortForm: boolean;
+  aspectRatio: '16:9' | '9:16' | '1:1';
 }): Promise<ImagePayload> => {
   const apiKey = String(params.grokApiKey ?? '').trim();
   if (!apiKey) {
@@ -76,7 +76,7 @@ export const generateWithGrokImagine = async (params: {
     );
   }
 
-  const aspectRatio = params.isShortForm ? '9:16' : '16:9';
+  const aspectRatio = params.aspectRatio;
 
   // Prefer base64 (fastest: no follow-up download), but fall back to URL.
   let payload: XAiImagesGenerationResponse;

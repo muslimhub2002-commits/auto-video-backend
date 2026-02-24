@@ -3,6 +3,7 @@ import { GenerateScriptDto } from './dto/generate-script.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
+import { YoutubeWallpaperDto } from './dto/youtube-wallpaper.dto';
 import { GenerateVideoFromFramesDto } from './dto/generate-video-from-frames.dto';
 import { GenerateVideoFromTextDto } from './dto/generate-video-from-text.dto';
 import { GenerateVideoFromReferenceImageDto } from './dto/generate-video-from-reference-image.dto';
@@ -117,13 +118,68 @@ export class AiService {
 
   generateYoutubeSeo(
     script: string,
-    options?: { useWebSearch?: boolean },
+    options?: { useWebSearch?: boolean; isShort?: boolean },
   ): Promise<{ title: string; description: string; tags: string[] }> {
     return this.youtubeService.generateYoutubeSeo(script, options);
   }
 
   generateImageForSentence(dto: GenerateImageDto, userId: string) {
     return this.imageService.generateImageForSentence(dto, userId);
+  }
+
+  async generateYoutubeWallpaper(dto: YoutubeWallpaperDto, userId: string) {
+    const script = String(dto?.script ?? '').trim();
+    const title = String(dto?.title ?? '').trim();
+
+    const canonicalCharacters = Array.isArray(dto?.characters)
+      ? dto.characters
+      : [];
+
+    // Filter ONLY non-Prophet, non-Sahaba, non-women characters as requested.
+    const safeCharacters = canonicalCharacters
+      .filter((c) => !c.isProphet && !c.isSahaba && !c.isWoman)
+      .map((c) => ({
+        key: String(c.key ?? '').trim(),
+        name: String(c.name ?? '').trim(),
+        description: String(c.description ?? '').trim(),
+      }))
+      .filter((c) => c.key && c.name && c.description);
+
+    const wallpaper = await this.youtubeService.generateYoutubeWallpaperPrompt({
+      script,
+      title: title || undefined,
+      promptModel: dto.promptModel,
+      safeCharacters,
+    });
+
+    const style = String(dto?.style ?? '').trim() || 'Cinematic, ultra-detailed, high contrast, high quality';
+
+    const imageResult = await this.imageService.generateImageForSentence(
+      {
+        sentence: 'YouTube wallpaper',
+        script,
+        prompt: `${wallpaper.prompt}\n\nHeadline text: "${wallpaper.headline}"`,
+        style,
+        isShort: false,
+        imageModel: dto.imageModel,
+        characters: canonicalCharacters.length ? canonicalCharacters : undefined,
+        forcedCharacterKeys: wallpaper.characterKeys.length
+          ? wallpaper.characterKeys
+          : undefined,
+        allowText: true,
+      },
+      userId,
+    );
+
+    return {
+      headline: wallpaper.headline,
+      usedCharacterKeys: wallpaper.characterKeys,
+      safeCharacters,
+      prompt: imageResult?.prompt,
+      imageUrl: (imageResult as any)?.imageUrl,
+      imageBase64: (imageResult as any)?.imageBase64,
+      savedImageId: (imageResult as any)?.savedImageId,
+    };
   }
 
   generateVoiceForSentences(

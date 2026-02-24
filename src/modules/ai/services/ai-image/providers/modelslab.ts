@@ -14,7 +14,7 @@ export const generateWithModelsLab = async (params: {
   apiKey: string;
   modelId: string;
   prompt: string;
-  isShortForm: boolean;
+  aspectRatio: '16:9' | '9:16' | '1:1';
 }): Promise<ImagePayload> => {
   const apiKey = String(params.apiKey ?? '').trim();
   if (!apiKey) {
@@ -30,8 +30,17 @@ export const generateWithModelsLab = async (params: {
     );
   }
 
-  const sdWidth = params.isShortForm ? 576 : 1024;
-  const sdHeight = params.isShortForm ? 1024 : 576;
+  const { sdWidth, sdHeight } = (() => {
+    if (params.aspectRatio === '1:1') {
+      return { sdWidth: 768, sdHeight: 768 };
+    }
+
+    if (params.aspectRatio === '9:16') {
+      return { sdWidth: 576, sdHeight: 1024 };
+    }
+
+    return { sdWidth: 1024, sdHeight: 576 };
+  })();
 
   const isFluxFamily = /^flux/i.test(modelId);
 

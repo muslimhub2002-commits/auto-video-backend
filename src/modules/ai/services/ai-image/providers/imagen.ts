@@ -7,7 +7,7 @@ export const generateWithImagen = async (params: {
   geminiApiKey: string | null | undefined;
   imageModel: 'imagen-3' | 'imagen-4' | 'imagen-4-ultra';
   prompt: string;
-  isShortForm: boolean;
+  aspectRatio: '16:9' | '9:16' | '1:1';
 }): Promise<ImagePayload> => {
   if (!params.geminiApiKey) {
     throw new InternalServerErrorException(
@@ -42,7 +42,7 @@ export const generateWithImagen = async (params: {
     ];
   })();
 
-  const aspectRatio = params.isShortForm ? '9:16' : '16:9';
+  const aspectRatio = params.aspectRatio;
 
   const payloadBase: any = {
     prompt: params.prompt,

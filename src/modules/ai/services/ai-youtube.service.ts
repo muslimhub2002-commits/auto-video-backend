@@ -21,14 +21,127 @@ export class AiYoutubeService {
     return this.runtime.cheapModel;
   }
 
+  async generateYoutubeWallpaperPrompt(params: {
+    script: string;
+    title?: string;
+    promptModel?: string;
+    safeCharacters?: Array<{ key: string; name: string; description: string }>;
+  }): Promise<{ headline: string; prompt: string; characterKeys: string[] }> {
+    const trimmed = String(params?.script ?? '').trim();
+    if (!trimmed) {
+      throw new BadRequestException('Script is required');
+    }
+
+    const title = String(params?.title ?? '').trim();
+
+    const promptModelRaw = String(params?.promptModel ?? '').trim();
+    const model = promptModelRaw || this.model;
+
+    const safeChars = Array.isArray(params?.safeCharacters)
+      ? params.safeCharacters
+        .map((c) => ({
+          key: String(c?.key ?? '').trim(),
+          name: String(c?.name ?? '').trim(),
+          description: String(c?.description ?? '').trim(),
+        }))
+        .filter((c) => c.key && c.name && c.description)
+        .slice(0, 12)
+      : [];
+
+    const safeCharBlock = safeChars.length
+      ? 'SAFE CHARACTERS (ONLY these may be depicted as humans):\n' +
+      safeChars
+        .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
+        .join('\n')
+      : 'SAFE CHARACTERS: (none provided)';
+
+    let parsed: any;
+    try {
+      parsed = await this.llm.completeJson<any>({
+        model,
+        temperature: 0.6,
+        maxTokens: 900,
+        retries: 2,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are an expert YouTube thumbnail / wallpaper prompt engineer.\n' +
+              'You generate a SINGLE image prompt for a 16:9 YouTube wallpaper that maximizes click-through.\n' +
+              'Return ONLY valid JSON with the exact shape: ' +
+              '{"headline": string, "prompt": string, "characterKeys": string[]}.\n\n' +
+              'Thumbnail Visual Stunt approach (MUST follow):\n' +
+              '- Use color science: bright/vivid foreground colors that POP against a contrasting background (high visual contrast).\n' +
+              '- Include a LARGE face / close-up subject in the image (dominant focal point).\n' +
+              '- Add at least ONE visually compelling graphic element (e.g., glow, arrows, icons, shapes, burst, rim light, dramatic outline).\n' +
+              '- Use LARGE headline text in the background (big, readable, high contrast).\n\n' +
+              'Title vs headline rules:\n' +
+              '- If a video TITLE is provided: the headline text MUST NOT be identical to the title and MUST NOT copy the title verbatim.\n' +
+              '- Instead, the headline should CONFIRM/REINFORCE the title with a different interesting sentence (e.g., a proof, a consequence, or a surprising confirmation).\n\n' +
+              'Core constraints:\n' +
+              '- The wallpaper is 16:9, ultra sharp, high contrast, cinematic.\n' +
+              '- MUST include readable headline text in the image: a short, punchy line (roughly 3-10 words).\n' +
+              '- MUST include blur elements (e.g., blurred background, depth-of-field, bokeh) to make foreground pop.\n' +
+              '- MUST be a full illustrative scene of the subject (not an icon).\n' +
+              '- Composition: rule of thirds, clear focal subject, clean negative space.\n' +
+              '- Avoid clutter; prioritize clarity and curiosity.\n' +
+              '- Only depict human characters if they are listed in SAFE CHARACTERS.\n' +
+              '- characterKeys must be a subset of SAFE CHARACTERS keys (0-3 keys).\n' +
+              '- The prompt MUST repeat the headline text exactly in quotes, like: Headline text: "...".\n' +
+              '- The prompt MUST explicitly instruct: (1) large face close-up, (2) vivid contrasting colors, (3) one graphic element, (4) large background text.\n',
+          },
+          {
+            role: 'user',
+            content:
+              'Generate a YouTube wallpaper prompt for this script.\n\n' +
+              (title ? `VIDEO TITLE (do NOT copy this text as the headline):\n${title}\n\n` : '') +
+              safeCharBlock +
+              '\n\nSCRIPT:\n' +
+              trimmed,
+          },
+        ],
+      });
+    } catch {
+      throw new InternalServerErrorException('Invalid JSON from the model');
+    }
+
+    const headline = String(parsed?.headline ?? '').trim();
+    const prompt = String(parsed?.prompt ?? '').trim();
+    const characterKeysRaw = Array.isArray(parsed?.characterKeys)
+      ? parsed.characterKeys
+      : [];
+    const characterKeys = characterKeysRaw
+      .map((k: any) => String(k ?? '').trim())
+      .filter(Boolean)
+      .filter((k: string) => safeChars.some((c) => c.key === k))
+      .slice(0, 3);
+
+    if (!headline) {
+      throw new InternalServerErrorException('Model returned empty headline');
+    }
+    if (!prompt) {
+      throw new InternalServerErrorException('Model returned empty prompt');
+    }
+
+    return { headline, prompt, characterKeys };
+  }
+
   async generateYoutubeSeo(
     script: string,
-    options?: { useWebSearch?: boolean },
+    options?: { useWebSearch?: boolean; isShort?: boolean },
   ): Promise<{ title: string; description: string; tags: string[] }> {
     const trimmed = script?.trim();
     if (!trimmed) {
       throw new BadRequestException('Script is required');
     }
+
+    const isShort =
+      options?.isShort !== undefined ? Boolean(options.isShort) : true;
+
+    const useWebSearch =
+      options?.useWebSearch !== undefined
+        ? Boolean(options.useWebSearch)
+        : true;
 
     let parsed: any;
     try {
@@ -45,15 +158,18 @@ export class AiYoutubeService {
               'Given a video narration script, you produce metadata optimized for search and click-through. ' +
               'Return ONLY valid JSON as: {"title": string, "description": string, "tags": string[]}. ' +
               'Rules: title <= 100 chars, description <= 5000 chars, tags: 3-5 items, each tag <= 30 chars, no emojis. ' +
-              'This video is a SHORT: the description MUST start with the exact title on its own line, followed by ONE short sentence on the next line. ' +
-              'At the very end of the description, append this exact string: #allah,#islamicShorts,#shorts',
+              (isShort
+                ? 'This video is a SHORT. Return a strong base title (no hashtags) and a one-sentence description idea (no hashtags). '
+                : 'This is a REGULAR (not short) YouTube video. Return a strong base title (no hashtags) and a LONG SEO description (2-4 short paragraphs) that is NOT the same as the title. Do NOT append hashtags to the title.'),
           },
           {
             role: 'user',
             content:
               'Generate YouTube SEO metadata for this video script. ' +
               'The title should be compelling and keyword-rich. ' +
-              'The description must follow the SHORT format: title line + one short sentence, then end with the required hashtags. ' +
+              (isShort
+                ? 'This is a SHORT. Provide a base title (no hashtags) and a one-sentence description idea (no hashtags). '
+                : 'This is a regular long-form video. Provide a base title (no hashtags) and a long SEO description (2-4 short paragraphs) that is NOT the same as the title. ') +
               'Tags should be relevant and specific (mix broad + long-tail). Return 3-5 tags max.\n\n' +
               trimmed,
           },
@@ -63,7 +179,10 @@ export class AiYoutubeService {
       throw new InternalServerErrorException('Invalid JSON from the model');
     }
 
-    const title = `${String(parsed.title ?? '')} #allah #shorts`;
+    const baseTitle = String(parsed.title ?? '').trim();
+
+    // Shorts keep the hashtags; regular videos do not.
+    const title = isShort ? `${baseTitle} #allah #shorts` : baseTitle;
 
     const pickShortSentence = (raw: string) => {
       const cleaned = String(raw || '')
@@ -80,25 +199,41 @@ export class AiYoutubeService {
     };
 
     const modelDesc = String(parsed.description ?? '').trim();
-    pickShortSentence(modelDesc);
 
-    const description = `${title}`;
+    const description = (() => {
+      if (isShort) {
+        const shortSentence = pickShortSentence(modelDesc);
+        return `${title}\n${shortSentence}\n\n#allah,#islamicShorts,#shorts`;
+      }
+
+      // Long-form: a separate long SEO description (not equal to the title).
+      if (!modelDesc) {
+        return (
+          'Watch the full video for the complete story and key lessons.\n\n' +
+          'In this video, we break down the topic step-by-step with clear takeaways and practical context.'
+        );
+      }
+
+      if (modelDesc.trim().toLowerCase() === title.trim().toLowerCase()) {
+        return `${modelDesc}\n\nIn this video, we expand on the title with deeper context, key moments, and a clear takeaway.`;
+      }
+
+      return modelDesc;
+    })();
 
     const llmFallbackTags = Array.isArray(parsed.tags)
       ? parsed.tags.map((t: any) => String(t ?? ''))
       : [];
 
-    const useWebSearch =
-      options?.useWebSearch !== undefined
-        ? Boolean(options.useWebSearch)
-        : true;
     const webTags = useWebSearch
       ? await this.tryGetViralTagsViaClaudeWebSearch(trimmed)
       : [];
 
     const tags = await this.buildFinalYoutubeTags({
       script: trimmed,
-      primary: ['Allah', 'Islamic Shorts', ...webTags],
+      primary: isShort
+        ? ['Allah', 'Islamic Shorts', ...webTags]
+        : ['Allah', 'Islamic Stories', ...webTags],
       fallback: llmFallbackTags,
       min: 3,
       max: 5,
@@ -202,7 +337,7 @@ export class AiYoutubeService {
         attempt === 1
           ? baseSystem
           : baseSystem +
-            '\n\nIMPORTANT: Your previous response was invalid. Return ONLY valid JSON (no prose, no markdown, no code fences).';
+          '\n\nIMPORTANT: Your previous response was invalid. Return ONLY valid JSON (no prose, no markdown, no code fences).';
 
       try {
         const msg: any = await anthropic.messages.create({

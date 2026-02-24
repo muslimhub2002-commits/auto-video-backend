@@ -620,6 +620,35 @@ export class AiImageService {
     );
   }
 
+  private resolveAspectRatio(dto: GenerateImageDto): {
+    aspectRatio: '16:9' | '9:16' | '1:1';
+    isShortForm: boolean;
+    width: number;
+    height: number;
+  } {
+    const raw = String((dto as any).aspectRatio ?? '').trim();
+
+    if (raw === '1:1') {
+      return { aspectRatio: '1:1', isShortForm: false, width: 1024, height: 1024 };
+    }
+
+    if (raw === '9:16') {
+      return { aspectRatio: '9:16', isShortForm: true, width: 768, height: 1344 };
+    }
+
+    if (raw === '16:9') {
+      return { aspectRatio: '16:9', isShortForm: false, width: 1344, height: 768 };
+    }
+
+    const isShortForm = this.computeIsShortForm(dto);
+    return {
+      aspectRatio: isShortForm ? '9:16' : '16:9',
+      isShortForm,
+      width: isShortForm ? 768 : 1344,
+      height: isShortForm ? 1344 : 768,
+    };
+  }
+
   private validateAndNormalizeImageModel(dto: GenerateImageDto): {
     imageModel: string;
     isModelsLab: boolean;
@@ -911,12 +940,14 @@ export class AiImageService {
         }
       }
 
-      // Enforce a strong "no text" constraint in the final prompt sent to providers.
-      prompt = this.enforceNoTextInPrompt(prompt);
+      // Enforce a strong "no text" constraint in the final prompt sent to providers,
+      // unless the caller explicitly allows text (e.g. YouTube wallpapers/thumbnails).
+      if (!dto.allowText) {
+        prompt = this.enforceNoTextInPrompt(prompt);
+      }
 
-      const isShortForm = this.computeIsShortForm(dto);
-      const width = isShortForm ? 768 : 1344;
-      const height = isShortForm ? 1344 : 768;
+      const { aspectRatio, isShortForm, width, height } =
+        this.resolveAspectRatio(dto);
 
       const { imageModel, isModelsLab, modelslabModelId } =
         this.validateAndNormalizeImageModel(dto);
@@ -929,7 +960,7 @@ export class AiImageService {
           apiKey,
           modelId: modelslabModelId,
           prompt,
-          isShortForm,
+          aspectRatio,
         });
 
         return this.persistToCloudinary({
@@ -947,7 +978,7 @@ export class AiImageService {
           openai: this.openai,
           imageModel,
           prompt,
-          isShortForm,
+          aspectRatio,
         });
 
         return this.persistToCloudinary({
@@ -965,7 +996,7 @@ export class AiImageService {
           grokApiKey: this.grokApiKey,
           imageModel: imageModel as any,
           prompt,
-          isShortForm,
+          aspectRatio,
         });
 
         return this.persistToCloudinary({
@@ -983,7 +1014,7 @@ export class AiImageService {
           geminiApiKey: this.geminiApiKey,
           imageModel: imageModel as any,
           prompt,
-          isShortForm,
+          aspectRatio,
         });
 
         return this.persistToCloudinary({
@@ -1005,7 +1036,9 @@ export class AiImageService {
       });
 
       // Some providers return a modified prompt; re-apply constraints.
-      prompt = this.enforceNoTextInPrompt(leonardo.prompt);
+      prompt = dto.allowText
+        ? String(leonardo.prompt ?? '').trim()
+        : this.enforceNoTextInPrompt(leonardo.prompt);
 
       return this.persistToCloudinary({
         userId,

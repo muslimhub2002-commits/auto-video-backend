@@ -22,6 +22,7 @@ import { GenerateVoiceStyleDto } from './dto/generate-voice-style.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
 import { YoutubeSeoDto } from './dto/youtube-seo.dto';
+import { YoutubeWallpaperDto } from './dto/youtube-wallpaper.dto';
 import { GenerateVideoFromFramesDto } from './dto/generate-video-from-frames.dto';
 import { GenerateVideoFromTextDto } from './dto/generate-video-from-text.dto';
 import { GenerateVideoFromReferenceImageDto } from './dto/generate-video-from-reference-image.dto';
@@ -329,7 +330,19 @@ export class AiController {
   async youtubeSeo(@Body() body: YoutubeSeoDto) {
     const result = await this.aiService.generateYoutubeSeo(body.script, {
       useWebSearch: body.useWebSearch,
+      isShort: body.isShort,
     });
+    return result;
+  }
+
+  @Post('youtube-wallpaper')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async youtubeWallpaper(
+    @GetUser() user: User,
+    @Body() body: YoutubeWallpaperDto,
+  ) {
+    const result = await this.aiService.generateYoutubeWallpaper(body, user.id);
     return result;
   }
 }

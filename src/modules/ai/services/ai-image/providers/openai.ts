@@ -6,7 +6,7 @@ export const generateWithOpenAi = async (params: {
   openai: any;
   imageModel: string;
   prompt: string;
-  isShortForm: boolean;
+  aspectRatio: '16:9' | '9:16' | '1:1';
 }): Promise<ImagePayload> => {
   if (!params.openai) {
     throw new InternalServerErrorException(
@@ -14,7 +14,12 @@ export const generateWithOpenAi = async (params: {
     );
   }
 
-  const primarySize = params.isShortForm ? '1024x1792' : '1792x1024';
+  const primarySize =
+    params.aspectRatio === '1:1'
+      ? '1024x1024'
+      : params.aspectRatio === '9:16'
+        ? '1024x1792'
+        : '1792x1024';
   const fallbackSize = '1024x1024';
 
   const generateWithSize = async (size: string) =>

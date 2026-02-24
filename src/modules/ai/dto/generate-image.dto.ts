@@ -105,6 +105,13 @@ export class GenerateImageDto {
   @IsOptional()
   isShort?: boolean;
 
+  // Optional explicit aspect ratio override for the generated image.
+  // If provided, this takes precedence over isShort/scriptLength.
+  @IsString()
+  @IsOptional()
+  @IsIn(['16:9', '9:16', '1:1'])
+  aspectRatio?: '16:9' | '9:16' | '1:1';
+
   // Optional canonical script characters extracted during splitting.
   // Used for safe mention classification and consistent character depiction.
   @IsArray()
@@ -119,4 +126,10 @@ export class GenerateImageDto {
   @IsString({ each: true })
   @IsOptional()
   forcedCharacterKeys?: string[];
+
+  // Optional: allow textual elements in the generated image.
+  // Default behavior is to enforce "no text" to avoid gibberish overlays.
+  @IsBoolean()
+  @IsOptional()
+  allowText?: boolean;
 }
