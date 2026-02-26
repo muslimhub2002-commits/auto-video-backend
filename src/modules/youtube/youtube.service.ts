@@ -335,15 +335,58 @@ export class YoutubeService {
       const scriptIdRaw = String((dto as any).scriptId ?? '').trim();
       const scriptTextRaw = String((dto as any).scriptText ?? '').trim();
 
+      const saveBeforeUpload = dto.saveBeforeUpload;
+
       let persistedScriptId: string | null = null;
 
       if (scriptIdRaw) {
         // Update ONLY the targeted script row for this user.
-        await this.scriptsService.update(scriptIdRaw, user.id, {
+        // Also persist the current script state (sentences/images + voice) if provided.
+        const updatePayload: any = {
+          youtube_url: youtubeUrl,
+        };
+
+        const cleanedTitle = String(dto.title ?? '').trim();
+        if (cleanedTitle) {
+          updatePayload.title = cleanedTitle;
+        }
+
+        const cleanedVideoUrl = String(
+          saveBeforeUpload?.video_url ?? dto.videoUrl ?? '',
+        ).trim();
+        if (cleanedVideoUrl) {
+          updatePayload.video_url = cleanedVideoUrl;
+        }
+
+        if (saveBeforeUpload?.script !== undefined) {
+          updatePayload.script = saveBeforeUpload.script;
+        }
+
+        if (saveBeforeUpload?.voice_id !== undefined) {
+          updatePayload.voice_id = saveBeforeUpload.voice_id;
+        }
+
+        if (saveBeforeUpload?.sentences !== undefined) {
+          updatePayload.sentences = saveBeforeUpload.sentences;
+        }
+
+        await this.scriptsService.update(scriptIdRaw, user.id, updatePayload);
+        persistedScriptId = scriptIdRaw;
+      } else if (scriptTextRaw) {
+        // Fallback: create/update ONE script row from text, then set youtube_url.
+        // Provide title to avoid extra AI title generation latency.
+        const cleanedTitle = String(dto.title ?? '').trim();
+        const saved = await this.scriptsService.create(user.id, {
+          script: saveBeforeUpload?.script ?? scriptTextRaw,
+          title: cleanedTitle || undefined,
+          video_url: (saveBeforeUpload?.video_url ?? dto.videoUrl) || undefined,
+          voice_id: saveBeforeUpload?.voice_id,
+          sentences: saveBeforeUpload?.sentences,
           youtube_url: youtubeUrl,
         } as any);
-        persistedScriptId = scriptIdRaw;
-      } 
+        persistedScriptId = saved?.id ?? null;
+      }
+
       return { videoId, youtubeUrl, scriptId: persistedScriptId };
     } catch (err: any) {
       // Add actionable logs for Vercel/serverless debugging.

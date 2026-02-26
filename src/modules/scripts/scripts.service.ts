@@ -184,6 +184,68 @@ export class ScriptsService implements OnModuleInit {
       }
       throw err;
     }
+
+    // Best-effort indexes for performance. If the DB user lacks permissions,
+    // ignore and continue (the app will still work, just slower).
+    const tryIndex = async (sql: string) => {
+      try {
+        await this.dataSource.query(sql);
+      } catch (err: any) {
+        const message = String(err?.message || '');
+        if (
+          message.includes('does not exist') ||
+          message.includes('permission denied')
+        ) {
+          return;
+        }
+        throw err;
+      }
+    };
+
+    await tryIndex(
+      'CREATE INDEX IF NOT EXISTS idx_scripts_user_created_at ON scripts (user_id, created_at DESC)',
+    );
+    await tryIndex(
+      'CREATE INDEX IF NOT EXISTS idx_scripts_user_is_short_created_at ON scripts (user_id, "isShortScript", created_at DESC)',
+    );
+    await tryIndex(
+      'CREATE INDEX IF NOT EXISTS idx_sentences_script_id ON sentences (script_id)',
+    );
+    await tryIndex(
+      'CREATE INDEX IF NOT EXISTS idx_sentences_script_image_id ON sentences (script_id, image_id)',
+    );
+  }
+
+  private async loadShortScriptsForParent(params: {
+    userId: string;
+    shortIds: string[];
+  }): Promise<Script[]> {
+    const { userId, shortIds } = params;
+    const ids = Array.from(
+      new Set((shortIds ?? []).map((s) => String(s ?? '').trim()).filter(Boolean)),
+    );
+    if (ids.length === 0) return [];
+
+    const rows = await this.scriptRepository
+      .createQueryBuilder('script')
+      .leftJoinAndSelect('script.sentences', 'sentence')
+      .leftJoinAndSelect('sentence.image', 'image')
+      .leftJoinAndSelect('sentence.startFrameImage', 'start_frame_image')
+      .leftJoinAndSelect('sentence.endFrameImage', 'end_frame_image')
+      .leftJoinAndSelect('sentence.video', 'sentence_video')
+      .leftJoinAndSelect('script.voice', 'voice')
+      .addSelect('image.prompt')
+      .addSelect('start_frame_image.prompt')
+      .addSelect('end_frame_image.prompt')
+      .where('script.user_id = :userId', { userId })
+      .andWhere('script.id IN (:...ids)', { ids })
+      .orderBy('sentence.index', 'ASC')
+      .getMany();
+
+    const byId = new Map(rows.map((r) => [r.id, r] as const));
+    return (shortIds ?? [])
+      .map((id) => byId.get(String(id ?? '').trim()))
+      .filter(Boolean) as Script[];
   }
 
   private getPublicBaseUrl() {
@@ -1115,12 +1177,24 @@ export class ScriptsService implements OnModuleInit {
   async findAllByUser(
     userId: string,
     page = 1,
-    limit = 20,
-  ): Promise<{ items: Script[]; total: number; page: number; limit: number }> {
+    limit = 10,
+  ): Promise<{
+    items: Array<{
+      id: string;
+      title: string | null;
+      script: string;
+      created_at: Date;
+      sentences_count: number;
+      images_count: number;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     await this.ensureScriptsSchemaLazy();
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
     const safeLimit =
-      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
+      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 10;
 
     // Performance notes:
     // 1) Always filter by user_id.
@@ -1128,39 +1202,39 @@ export class ScriptsService implements OnModuleInit {
     //    (sentences), because it explodes row counts and can paginate incorrectly.
     // Instead, page script IDs first, then load relations only for those IDs.
 
+    // Exclude any scripts that are linked as shorts in any parent.shorts_scripts.
+    // Using a derived set (distinct short ids) avoids a correlated JSONB subquery per row.
+    const baseQb = this.scriptRepository
+      .createQueryBuilder('script')
+      .leftJoin(
+        (qb) =>
+          qb
+            .subQuery()
+            .select(
+              'DISTINCT jsonb_array_elements_text(parent.shorts_scripts)',
+              'short_id',
+            )
+            .from(Script, 'parent')
+            .where('parent.user_id = :userId', { userId })
+            .andWhere('parent.shorts_scripts IS NOT NULL'),
+        'short_ref',
+        'short_ref.short_id = script.id::text',
+      )
+      .where('script.user_id = :userId', { userId })
+      .andWhere('(script.isShortScript IS NULL OR script.isShortScript = false)')
+      .andWhere('short_ref.short_id IS NULL');
+
     const [idRows, total] = await Promise.all([
-      this.scriptRepository
-        .createQueryBuilder('script')
+      baseQb
+        .clone()
         .select('script.id', 'id')
-        .where('script.user_id = :userId', { userId })
-        .andWhere('(script.isShortScript IS NULL OR script.isShortScript = false)')
-        .andWhere(
-          `NOT EXISTS (
-            SELECT 1 FROM scripts parent
-            WHERE parent.user_id = :userId
-              AND parent.shorts_scripts IS NOT NULL
-              AND parent.shorts_scripts ? script.id::text
-          )`,
-        )
         .orderBy('script.created_at', 'DESC')
         .skip((safePage - 1) * safeLimit)
         .take(safeLimit)
         .getRawMany<{ id: string }>(),
 
-      // Count without joins to avoid inflated totals from 1:N sentence joins.
-      this.scriptRepository
-        .createQueryBuilder('script')
-        .where('script.user_id = :userId', { userId })
-        .andWhere('(script.isShortScript IS NULL OR script.isShortScript = false)')
-        .andWhere(
-          `NOT EXISTS (
-            SELECT 1 FROM scripts parent
-            WHERE parent.user_id = :userId
-              AND parent.shorts_scripts IS NOT NULL
-              AND parent.shorts_scripts ? script.id::text
-          )`,
-        )
-        .getCount(),
+      // Count without joining 1:N tables.
+      baseQb.clone().getCount(),
     ]);
 
     const ids = idRows.map((r) => r.id).filter(Boolean);
@@ -1168,34 +1242,67 @@ export class ScriptsService implements OnModuleInit {
       return { items: [], total, page: safePage, limit: safeLimit };
     }
 
-    // Use an explicit QueryBuilder so we can guarantee selecting `image.prompt`
-    // even if the Image entity later marks it as `select: false`.
-    const items = await this.scriptRepository
+    // Fetch only the list fields we actually render in the library.
+    // Sentences/images are expensive; we return counts instead.
+    const orderCases: string[] = [];
+    const orderParams: Record<string, any> = {};
+    ids.forEach((id, idx) => {
+      const key = `id_${idx}`;
+      orderParams[key] = id;
+      orderCases.push(`WHEN script.id = :${key} THEN ${idx}`);
+    });
+
+    const scriptsRaw = await this.scriptRepository
       .createQueryBuilder('script')
-      .leftJoinAndSelect('script.sentences', 'sentence')
-      .leftJoinAndSelect('sentence.image', 'image')
-      .leftJoinAndSelect('sentence.startFrameImage', 'start_frame_image')
-      .leftJoinAndSelect('sentence.endFrameImage', 'end_frame_image')
-      .leftJoinAndSelect('sentence.video', 'sentence_video')
-      .leftJoinAndSelect('script.voice', 'voice')
-      .leftJoinAndSelect('script.reference_scripts', 'reference_script')
-      .addSelect('image.prompt')
-      .addSelect('start_frame_image.prompt')
-      .addSelect('end_frame_image.prompt')
+      .select('script.id', 'id')
+      .addSelect('script.title', 'title')
+      .addSelect('script.script', 'script')
+      .addSelect('script.created_at', 'created_at')
       .where('script.user_id = :userId', { userId })
-      .andWhere('(script.isShortScript IS NULL OR script.isShortScript = false)')
-      .andWhere(
-        `NOT EXISTS (
-          SELECT 1 FROM scripts parent
-          WHERE parent.user_id = :userId
-            AND parent.shorts_scripts IS NOT NULL
-            AND parent.shorts_scripts ? script.id::text
-        )`,
-      )
       .andWhere('script.id IN (:...ids)', { ids })
-      .orderBy('script.created_at', 'DESC')
-      .addOrderBy('sentence.index', 'ASC')
-      .getMany();
+      .orderBy(`CASE ${orderCases.join(' ')} ELSE ${ids.length} END`)
+      .setParameters(orderParams)
+      .getRawMany<{
+        id: string;
+        title: string | null;
+        script: string;
+        created_at: Date;
+      }>();
+
+    const countsRaw = await this.sentenceRepository
+      .createQueryBuilder('sentence')
+      .select('sentence.script_id', 'script_id')
+      .addSelect('COUNT(*)', 'sentences_count')
+      .addSelect(
+        'SUM(CASE WHEN sentence.image_id IS NOT NULL THEN 1 ELSE 0 END)',
+        'images_count',
+      )
+      .where('sentence.script_id IN (:...ids)', { ids })
+      .groupBy('sentence.script_id')
+      .getRawMany<{ script_id: string; sentences_count: string; images_count: string }>();
+
+    const countsByScriptId = new Map(
+      countsRaw.map((r) => [
+        r.script_id,
+        {
+          sentences_count: Number.parseInt(r.sentences_count, 10) || 0,
+          images_count: Number.parseInt(r.images_count, 10) || 0,
+        },
+      ] as const),
+    );
+
+    const items = scriptsRaw.map((s) => {
+      const counts = countsByScriptId.get(s.id) ?? {
+        sentences_count: 0,
+        images_count: 0,
+      };
+
+      return {
+        ...s,
+        sentences_count: counts.sentences_count,
+        images_count: counts.images_count,
+      };
+    });
 
     return { items, total, page: safePage, limit: safeLimit };
   }
@@ -1221,6 +1328,20 @@ export class ScriptsService implements OnModuleInit {
 
     if (!script) {
       throw new NotFoundException('Script not found');
+    }
+
+    const shortIds = Array.isArray((script as any).shorts_scripts)
+      ? ((script as any).shorts_scripts as string[])
+          .map((s) => String(s ?? '').trim())
+          .filter(Boolean)
+      : [];
+
+    if (shortIds.length > 0) {
+      const shortScripts = await this.loadShortScriptsForParent({
+        userId,
+        shortIds,
+      });
+      (script as any).short_scripts = shortScripts;
     }
 
     return script;
