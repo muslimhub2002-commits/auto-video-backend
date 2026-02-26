@@ -85,6 +85,32 @@ class ScriptCharacterInput {
   isWoman: boolean;
 }
 
+class ShortScriptInput {
+  @IsString()
+  @IsNotEmpty()
+  script: string;
+
+  @IsString()
+  @IsOptional()
+  title?: string | null;
+
+  @IsString()
+  @IsOptional()
+  video_url?: string | null;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateSentenceInput)
+  @IsOptional()
+  sentences?: UpdateSentenceInput[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScriptCharacterInput)
+  @IsOptional()
+  characters?: ScriptCharacterInput[];
+}
+
 export class UpdateScriptDto {
   @IsString()
   @IsOptional()
@@ -124,6 +150,14 @@ export class UpdateScriptDto {
   @IsOptional()
   voice_id?: string;
 
+  @IsString()
+  @IsOptional()
+  video_url?: string | null;
+
+  @IsString()
+  @IsOptional()
+  youtube_url?: string | null;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => UpdateSentenceInput)
@@ -135,4 +169,22 @@ export class UpdateScriptDto {
   @Type(() => ScriptCharacterInput)
   @IsOptional()
   characters?: ScriptCharacterInput[];
+
+  // When true, this script row is treated as a derived Short and hidden from the normal scripts listing.
+  @IsBoolean()
+  @IsOptional()
+  is_short_script?: boolean;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ShortScriptInput)
+  @IsOptional()
+  shorts_scripts?: ShortScriptInput[];
+
+  // Preferred: link existing short scripts by ID.
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  shorts_script_ids?: string[];
 }

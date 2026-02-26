@@ -50,6 +50,17 @@ export class YoutubeUploadDto {
   @IsUrl({ require_tld: false })
   videoUrl: string;
 
+  // Optional: which script should receive the youtube_url after upload succeeds.
+  @IsUUID()
+  @IsOptional()
+  scriptId?: string;
+
+  // Fallback: when scriptId is not available, backend can create/update a Script
+  // using this text and then set youtube_url on that script.
+  @IsString()
+  @IsOptional()
+  scriptText?: string;
+
   @IsString()
   @MaxLength(100)
   title: string;

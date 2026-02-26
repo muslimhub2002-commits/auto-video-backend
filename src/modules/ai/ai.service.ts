@@ -100,6 +100,14 @@ export class AiService {
     return this.textService.splitScript(dto);
   }
 
+  splitIntoShorts(dto: {
+    sentences: string[];
+    model?: string;
+    systemPrompt?: string;
+  }): Promise<{ ranges: Array<{ start: number; end: number }> }> {
+    return this.textService.splitIntoShorts(dto);
+  }
+
   createEnhanceScriptStream(dto: EnhanceScriptDto) {
     return this.textService.createEnhanceScriptStream(dto);
   }

@@ -20,6 +20,11 @@ import { ensureUuid } from '../../common/errors/ensure-uuid';
 import { CreateRenderVideoDto } from './dto/create-render-video.dto';
 import { CreateRenderVideoUrlDto } from './dto/create-render-video-url.dto';
 import { RenderVideosService } from './render-videos.service';
+import {
+  SHORTS_CTA_SENTENCE,
+  SUBSCRIBE_SENTENCE,
+  isSubscribeLikeSentence,
+} from './render-videos.constants';
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -30,9 +35,6 @@ const normalizeVolume = (raw: number) => {
   return clamp01(raw);
 };
 import type { SentenceInput } from './render-videos.types';
-
-const SUBSCRIBE_SENTENCE =
-  'Please Subscribe & Help us reach out to more people';
 
 @Controller('videos')
 export class RenderVideosController {
@@ -331,7 +333,7 @@ export class RenderVideosController {
     const alignedImages: Array<Multer.File | null> = [];
     let imageCursor = 0;
     for (const s of sentences) {
-      const isSubscribe = (s.text || '').trim() === SUBSCRIBE_SENTENCE;
+      const isSubscribe = isSubscribeLikeSentence(s.text || '');
       const wantsVideo =
         s.mediaType === 'video' && !!String(s.videoUrl ?? '').trim();
       if (isSubscribe || wantsVideo) {
@@ -421,6 +423,9 @@ export class RenderVideosController {
       videoUrl: updated.videoPath ? updated.videoPath : null,
       timeline: updated.timeline,
       isShort: derivedIsShort,
+      lastProgressAt: updated.lastProgressAt ?? null,
+      updatedAt: (updated as any).updatedAt ?? null,
+      createdAt: (updated as any).createdAt ?? null,
     };
   }
 }

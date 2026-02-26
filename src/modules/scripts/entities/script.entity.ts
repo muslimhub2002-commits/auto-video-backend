@@ -21,6 +21,16 @@ export class Script {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  // When true, this script row represents a short derived from a long-form script.
+  // These rows are hidden from the normal scripts listing.
+  @Column({ type: 'boolean', default: false })
+  isShortScript: boolean;
+
+  // Ordered list of Script IDs (UUIDs) that represent the derived shorts.
+  // Stored on the parent (full video) script.
+  @Column({ type: 'jsonb', nullable: true })
+  shorts_scripts: string[] | null;
+
   @Column({ type: 'varchar', length: 255, nullable: true })
   title: string | null;
 
@@ -67,6 +77,10 @@ export class Script {
   // We store the URL directly so drafts can restore the preview.
   @Column({ type: 'varchar', length: 2048, nullable: true })
   video_url: string | null;
+
+  // Optional YouTube URL for the uploaded video.
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  youtube_url: string | null;
 
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;

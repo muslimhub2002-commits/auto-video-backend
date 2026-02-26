@@ -19,8 +19,10 @@ import type {
 } from './render-videos.types';
 import {
   CHROMA_LEAK_SFX_CLOUDINARY_URL,
+  SHORTS_CTA_SENTENCE,
   SUBSCRIBE_SENTENCE,
   SUBSCRIBE_VIDEO_CLOUDINARY_URL,
+  isSubscribeLikeSentence,
 } from './render-videos.constants';
 import {
   buildTimeline as buildTimelineExternal,
@@ -74,6 +76,65 @@ export class RenderVideosService implements OnModuleInit {
 
   async onModuleInit() {
     await this.ensureRenderJobsSchema();
+    await this.failOrphanedJobsOnStartup();
+  }
+
+  private async failOrphanedJobsOnStartup() {
+    // Restarts (watch mode/crashes) can leave jobs stuck in `processing`/`rendering`
+    // with no worker attached. We cannot resume them, so fail *stale* jobs with a
+    // clear error message.
+    //
+    // NOTE: Some setups run `nest start --watch` with NODE_ENV=production, so we
+    // also treat watch mode as a signal to run this cleanup.
+    const nodeEnv = (process.env.NODE_ENV ?? '').toLowerCase();
+    const isProduction = nodeEnv === 'production';
+    const isWatchMode =
+      String(process.env.NEST_WATCH ?? '').toLowerCase() === 'true' ||
+      Boolean(process.env.NEST_WATCH);
+
+    const staleMinutesRaw = process.env.RENDER_JOBS_STALE_MINUTES;
+    const staleMinutes = Number.isFinite(Number(staleMinutesRaw))
+      ? Math.max(1, Number(staleMinutesRaw))
+      : isProduction
+        ? 12 * 60
+        : 10;
+
+    try {
+      const message =
+        'Render worker restarted while this job was running. Please start a new render.';
+      const updated = (await this.dataSource.query(
+        'UPDATE render_jobs SET status = $1, error = $2 WHERE trim(lower(status)) IN ($3, $4) AND ("lastProgressAt" IS NULL OR "lastProgressAt" < NOW() - ($5 * INTERVAL \'1 minute\')) RETURNING id',
+        ['failed', message, 'processing', 'rendering', staleMinutes],
+      )) as Array<{ id: string }>;
+
+      // eslint-disable-next-line no-console
+      console.log(
+        `[render-jobs] Startup cleanup ran (env=${nodeEnv || 'unset'}, watch=${isWatchMode}, staleMinutes=${staleMinutes}). Updated=${
+          Array.isArray(updated) ? updated.length : 0
+        }`,
+      );
+
+      if (Array.isArray(updated) && updated.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[render-jobs] Marked ${updated.length} orphaned job(s) as failed on startup`,
+        );
+      } else {
+        // eslint-disable-next-line no-console
+        const counts = (await this.dataSource.query(
+          'SELECT status, COUNT(*)::int AS count FROM render_jobs GROUP BY status ORDER BY count DESC',
+        )) as Array<{ status: string; count: number }>;
+        // eslint-disable-next-line no-console
+        console.log('[render-jobs] Startup status counts:', counts);
+      }
+    } catch (err) {
+      // Never fail app startup due to cleanup.
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[render-jobs] Failed to cleanup orphaned jobs on startup:',
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 
   private async ensureRenderJobsSchema() {
@@ -99,6 +160,10 @@ export class RenderVideosService implements OnModuleInit {
 
   private isCloudinaryUrl(url: string): boolean {
     return isCloudinaryUrlExternal(url);
+  }
+
+  private isSubscribeLikeSentence(text: string): boolean {
+    return isSubscribeLikeSentence(text);
   }
 
   private useLambdaTestMode(): boolean {
@@ -508,8 +573,8 @@ export class RenderVideosService implements OnModuleInit {
         throw new Error('imageUrls length must match sentences length');
       }
 
-      const hasSubscribeSentence = params.sentences.some(
-        (s) => (s?.text || '').trim() === SUBSCRIBE_SENTENCE,
+      const hasSubscribeSentence = params.sentences.some((s) =>
+        this.isSubscribeLikeSentence(s?.text || ''),
       );
 
       if (useLambdaTestMode) {
@@ -522,7 +587,7 @@ export class RenderVideosService implements OnModuleInit {
 
         for (let i = 0; i < params.sentences.length; i += 1) {
           const sentenceText = (params.sentences[i]?.text || '').trim();
-          const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
+          const isSubscribe = this.isSubscribeLikeSentence(sentenceText);
           if (isSubscribe) {
             imageSrcs.push('');
             continue;
@@ -675,7 +740,7 @@ export class RenderVideosService implements OnModuleInit {
 
         for (let i = 0; i < params.sentences.length; i += 1) {
           const sentenceText = (params.sentences[i]?.text || '').trim();
-          const isSubscribe = sentenceText === SUBSCRIBE_SENTENCE;
+          const isSubscribe = this.isSubscribeLikeSentence(sentenceText);
           if (isSubscribe) {
             imageSrcs.push('');
             continue;

@@ -75,6 +75,18 @@ export class ScriptsController {
     return this.scriptsService.findAllByUser(user_id, pageNum, limitNum);
   }
 
+  @Get(':id')
+  async findOne(@Req() req: Request, @Param('id') id: string) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    return this.scriptsService.findOne(id, user_id);
+  }
+
   @Patch(':id')
   async update(
     @Req() req: Request,

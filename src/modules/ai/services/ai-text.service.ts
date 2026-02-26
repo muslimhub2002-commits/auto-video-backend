@@ -346,6 +346,190 @@ export class AiTextService {
     }
   }
 
+  async splitIntoShorts(dto: {
+    sentences: string[];
+    model?: string;
+    systemPrompt?: string;
+  }): Promise<{ ranges: Array<{ start: number; end: number }> }> {
+    const sentencesRaw = Array.isArray(dto?.sentences) ? dto.sentences : [];
+    const sentences = sentencesRaw
+      .map((s) => String(s ?? '').trim())
+      .filter(Boolean);
+
+    if (sentences.length === 0) {
+      throw new BadRequestException('sentences is required');
+    }
+
+    const model = dto.model?.trim() || this.model;
+    const wpm = 150;
+    const minSecondsPerShort = 60;
+
+    const wordCount = (text: string) =>
+      text
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean).length;
+
+    const sentenceMeta = sentences.map((text, index) => {
+      const words = wordCount(text);
+      const estSeconds = Math.max(1, Math.round((words * 60) / wpm));
+      return { index, words, estSeconds, text };
+    });
+
+    const totalSeconds = sentenceMeta.reduce((sum, s) => sum + s.estSeconds, 0);
+
+    const greedyFallback = (): { ranges: Array<{ start: number; end: number }> } => {
+      if (sentences.length === 1) {
+        return { ranges: [{ start: 0, end: 0 }] };
+      }
+
+      // If the entire thing is too short, return a single short.
+      if (totalSeconds <= minSecondsPerShort) {
+        return { ranges: [{ start: 0, end: sentences.length - 1 }] };
+      }
+
+      const ranges: Array<{ start: number; end: number }> = [];
+      let start = 0;
+      let cursorSeconds = 0;
+
+      for (let i = 0; i < sentenceMeta.length; i += 1) {
+        cursorSeconds += sentenceMeta[i].estSeconds;
+
+        const remainingSeconds = sentenceMeta
+          .slice(i + 1)
+          .reduce((sum, s) => sum + s.estSeconds, 0);
+
+        const canCutHere = cursorSeconds >= minSecondsPerShort;
+        const remainderWouldBeValid = remainingSeconds === 0 || remainingSeconds >= minSecondsPerShort;
+
+        if (canCutHere && remainderWouldBeValid) {
+          ranges.push({ start, end: i });
+          start = i + 1;
+          cursorSeconds = 0;
+        }
+      }
+
+      if (start <= sentenceMeta.length - 1) {
+        if (ranges.length === 0) {
+          ranges.push({ start: 0, end: sentenceMeta.length - 1 });
+        } else {
+          // Merge any leftover into the last range.
+          ranges[ranges.length - 1].end = sentenceMeta.length - 1;
+        }
+      }
+
+      // Ensure contiguity and coverage.
+      const normalized: Array<{ start: number; end: number }> = [];
+      let expectedStart = 0;
+      for (const r of ranges) {
+        const s = Math.max(expectedStart, Math.min(r.start, sentenceMeta.length - 1));
+        const e = Math.max(s, Math.min(r.end, sentenceMeta.length - 1));
+        normalized.push({ start: s, end: e });
+        expectedStart = e + 1;
+      }
+      if (normalized.length > 0) {
+        normalized[0].start = 0;
+        normalized[normalized.length - 1].end = sentenceMeta.length - 1;
+        for (let i = 1; i < normalized.length; i += 1) {
+          normalized[i].start = normalized[i - 1].end + 1;
+        }
+      }
+
+      return { ranges: normalized };
+    };
+
+    // If the whole thing is shorter than the minimum, no need for the model.
+    if (totalSeconds <= minSecondsPerShort) {
+      return { ranges: [{ start: 0, end: sentences.length - 1 }] };
+    }
+
+    const requiredPrompt =
+      'You split an ordered sentence list into multiple SHORTS (segments) without rewriting any text.\n' +
+      'Always respond with pure JSON as an OBJECT with exactly this shape: {"ranges": [{"start": number, "end": number}]}.\n\n' +
+      'Rules:\n' +
+      `- Sentences are indexed 0..${sentences.length - 1}.\n` +
+      '- Choose the number of shorts as needed. Do NOT force a fixed number of sentences per short.\n' +
+      '- Each short should feel like a complete story with a clear ending beat (closure), not a random cutoff.\n' +
+      '- Ranges must be contiguous, in order, cover all sentences, and have no overlaps or gaps.\n' +
+      '- First range.start MUST be 0.\n' +
+      `- Last range.end MUST be ${sentences.length - 1}.\n` +
+      '- Each range must contain at least 1 sentence.\n' +
+      `- Each range must have estimated duration >= ${minSecondsPerShort} seconds based on the provided per-sentence estimates.\n` +
+      '- Do not add extra keys. Do not add any explanation text.';
+
+    const systemPrompt = [dto.systemPrompt?.trim(), requiredPrompt]
+      .filter(Boolean)
+      .join('\n');
+
+    const userContent =
+      'Return ONLY valid JSON in this exact shape: {"ranges": [{"start":0,"end":3}]}.\n\n' +
+      `Minimum seconds per short: ${minSecondsPerShort}.\n` +
+      `Words-per-minute estimate: ${wpm}.\n\n` +
+      'Goal: split into shorts that each end with a satisfying closure beat.\n\n' +
+      'Here are the sentences with estimated seconds:\n' +
+      sentenceMeta
+        .map(
+          (s) =>
+            `${s.index}. (${s.estSeconds}s est) ${JSON.stringify(s.text)}`,
+        )
+        .join('\n');
+
+    try {
+      const parsed = await this.llm.completeJson<unknown>({
+        model,
+        retries: 1,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+      });
+
+      const rangesRaw =
+        parsed && typeof parsed === 'object' && Array.isArray((parsed as any).ranges)
+          ? ((parsed as any).ranges as any[])
+          : null;
+
+      if (!rangesRaw || rangesRaw.length === 0) {
+        return greedyFallback();
+      }
+
+      const ranges = rangesRaw
+        .map((r) => ({
+          start: Number((r as any)?.start),
+          end: Number((r as any)?.end),
+        }))
+        .filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end))
+        .map((r) => ({ start: Math.trunc(r.start), end: Math.trunc(r.end) }));
+
+      if (ranges.length === 0) {
+        return greedyFallback();
+      }
+
+      // Validate contiguity and bounds.
+      const lastIndex = sentences.length - 1;
+      if (ranges[0].start !== 0) return greedyFallback();
+      if (ranges[ranges.length - 1].end !== lastIndex) return greedyFallback();
+
+      for (let i = 0; i < ranges.length; i += 1) {
+        const r = ranges[i];
+        if (r.start < 0 || r.end < r.start || r.end > lastIndex) return greedyFallback();
+        if (i > 0) {
+          const prev = ranges[i - 1];
+          if (r.start !== prev.end + 1) return greedyFallback();
+        }
+
+        const segSeconds = sentenceMeta
+          .slice(r.start, r.end + 1)
+          .reduce((sum, s) => sum + s.estSeconds, 0);
+        if (segSeconds < minSecondsPerShort) return greedyFallback();
+      }
+
+      return { ranges };
+    } catch {
+      return greedyFallback();
+    }
+  }
+
   async createEnhanceScriptStream(dto: EnhanceScriptDto) {
     const baseScript = dto.script?.trim();
     if (!baseScript) {

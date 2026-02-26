@@ -16,6 +16,7 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { AiService } from './ai.service';
 import { GenerateScriptDto } from './dto/generate-script.dto';
 import { SplitScriptDto } from './dto/split-script.dto';
+import { SplitIntoShortsDto } from './dto/split-into-shorts.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
 import { GenerateVoiceDto } from './dto/generate-voice.dto';
 import { GenerateVoiceStyleDto } from './dto/generate-voice-style.dto';
@@ -87,6 +88,16 @@ export class AiController {
   @HttpCode(HttpStatus.OK)
   async splitScript(@Body() body: SplitScriptDto) {
     const result = await this.aiService.splitScript(body);
+    return result;
+  }
+
+  /**
+   * Splits an ordered sentence list into multiple shorts (contiguous ranges).
+   */
+  @Post('split-into-shorts')
+  @HttpCode(HttpStatus.OK)
+  async splitIntoShorts(@Body() body: SplitIntoShortsDto) {
+    const result = await this.aiService.splitIntoShorts(body);
     return result;
   }
 

@@ -165,13 +165,9 @@ export const renderWithRemotionLocal = async (params: {
     outputLocation: params.outputFsPath,
     inputProps: { timeline: params.timeline },
     chromiumOptions,
-    // Preserve existing behavior (was hard-coded to 2 in service).
-    concurrency: 2,
+    concurrency,
     timeoutInMilliseconds: 600_000,
   });
-
-  // avoid unused variable warning if we later choose to pass computed concurrency
-  void concurrency;
 };
 
 export const renderWithRemotionOnLambda = async (params: {

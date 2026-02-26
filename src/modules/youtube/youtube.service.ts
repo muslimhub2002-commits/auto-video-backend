@@ -12,6 +12,7 @@ import { User } from '../users/entities/user.entity';
 import { YoutubeUploadDto } from './dto/youtube-upload.dto';
 import { Readable } from 'stream';
 import { MessagesService } from '../messages/messages.service';
+import { ScriptsService } from '../scripts/scripts.service';
 
 const YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.upload'];
 
@@ -106,6 +107,7 @@ export class YoutubeService {
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     private readonly messagesService: MessagesService,
+    private readonly scriptsService: ScriptsService,
   ) {}
 
   private createOAuthClient(
@@ -223,7 +225,7 @@ export class YoutubeService {
   async uploadVideo(
     user: User,
     dto: YoutubeUploadDto,
-  ): Promise<{ videoId: string }> {
+  ): Promise<{ videoId: string; youtubeUrl: string; scriptId: string | null }> {
     // Optionally save the generation before uploading to YouTube
     if (
       (dto as any) &&
@@ -328,7 +330,21 @@ export class YoutubeService {
         throw new BadRequestException('YouTube did not return a video id');
       }
 
-      return { videoId };
+      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+      const scriptIdRaw = String((dto as any).scriptId ?? '').trim();
+      const scriptTextRaw = String((dto as any).scriptText ?? '').trim();
+
+      let persistedScriptId: string | null = null;
+
+      if (scriptIdRaw) {
+        // Update ONLY the targeted script row for this user.
+        await this.scriptsService.update(scriptIdRaw, user.id, {
+          youtube_url: youtubeUrl,
+        } as any);
+        persistedScriptId = scriptIdRaw;
+      } 
+      return { videoId, youtubeUrl, scriptId: persistedScriptId };
     } catch (err: any) {
       // Add actionable logs for Vercel/serverless debugging.
       console.error('YouTube upload failed', {

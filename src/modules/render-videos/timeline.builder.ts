@@ -1,10 +1,12 @@
 import type { SentenceInput, SentenceTiming } from './render-videos.types';
 import {
   SUBSCRIBE_SENTENCE,
+  SHORTS_CTA_SENTENCE,
   CHROMA_LEAK_SFX_CLOUDINARY_URL,
   GLITCH_FX_CLOUDINARY_URL,
   WHOOSH_CLOUDINARY_URL,
   CAMERA_CLICK_CLOUDINARY_URL,
+  isSubscribeLikeSentence,
 } from './render-videos.constants';
 
 export const isShortScript = (scriptLength: string) => {
@@ -109,12 +111,12 @@ export const buildTimeline = (params: {
 
   let cursor = 0;
   const scenes = params.sentences.map((s, index) => {
-    const isSubscribe =
-      (s.text || '').trim() === SUBSCRIBE_SENTENCE &&
-      !!params.subscribeVideoSrc;
+    const trimmedText = String(s.text ?? '').trim();
+    const isSubscribeLike =
+      isSubscribeLikeSentence(trimmedText) && !!params.subscribeVideoSrc;
 
     const wantsSentenceVideo =
-      !isSubscribe &&
+      !isSubscribeLike &&
       s.mediaType === 'video' &&
       !!String(s.videoUrl ?? '').trim();
 
@@ -134,10 +136,10 @@ export const buildTimeline = (params: {
       isSuspense: !!s.isSuspense,
       ...(s.visualEffect != null ? { visualEffect: s.visualEffect } : {}),
       imageSrc:
-        isSubscribe || wantsSentenceVideo
+        isSubscribeLike || wantsSentenceVideo
           ? undefined
           : params.imagePaths[index],
-      videoSrc: isSubscribe
+      videoSrc: isSubscribeLike
         ? params.subscribeVideoSrc
         : wantsSentenceVideo
           ? String(s.videoUrl)
