@@ -48,6 +48,8 @@ export class AiImageService {
 
   private readonly scriptEraCache = new Map<string, ScriptEraCacheEntry>();
 
+  private readonly sentenceEraCache = new Map<string, ScriptEraCacheEntry>();
+
   constructor(
     private readonly runtime: AiRuntimeService,
     private readonly imagesService: ImagesService,
@@ -111,6 +113,17 @@ export class AiImageService {
 
   private hashScriptForCache(script: string): string {
     return createHash('sha1').update(script, 'utf8').digest('hex');
+  }
+
+  private hashSentenceEraForCache(params: {
+    script: string;
+    sentence: string;
+  }): string {
+    return createHash('sha1')
+      .update(params.script, 'utf8')
+      .update('\n---\n', 'utf8')
+      .update(params.sentence, 'utf8')
+      .digest('hex');
   }
 
   private normalizeEra(raw: unknown): string | null {
@@ -195,6 +208,101 @@ export class AiImageService {
 
         const ttlMs = 5 * 60 * 1000;
         this.scriptEraCache.set(key, { era: null, expiresAt: now + ttlMs });
+        return null;
+      }
+    }
+  }
+
+  private async getOrCreateEraForSentence(params: {
+    scriptRaw?: string | null;
+    sentenceRaw?: string | null;
+  }): Promise<string | null> {
+    const sentence = (params.sentenceRaw ?? '').trim();
+    if (!sentence) return null;
+
+    const script = (params.scriptRaw ?? '').trim();
+
+    const key = this.hashSentenceEraForCache({ script, sentence });
+    const now = Date.now();
+    const cached = this.sentenceEraCache.get(key);
+    if (cached && cached.expiresAt > now) return cached.era;
+
+    const messages: LlmMessage[] = [
+      {
+        role: 'system',
+        content:
+          'You infer the ERA / time period for a SINGLE target sentence, using the script only as context.\n' +
+          'Return ONLY valid JSON with exactly this shape: {"era": string}.\n\n' +
+          'Rules:\n' +
+          '- Infer an era ONLY if the TARGET SENTENCE clearly implies a time period (explicitly or via strong cues).\n' +
+          '- Use SCRIPT CONTEXT only to resolve references/pronouns related to the TARGET SENTENCE.\n' +
+          '- If the target sentence does NOT imply a clear time period, return {"era": ""}.\n' +
+          '- Do NOT guess (do not default to things like "Modern day" unless it is clearly implied).\n' +
+          '- Keep the label short and suitable to prepend as "Era:" (e.g. "7th century Arabia", "Ottoman era", "Medieval Europe").\n' +
+          '- Do NOT include explanations, quotes, or extra keys.',
+      },
+      {
+        role: 'user',
+        content:
+          (script
+            ? `SCRIPT CONTEXT (for reference resolution):\n${script.slice(0, 8000)}\n\n`
+            : '') +
+          `TARGET SENTENCE (infer era for this ONLY):\n${sentence}`,
+      },
+    ];
+
+    const tryModel = async (model: string): Promise<string | null> => {
+      const parsed = await this.llm.completeJson<unknown>({
+        model,
+        temperature: 0,
+        maxTokens: 120,
+        retries: 1,
+        messages,
+      });
+      return this.normalizeEra(parsed);
+    };
+
+    try {
+      const era = await tryModel(this.cheapModel);
+
+      // If the sentence doesn't clearly imply an era, do not cache.
+      if (!era) return null;
+
+      const ttlMs = 30 * 60 * 1000;
+      this.sentenceEraCache.set(key, { era, expiresAt: now + ttlMs });
+      return era;
+    } catch (error: any) {
+      console.error(
+        'Sentence-era extraction failed (cheap model). Falling back.',
+        {
+          message: error?.message,
+          status: error?.status,
+          code: error?.code,
+          type: error?.type,
+        },
+      );
+
+      try {
+        const era = await tryModel(this.model);
+
+        if (!era) return null;
+
+        const ttlMs = 30 * 60 * 1000;
+        this.sentenceEraCache.set(key, { era, expiresAt: now + ttlMs });
+        return era;
+      } catch (fallbackErr: any) {
+        console.error(
+          'Sentence-era extraction failed (fallback model). Disabling for this sentence temporarily.',
+          {
+            message: fallbackErr?.message,
+            status: fallbackErr?.status,
+            code: fallbackErr?.code,
+            type: fallbackErr?.type,
+          },
+        );
+
+        const ttlMs = 5 * 60 * 1000;
+        this.sentenceEraCache.set(key, { era: null, expiresAt: now + ttlMs });
         return null;
       }
     }
@@ -728,37 +836,65 @@ export class AiImageService {
 
     const canonicalCharacters = dto.characters?.length ? dto.characters : null;
 
-    const forcedKeysRaw = Array.isArray(dto.forcedCharacterKeys)
+    const canonicalEras = Array.isArray(dto.eras)
+      ? dto.eras
+          .map((e) => ({
+            key: String((e as any)?.key ?? '').trim(),
+            name: String((e as any)?.name ?? '').trim(),
+            description: String((e as any)?.description ?? '').trim(),
+          }))
+          .filter((e) => e.key && e.name)
+      : [];
+
+    const forcedEraKeyProvided = dto.forcedEraKey !== undefined;
+    const requestedEraKeyRaw = forcedEraKeyProvided
+      ? String(dto.forcedEraKey ?? '').trim()
+      : String(dto.eraKey ?? '').trim();
+
+    const requestedEra = requestedEraKeyRaw
+      ? canonicalEras.find((e) => e.key === requestedEraKeyRaw) ?? null
+      : null;
+
+    const forcedCharacterKeysInput = Array.isArray(dto.forcedCharacterKeys)
       ? dto.forcedCharacterKeys
-          .map((k) => String(k ?? '').trim())
-          .filter(Boolean)
+      : null;
+    const forcedCharactersProvided = forcedCharacterKeysInput !== null;
+    const forcedKeysRaw = forcedCharactersProvided
+      ? forcedCharacterKeysInput.map((k) => String(k ?? '').trim()).filter(Boolean)
       : [];
     const forcedKeys = canonicalCharacters?.length
       ? forcedKeysRaw.filter((k) =>
           canonicalCharacters.some((c) => c.key === k),
         )
       : [];
-    const hasForcedCharacters = forcedKeys.length > 0;
+    const useForcedCharactersOverride = forcedCharactersProvided;
 
     const characterBible = canonicalCharacters
       ? null
       : await this.getOrCreateCharacterBible(fullScriptContext);
-    const scriptEra = await this.getOrCreateEra(fullScriptContext);
-    const eraLine = scriptEra ? `Era:${scriptEra}` : '';
 
-    const mentionResult = hasForcedCharacters
-      ? { mentions: false, characterKeys: forcedKeys }
-      : await this.sentenceMentionsAllahProphetOrSahaba({
-          script: fullScriptContext,
-          sentence: dto.sentence,
-          characters: canonicalCharacters,
-          characterBible,
-        });
+    const inferredEra = !requestedEra && !forcedEraKeyProvided
+      ? await this.getOrCreateEraForSentence({
+          scriptRaw: fullScriptContext,
+          sentenceRaw: sentenceText,
+        })
+      : null;
 
-    const enforceNoHumanFigures = hasForcedCharacters
-      ? false
-      : mentionResult.mentions;
-    const referencedCharacterKeys = hasForcedCharacters
+    const effectiveEraLine = requestedEra
+      ? `Era:${requestedEra.name}${requestedEra.description ? ` - ${requestedEra.description}` : ''}`
+      : inferredEra
+        ? `Era:${inferredEra}`
+        : '';
+
+    const mentionResult = await this.sentenceMentionsAllahProphetOrSahaba({
+      script: fullScriptContext,
+      sentence: dto.sentence,
+      characters: canonicalCharacters,
+      characterBible,
+    });
+
+    const enforceNoHumanFigures = mentionResult.mentions;
+    const referencedCharacterKeys = useForcedCharactersOverride
       ? forcedKeys
       : enforceNoHumanFigures
         ? []
@@ -815,9 +951,10 @@ export class AiImageService {
             })()
           : '';
 
-        if (!hasForcedCharacters) {
+        if (!useForcedCharactersOverride) {
           console.log(mentionResult.mentions, 'mentionsAllah/Prophet/Sahaba');
           console.log(referencedCharacterKeys, 'referencedCharacterKeys');
+          console.log(effectiveEraLine, 'effectiveEraLine');
         } else {
           console.log(
             referencedCharacterKeys,
@@ -850,8 +987,8 @@ export class AiImageService {
                 {
                   role: 'user',
                   content:
-                    (eraLine
-                      ? `SCRIPT ERA (use ONLY for era/time):\n${eraLine}\n\n`
+                    (effectiveEraLine
+                      ? `SCRIPT ERA (use ONLY for era/time):\n${effectiveEraLine}\n\n`
                       : '') +
                     characterRefsBlock +
                     (frameBlock ? `${frameBlock}\n\n` : '') +

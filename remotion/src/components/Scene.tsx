@@ -15,6 +15,7 @@ import {
   CHROMA_MAX_SHIFT_PX,
   FADE_EDGE_FRAMES,
   FLASH_EDGE_FRAMES,
+  GLITCH_EDGE_FRAMES,
   IMAGE_ZOOM_PER_SECOND,
   WHIP_DISTANCE_MULTIPLIER,
   WHIP_EDGE_FRAMES,
@@ -182,14 +183,61 @@ export const Scene: React.FC<{
     const baseScale = 1 + IMAGE_ZOOM_PER_SECOND * elapsedSeconds;
     const whipSkew = (whipBlur / WHIP_MAX_BLUR_PX) * 6 * (whipX >= 0 ? 1 : -1);
 
-    imageStyle.transform = `translateX(${whipX.toFixed(2)}px) skewX(${whipSkew.toFixed(
-      2,
-    )}deg) scale(${baseScale.toFixed(6)})`;
-    imageStyle.willChange = 'transform, filter';
-    imageStyle.filter =
-      whipBlur > 0.01
-        ? `blur(${whipBlur.toFixed(2)}px) contrast(1.08) saturate(1.04)`
-        : undefined;
+    // Glitch (generic overlay so it works for both images and videos).
+    const hasGlitchIn =
+      transitionFromPrev === 'glitch' && frame < GLITCH_EDGE_FRAMES;
+    const hasGlitchOut =
+      transitionToNext === 'glitch' &&
+      frame >= scene.durationFrames - GLITCH_EDGE_FRAMES;
+
+    const glitchInAlpha = hasGlitchIn
+      ? interpolate(frame, [0, GLITCH_EDGE_FRAMES - 1], [1, 0], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.out(Easing.cubic),
+        })
+      : 0;
+
+    const glitchOutAlpha = hasGlitchOut
+      ? interpolate(
+          frame,
+          [scene.durationFrames - GLITCH_EDGE_FRAMES, scene.durationFrames - 1],
+          [0, 1],
+          {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+            easing: Easing.in(Easing.cubic),
+          },
+        )
+      : 0;
+
+    const glitchAlpha = Math.max(glitchInAlpha, glitchOutAlpha);
+    const glitchSeed = hasGlitchIn ? seedFromPrev : hasGlitchOut ? seedToNext : 0;
+    const glitchRand = glitchSeed
+      ? mulberry32(glitchSeed ^ (frame * 31 + scene.index * 997))
+      : null;
+    const glitchJitterX =
+      glitchRand && glitchAlpha > 0
+        ? (glitchRand() * 2 - 1) * 10 * glitchAlpha
+        : 0;
+    const glitchJitterY =
+      glitchRand && glitchAlpha > 0
+        ? (glitchRand() * 2 - 1) * 6 * glitchAlpha
+        : 0;
+
+    const mediaTransformStyle: React.CSSProperties = {
+      width: '100%',
+      height: '100%',
+      transformOrigin: 'center center',
+      transform: `translate(${(whipX + glitchJitterX).toFixed(2)}px, ${glitchJitterY.toFixed(
+        2,
+      )}px) skewX(${whipSkew.toFixed(2)}deg) scale(${baseScale.toFixed(6)})`,
+      willChange: 'transform, filter',
+      filter:
+        whipBlur > 0.01
+          ? `blur(${whipBlur.toFixed(2)}px) contrast(1.08) saturate(1.04)`
+          : undefined,
+    };
 
     // Camera flash.
     const hasFlashIn = transitionFromPrev === 'flash' && frame < FLASH_EDGE_FRAMES;
@@ -290,6 +338,55 @@ export const Scene: React.FC<{
         ? CHROMA_MAX_BLUR_PX * chroma.strength * chromaAlpha
         : 0;
 
+    // Generic chroma light-leak overlay (works for both images and videos).
+    const chromaOverlay = chroma && chromaAlpha > 0.001 ? (
+      <>
+        {/* Light leak bloom */}
+        <AbsoluteFill
+          style={{
+            opacity: 0.55 * chromaAlpha,
+            mixBlendMode: 'screen',
+            background: `radial-gradient(circle at ${chroma.originX}% ${chroma.originY}%, rgba(255, 80, 200, 0.55) 0%, rgba(80, 160, 255, 0.30) 35%, rgba(0,0,0,0) 68%)`,
+            pointerEvents: 'none',
+          }}
+        />
+        <AbsoluteFill
+          style={{
+            opacity: 0.25 * chromaAlpha,
+            mixBlendMode: 'screen',
+            background:
+              'linear-gradient(120deg, rgba(255,0,170,0) 0%, rgba(255,0,170,0.22) 40%, rgba(80,160,255,0.18) 65%, rgba(0,0,0,0) 100%)',
+            pointerEvents: 'none',
+          }}
+        />
+      </>
+    ) : null;
+
+    const glitchOverlay = glitchAlpha > 0.001 ? (
+      <>
+        <AbsoluteFill
+          style={{
+            opacity: 0.12 * glitchAlpha,
+            mixBlendMode: 'overlay',
+            background:
+              'repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, rgba(0,0,0,0) 3px, rgba(0,0,0,0) 6px)',
+            transform: `translateX(${(glitchJitterX * 2).toFixed(2)}px)`,
+            pointerEvents: 'none',
+          }}
+        />
+        <AbsoluteFill
+          style={{
+            opacity: 0.10 * glitchAlpha,
+            mixBlendMode: 'screen',
+            background:
+              'linear-gradient(90deg, rgba(255,0,120,0.0) 0%, rgba(255,0,120,0.18) 50%, rgba(0,160,255,0.0) 100%)',
+            transform: `translateX(${(-glitchJitterX * 1.4).toFixed(2)}px)`,
+            pointerEvents: 'none',
+          }}
+        />
+      </>
+    ) : null;
+
     const mediaContent = scene.videoSrc ? (
       <OffthreadVideo
         src={resolveMediaSrc(scene.videoSrc)}
@@ -320,7 +417,7 @@ export const Scene: React.FC<{
                 src={resolveMediaSrc(scene.imageSrc)}
                 style={{
                   ...imageStyle,
-                  transform: `${imageStyle.transform ?? ''} translate(${(
+                  transform: `translate(${(
                     chroma.dirX * chromaShift
                   ).toFixed(2)}px, ${(
                     -chroma.dirY * chromaShift * 0.35
@@ -339,7 +436,7 @@ export const Scene: React.FC<{
                 src={resolveMediaSrc(scene.imageSrc)}
                 style={{
                   ...imageStyle,
-                  transform: `${imageStyle.transform ?? ''} translate(${(
+                  transform: `translate(${(
                     -chroma.dirX * chromaShift * 1.15
                   ).toFixed(2)}px, ${(
                     chroma.dirY * chromaShift * 0.45
@@ -350,23 +447,6 @@ export const Scene: React.FC<{
                 }}
               />
             </AbsoluteFill>
-
-            {/* Light leak bloom */}
-            <AbsoluteFill
-              style={{
-                opacity: 0.55 * chromaAlpha,
-                mixBlendMode: 'screen',
-                background: `radial-gradient(circle at ${chroma.originX}% ${chroma.originY}%, rgba(255, 80, 200, 0.55) 0%, rgba(80, 160, 255, 0.30) 35%, rgba(0,0,0,0) 68%)`,
-              }}
-            />
-            <AbsoluteFill
-              style={{
-                opacity: 0.25 * chromaAlpha,
-                mixBlendMode: 'screen',
-                background:
-                  'linear-gradient(120deg, rgba(255,0,170,0) 0%, rgba(255,0,170,0.22) 40%, rgba(80,160,255,0.18) 65%, rgba(0,0,0,0) 100%)',
-              }}
-            />
           </>
         ) : null}
       </>
@@ -380,7 +460,9 @@ export const Scene: React.FC<{
 
     const mediaLayer = mediaContent ? (
       <AbsoluteFill style={{ ...backgroundStyle, filter: wrapperFilter }}>
-        {mediaContent}
+        <AbsoluteFill style={mediaTransformStyle}>{mediaContent}</AbsoluteFill>
+        {chromaOverlay}
+        {glitchOverlay}
         {animatedLightingOn ? (
           <AbsoluteFill
             style={{

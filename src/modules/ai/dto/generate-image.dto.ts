@@ -34,6 +34,21 @@ class ScriptCharacterInput {
   isWoman: boolean;
 }
 
+class ScriptEraInput {
+  @IsString()
+  @IsNotEmpty()
+  key: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  description?: string;
+}
+
 export class GenerateImageDto {
   @IsString()
   @IsNotEmpty()
@@ -119,6 +134,24 @@ export class GenerateImageDto {
   @Type(() => ScriptCharacterInput)
   @IsOptional()
   characters?: ScriptCharacterInput[];
+
+  // Optional canonical eras extracted/edited during splitting.
+  // Used to ground visuals in the correct time period when generating prompts.
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScriptEraInput)
+  @IsOptional()
+  eras?: ScriptEraInput[];
+
+  // Optional inferred era key for the sentence (from split-script mapping).
+  @IsString()
+  @IsOptional()
+  eraKey?: string;
+
+  // Optional user override for the era key.
+  @IsString()
+  @IsOptional()
+  forcedEraKey?: string;
 
   // Optional per-sentence override: if provided, the backend will use these
   // canonical character keys directly and skip mention/detection checks.

@@ -96,6 +96,39 @@ export class ScriptsService implements OnModuleInit {
     }
   }
 
+  private async sentencesTableExists(): Promise<boolean> {
+    try {
+      const rows = (await this.dataSource.query(
+        "SELECT to_regclass('sentences') as reg",
+      )) as Array<{ reg: string | null }>;
+      return Boolean(rows?.[0]?.reg);
+    } catch {
+      return false;
+    }
+  }
+
+  private async sentencesColumnExists(columnName: string): Promise<boolean> {
+    const name = String(columnName ?? '').trim();
+    if (!name) return false;
+
+    try {
+      const rows = (await this.dataSource.query(
+        `
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = 'sentences'
+            AND column_name = $1
+          LIMIT 1
+        `,
+        [name],
+      )) as unknown[];
+      return rows.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   private async ensureScriptsSchemaLazy(): Promise<void> {
     if (this.scriptsSchemaEnsured) return;
     if (this.scriptsSchemaEnsuring) return this.scriptsSchemaEnsuring;
@@ -107,18 +140,58 @@ export class ScriptsService implements OnModuleInit {
       const hasIsShortScript = await this.scriptsColumnExists('isShortScript');
       const hasShortsScripts = await this.scriptsColumnExists('shorts_scripts');
       const hasYoutubeUrl = await this.scriptsColumnExists('youtube_url');
+      const hasEras = await this.scriptsColumnExists('eras');
 
-      if (!hasIsShortScript || !hasShortsScripts || !hasYoutubeUrl) {
+      const sentencesTableExists = await this.sentencesTableExists();
+      const hasSentenceCharacterKeys = sentencesTableExists
+        ? await this.sentencesColumnExists('character_keys')
+        : true;
+      const hasSentenceEraKey = sentencesTableExists
+        ? await this.sentencesColumnExists('era_key')
+        : true;
+      const hasSentenceForcedEraKey = sentencesTableExists
+        ? await this.sentencesColumnExists('forced_era_key')
+        : true;
+
+      if (
+        !hasIsShortScript ||
+        !hasShortsScripts ||
+        !hasYoutubeUrl ||
+        !hasEras ||
+        !hasSentenceCharacterKeys ||
+        !hasSentenceEraKey ||
+        !hasSentenceForcedEraKey
+      ) {
         await this.ensureScriptsSchema();
       }
 
       const finalHasIsShortScript = await this.scriptsColumnExists('isShortScript');
       const finalHasShortsScripts = await this.scriptsColumnExists('shorts_scripts');
       const finalHasYoutubeUrl = await this.scriptsColumnExists('youtube_url');
+      const finalHasEras = await this.scriptsColumnExists('eras');
 
-      if (!finalHasIsShortScript || !finalHasShortsScripts || !finalHasYoutubeUrl) {
+      const finalSentencesTableExists = await this.sentencesTableExists();
+      const finalHasSentenceCharacterKeys = finalSentencesTableExists
+        ? await this.sentencesColumnExists('character_keys')
+        : true;
+      const finalHasSentenceEraKey = finalSentencesTableExists
+        ? await this.sentencesColumnExists('era_key')
+        : true;
+      const finalHasSentenceForcedEraKey = finalSentencesTableExists
+        ? await this.sentencesColumnExists('forced_era_key')
+        : true;
+
+      if (
+        !finalHasIsShortScript ||
+        !finalHasShortsScripts ||
+        !finalHasYoutubeUrl ||
+        !finalHasEras ||
+        !finalHasSentenceCharacterKeys ||
+        !finalHasSentenceEraKey ||
+        !finalHasSentenceForcedEraKey
+      ) {
         throw new InternalServerErrorException(
-          'Database schema is missing required columns on `scripts` (expected: "isShortScript", shorts_scripts, youtube_url). ' +
+          'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, eras, and sentences.character_keys/era_key/forced_era_key). ' +
             'Ensure your DB user has ALTER permissions, or apply the schema update SQL in `ScriptsService.ensureScriptsSchema()`.',
         );
       }
@@ -183,6 +256,51 @@ export class ScriptsService implements OnModuleInit {
         return;
       }
       throw err;
+    }
+
+    // Canonical eras extracted during splitting.
+    try {
+      await this.dataSource.query(
+        'ALTER TABLE scripts ADD COLUMN IF NOT EXISTS eras JSONB NULL',
+      );
+    } catch (err: any) {
+      const message = String(err?.message || '');
+      if (
+        message.includes('does not exist') ||
+        message.includes('permission denied')
+      ) {
+        return;
+      }
+      throw err;
+    }
+
+    // Sentence-level era + non-forced character mapping.
+    const sentencesExists = await this.sentencesTableExists();
+    if (sentencesExists) {
+      const tryAlterSentences = async (sql: string) => {
+        try {
+          await this.dataSource.query(sql);
+        } catch (err: any) {
+          const message = String(err?.message || '');
+          if (
+            message.includes('does not exist') ||
+            message.includes('permission denied')
+          ) {
+            return;
+          }
+          throw err;
+        }
+      };
+
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS character_keys JSONB NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS era_key TEXT NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS forced_era_key TEXT NULL',
+      );
     }
 
     // Best-effort indexes for performance. If the DB user lacks permissions,
@@ -526,6 +644,10 @@ export class ScriptsService implements OnModuleInit {
             item.characters && item.characters.length > 0
               ? (item.characters as any)
               : parent.characters;
+          (found as any).eras =
+            (item as any).eras && (item as any).eras.length > 0
+              ? ((item as any).eras as any)
+              : (parent as any).eras;
           if (cleanedVideoUrl !== undefined) {
             found.video_url = cleanedVideoUrl;
           }
@@ -549,6 +671,10 @@ export class ScriptsService implements OnModuleInit {
                 item.characters && item.characters.length > 0
                   ? (item.characters as any)
                   : parent.characters,
+              eras:
+                (item as any).eras && (item as any).eras.length > 0
+                  ? ((item as any).eras as any)
+                  : (parent as any).eras,
             }),
           );
         }
@@ -570,6 +696,10 @@ export class ScriptsService implements OnModuleInit {
               item.characters && item.characters.length > 0
                 ? (item.characters as any)
                 : parent.characters,
+            eras:
+              (item as any).eras && (item as any).eras.length > 0
+                ? ((item as any).eras as any)
+                : (parent as any).eras,
           }),
         );
       }
@@ -600,6 +730,13 @@ export class ScriptsService implements OnModuleInit {
                 (s as any).forced_character_keys.length > 0
                   ? (s as any).forced_character_keys
                   : null,
+              character_keys:
+                Array.isArray((s as any).character_keys) &&
+                (s as any).character_keys.length > 0
+                  ? (s as any).character_keys
+                  : null,
+              era_key: String((s as any).era_key ?? '').trim() || null,
+              forced_era_key: String((s as any).forced_era_key ?? '').trim() || null,
             });
           });
 
@@ -928,6 +1065,7 @@ export class ScriptsService implements OnModuleInit {
       youtube_url,
       sentences,
       characters,
+      eras,
       title: providedTitle,
       shorts_scripts,
       shorts_script_ids,
@@ -1023,6 +1161,11 @@ export class ScriptsService implements OnModuleInit {
           characters.length > 0 ? (characters as any) : null;
       }
 
+      if (eras !== undefined) {
+        (existingScript as any).eras =
+          (eras as any).length > 0 ? (eras as any) : null;
+      }
+
       if (is_short_script !== undefined) {
         existingScript.isShortScript = Boolean(is_short_script);
       }
@@ -1055,6 +1198,13 @@ export class ScriptsService implements OnModuleInit {
               (s as any).forced_character_keys.length > 0
                 ? (s as any).forced_character_keys
                 : null,
+            character_keys:
+              Array.isArray((s as any).character_keys) &&
+              (s as any).character_keys.length > 0
+                ? (s as any).character_keys
+                : null,
+            era_key: String((s as any).era_key ?? '').trim() || null,
+            forced_era_key: String((s as any).forced_era_key ?? '').trim() || null,
           });
         });
 
@@ -1112,6 +1262,7 @@ export class ScriptsService implements OnModuleInit {
       technique: cleanedTechnique ?? null,
       characters:
         characters && characters.length > 0 ? (characters as any) : null,
+      eras: eras && (eras as any).length > 0 ? (eras as any) : null,
     });
 
     if (referenceScripts !== undefined) {
@@ -1143,6 +1294,13 @@ export class ScriptsService implements OnModuleInit {
             (s as any).forced_character_keys.length > 0
               ? (s as any).forced_character_keys
               : null,
+          character_keys:
+            Array.isArray((s as any).character_keys) &&
+            (s as any).character_keys.length > 0
+              ? (s as any).character_keys
+              : null,
+          era_key: String((s as any).era_key ?? '').trim() || null,
+          forced_era_key: String((s as any).forced_era_key ?? '').trim() || null,
         });
       });
 
@@ -1415,6 +1573,13 @@ export class ScriptsService implements OnModuleInit {
           : null;
     }
 
+    if ((dto as any).eras !== undefined) {
+      (script as any).eras =
+        (dto as any).eras && (dto as any).eras.length > 0
+          ? ((dto as any).eras as any)
+          : null;
+    }
+
     if (dto.title !== undefined) {
       const trimmedTitle = (dto.title ?? '').trim();
       script.title = trimmedTitle ? trimmedTitle : null;
@@ -1478,6 +1643,13 @@ export class ScriptsService implements OnModuleInit {
               (s as any).forced_character_keys.length > 0
                 ? (s as any).forced_character_keys
                 : null,
+            character_keys:
+              Array.isArray((s as any).character_keys) &&
+              (s as any).character_keys.length > 0
+                ? (s as any).character_keys
+                : null,
+            era_key: String((s as any).era_key ?? '').trim() || null,
+            forced_era_key: String((s as any).forced_era_key ?? '').trim() || null,
           });
         });
         await this.sentenceRepository.save(sentenceEntities);

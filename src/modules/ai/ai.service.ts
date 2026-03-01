@@ -87,7 +87,11 @@ export class AiService {
     model?: string;
     systemPrompt?: string;
   }): Promise<{
-    sentences: string[];
+    sentences: Array<{
+      text: string;
+      characterKeys: string[];
+      eraKey: string | null;
+    }>;
     characters: Array<{
       key: string;
       name: string;
@@ -95,6 +99,11 @@ export class AiService {
       isSahaba: boolean;
       isProphet: boolean;
       isWoman: boolean;
+    }>;
+    eras: Array<{
+      key: string;
+      name: string;
+      description?: string;
     }>;
   }> {
     return this.textService.splitScript(dto);

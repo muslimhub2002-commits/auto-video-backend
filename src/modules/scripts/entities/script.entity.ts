@@ -64,6 +64,15 @@ export class Script {
     isWoman: boolean;
   }> | null;
 
+  // Canonical era list extracted during splitting.
+  // Stored so drafts/library restore keeps stable keys + consistent prompting.
+  @Column({ type: 'jsonb', nullable: true })
+  eras: Array<{
+    key: string;
+    name: string;
+    description?: string;
+  }> | null;
+
   @Column({ type: 'uuid', nullable: false })
   user_id: string;
 

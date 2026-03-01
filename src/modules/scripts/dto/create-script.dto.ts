@@ -60,6 +60,20 @@ class CreateSentenceInput {
   @IsString({ each: true })
   @IsOptional()
   forced_character_keys?: string[];
+
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsOptional()
+  character_keys?: string[];
+
+  @IsString()
+  @IsOptional()
+  era_key?: string | null;
+
+  @IsString()
+  @IsOptional()
+  forced_era_key?: string | null;
 }
 
 class ScriptCharacterInput {
@@ -83,6 +97,20 @@ class ScriptCharacterInput {
 
   @IsBoolean()
   isWoman: boolean;
+}
+
+class ScriptEraInput {
+  @IsString()
+  @IsNotEmpty()
+  key: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
 }
 
 class ShortScriptInput {
@@ -109,6 +137,12 @@ class ShortScriptInput {
   @Type(() => ScriptCharacterInput)
   @IsOptional()
   characters?: ScriptCharacterInput[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScriptEraInput)
+  @IsOptional()
+  eras?: ScriptEraInput[];
 }
 
 export class CreateScriptDto {
@@ -173,6 +207,12 @@ export class CreateScriptDto {
   @Type(() => ScriptCharacterInput)
   @IsOptional()
   characters?: ScriptCharacterInput[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ScriptEraInput)
+  @IsOptional()
+  eras?: ScriptEraInput[];
 
   // When true, this script row is treated as a derived Short and hidden from the normal scripts listing.
   @IsBoolean()

@@ -53,6 +53,18 @@ export class Sentence {
   @Column({ type: 'jsonb', nullable: true })
   forced_character_keys: string[] | null;
 
+  // Canonical character keys inferred during splitting (non-forced).
+  @Column({ type: 'jsonb', nullable: true })
+  character_keys: string[] | null;
+
+  // Canonical era key inferred during splitting (non-forced).
+  @Column({ type: 'text', nullable: true })
+  era_key: string | null;
+
+  // Optional per-sentence override for era selection.
+  @Column({ type: 'text', nullable: true })
+  forced_era_key: string | null;
+
   @ManyToOne(() => Script, (script) => script.sentences, {
     onDelete: 'CASCADE',
   })

@@ -205,7 +205,11 @@ export class AiTextService {
     model?: string;
     systemPrompt?: string;
   }): Promise<{
-    sentences: string[];
+    sentences: Array<{
+      text: string;
+      characterKeys: string[];
+      eraKey: string | null;
+    }>;
     characters: Array<{
       key: string;
       name: string;
@@ -213,6 +217,11 @@ export class AiTextService {
       isSahaba: boolean;
       isProphet: boolean;
       isWoman: boolean;
+    }>;
+    eras: Array<{
+      key: string;
+      name: string;
+      description?: string;
     }>;
   }> {
     try {
@@ -228,31 +237,55 @@ export class AiTextService {
         isWoman: boolean;
       };
 
-      const normalizeSentences = (parsed: unknown): string[] => {
-        if (Array.isArray(parsed)) {
-          return parsed.map((v) => String(v).trim()).filter(Boolean);
+      type ScriptEra = {
+        key: string;
+        name: string;
+        description?: string;
+      };
+
+      const normalizeSentenceItems = (
+        parsed: unknown,
+        validCharacterKeys: Set<string>,
+        validEraKeys: Set<string>,
+      ): Array<{ text: string; characterKeys: string[]; eraKey: string | null }> => {
+        const raw =
+          parsed &&
+          typeof parsed === 'object' &&
+          Array.isArray((parsed as any).sentences)
+            ? ((parsed as any).sentences as unknown[])
+            : [];
+
+        const out: Array<{ text: string; characterKeys: string[]; eraKey: string | null }> = [];
+
+        for (const item of raw) {
+          if (!item || typeof item !== 'object') continue;
+          const text = String((item as any).text ?? '').trim();
+          if (!text) continue;
+
+          const rawKeys = Array.isArray((item as any).characterKeys)
+            ? ((item as any).characterKeys as unknown[])
+            : [];
+          const characterKeys = Array.from(
+            new Set(
+              rawKeys
+                .map((k) => String(k ?? '').trim().toUpperCase())
+                .filter(Boolean)
+                .filter((k) => validCharacterKeys.has(k)),
+            ),
+          );
+
+          const eraKeyRaw = String((item as any).eraKey ?? '')
+            .trim()
+            .toUpperCase();
+          const eraKey =
+            eraKeyRaw && validEraKeys.has(eraKeyRaw)
+              ? eraKeyRaw
+              : null;
+
+          out.push({ text, characterKeys, eraKey });
         }
 
-        if (parsed && typeof parsed === 'object') {
-          const obj = parsed as Record<string, unknown>;
-
-          const maybeSentences = (obj as any).sentences;
-          if (Array.isArray(maybeSentences)) {
-            return maybeSentences.map((v) => String(v).trim()).filter(Boolean);
-          }
-
-          const keys = Object.keys(obj);
-          const allNumericKeys =
-            keys.length > 0 && keys.every((k) => /^\d+$/.test(k));
-          if (allNumericKeys) {
-            return keys
-              .sort((a, b) => Number(a) - Number(b))
-              .map((k) => String((obj as any)[k] ?? '').trim())
-              .filter(Boolean);
-          }
-        }
-
-        return [];
+        return out;
       };
 
       const normalizeCharacters = (parsed: unknown): ScriptCharacter[] => {
@@ -277,8 +310,10 @@ export class AiTextService {
         for (let i = 0; i < raw.length; i += 1) {
           const c: any = raw[i] ?? {};
           const keyRaw = String(c?.key ?? `C${i + 1}`).trim();
-          const key = keyRaw || `C${i + 1}`;
+          const key = (keyRaw || `C${i + 1}`).toUpperCase();
           if (!key || usedKeys.has(key)) continue;
+          if (!/^C\d+$/i.test(key)) continue;
+          if (key === 'C0') continue;
 
           const name = String(c?.name ?? '').trim() || key;
           const description = String(c?.description ?? '').trim();
@@ -299,46 +334,155 @@ export class AiTextService {
         return out;
       };
 
-      const requiredSplitterPrompt =
-        'You split long scripts into clean sentences AND extract a canonical character list for later sentence classification.\n' +
+      const normalizeEras = (parsed: unknown): ScriptEra[] => {
+        const raw =
+          parsed &&
+          typeof parsed === 'object' &&
+          Array.isArray((parsed as any).eras)
+            ? ((parsed as any).eras as unknown[])
+            : [];
+
+        const out: ScriptEra[] = [];
+        const usedKeys = new Set<string>();
+
+        for (let i = 0; i < raw.length; i += 1) {
+          const e: any = raw[i] ?? {};
+          const key = String(e?.key ?? '').trim().toUpperCase();
+          if (!key || usedKeys.has(key)) continue;
+          if (!/^E\d+$/i.test(key)) continue;
+          if (key === 'E0') continue;
+
+          const name = String(e?.name ?? '').trim();
+          if (!name) continue;
+
+          const description = String(e?.description ?? '').trim();
+
+          out.push({
+            key,
+            name,
+            description: description || undefined,
+          });
+          usedKeys.add(key);
+          if (out.length >= 16) break;
+        }
+
+        return out;
+      };
+
+      const requiredCharactersPrompt =
+        'You extract canonical CHARACTERS from a narration script for consistent scene depiction.\n' +
         'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
-        '{"sentences": string[], "characters": [{"key": string, "name": string, "description": string, "isSahaba": boolean, "isProphet": boolean, "isWoman": boolean}]}\n\n' +
+        '{"characters": [{"key": string, "name": string, "description": string, "isSahaba": boolean, "isProphet": boolean, "isWoman": boolean}]}\n\n' +
         'Rules:\n' +
-        '- Do NOT add or remove words from the script content; only split it into sentences.\n' +
-        '- Sentences cannot be too short or too long; slightly long is okay if meaning requires it.\n' +
-        '- Characters: include people/human characters that could be visually depicted.\n' +
+        '- Include ONLY people/human characters that could be visually depicted.\n' +
         '- Do NOT include Allah/God as a character.\n' +
-        '- Each character description must include facial + physical attributes for consistency.\n' +
-        '- Keys must be short like C1, C2, C3... in first-appearance order.\n' +
+        '- If the script mentions Prophets / Sahaba / women, still extract them but set the boolean flags accordingly.\n' +
+        '- Each character.description MUST include facial + physical attributes for consistency.\n' +
+        '- Character keys must be short like C1, C2, C3... in first-appearance order.\n' +
         '- If unsure about any boolean flag, set it to false.\n' +
         '- No extra keys. No extra text.';
 
-      const splitterSystemPrompt = [requiredSplitterPrompt]
-        .filter(Boolean)
-        .join('\n');
-
-      const parsed = await this.llm.completeJson<unknown>({
+      const parsedCharacters = await this.llm.completeJson<unknown>({
         model,
         retries: 2,
         messages: [
-          { role: 'system', content: splitterSystemPrompt },
+          { role: 'system', content: requiredCharactersPrompt },
           {
             role: 'user',
             content:
               'Return ONLY valid JSON in this exact shape: ' +
-              '{"sentences": ["sentence 1", "sentence 2", ...], "characters": [{"key":"C1","name":"...","description":"...","isSahaba":false,"isProphet":false,"isWoman":false}]}.\n\n' +
+              '{"characters": [{"key":"C1","name":"...","description":"...","isSahaba":false,"isProphet":false,"isWoman":false}]}\n\n' +
               script,
           },
         ],
       });
 
-      const sentences = normalizeSentences(parsed);
+      const characters = normalizeCharacters(parsedCharacters);
+
+      const requiredErasPrompt =
+        'You extract canonical ERAS / time periods from a narration script.\n' +
+        'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
+        '{"eras": [{"key": string, "name": string, "description"?: string}]}\n\n' +
+        'Rules:\n' +
+        '- Extract time periods/eras that are relevant to the story.\n' +
+        '- Use keys E1, E2, E3... (do NOT use E0).\n' +
+        '- Keep era.name short (e.g. "7th century Arabia", "Ottoman era", "Modern day").\n' +
+        '- No extra keys. No extra text.';
+
+      const parsedEras = await this.llm.completeJson<unknown>({
+        model,
+        retries: 2,
+        messages: [
+          { role: 'system', content: requiredErasPrompt },
+          {
+            role: 'user',
+            content:
+              'Return ONLY valid JSON in this exact shape: ' +
+              '{"eras": [{"key":"E1","name":"...","description":"..."}]}\n\n' +
+              script,
+          },
+        ],
+      });
+
+      const eras = normalizeEras(parsedEras);
+
+      const requiredSplitAndTagPrompt =
+        'You split a script into clean sentences (verbatim) and tag each sentence with character keys + an era key.\n' +
+        'You are given canonical CHARACTERS and ERAS with keys. Use ONLY those keys.\n' +
+        'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
+        '{"sentences": [{"text": string, "characterKeys": string[], "eraKey": string | null}]}\n\n' +
+        'Rules:\n' +
+        '- Do NOT add/remove/rewrite words; only split into sentences. Sentence text MUST match the script wording verbatim.\n' +
+        '- characterKeys must be a subset of the provided character keys (or empty).\n' +
+        '- eraKey must be one of the provided era keys OR null.\n' +
+        '- Infer an era ONLY if the TARGET sentence clearly implies a time period (explicitly or via strong cues).\n' +
+        '- Use script context only to resolve references/pronouns for the target sentence.\n' +
+        '- If the sentence does NOT imply a clear era, set eraKey to null (do NOT guess).\n' +
+        '- No extra keys. No extra text.';
+
+      const charactersList = characters
+        .map((c) => `${c.key}: ${c.name} — ${c.description}`)
+        .join('\n');
+
+      const erasList = eras
+        .map((e) => `${e.key}: ${e.name}${e.description ? ` — ${e.description}` : ''}`)
+        .join('\n');
+
+      const parsedSentences = await this.llm.completeJson<unknown>({
+        model,
+        retries: 2,
+        messages: [
+          { role: 'system', content: requiredSplitAndTagPrompt },
+          {
+            role: 'user',
+            content:
+              'Return ONLY valid JSON in this exact shape: ' +
+              '{"sentences": [{"text":"...","characterKeys":["C1"],"eraKey":"E1"}]}\n\n' +
+              'CANONICAL CHARACTERS (use ONLY these keys):\n' +
+              (charactersList ? charactersList : '(none)') +
+              '\n\n' +
+              'CANONICAL ERAS (use ONLY these keys):\n' +
+              (erasList ? erasList : '(none)') +
+              '\n\n' +
+              'SCRIPT (split + tag):\n' +
+              script,
+          },
+        ],
+      });
+
+      const validCharacterKeys = new Set(characters.map((c) => c.key));
+      const validEraKeys = new Set(eras.map((e) => e.key));
+
+      const sentences = normalizeSentenceItems(
+        parsedSentences,
+        validCharacterKeys,
+        validEraKeys,
+      );
       if (!sentences.length) {
         throw new Error('Invalid JSON structure for sentences');
       }
 
-      const characters = normalizeCharacters(parsed);
-      return { sentences, characters };
+      return { sentences, characters, eras };
     } catch {
       throw new InternalServerErrorException(
         'Failed to split script into sentences',

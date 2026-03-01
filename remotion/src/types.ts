@@ -31,7 +31,7 @@ export type Timeline = {
     glitchSfxSrc?: string;
     whooshSfxSrc?: string;
     cameraClickSfxSrc?: string;
-    chromaLeakSfxSrc?: string;
+    chromaLeakSfxSrc?: string | null;
     suspenseGlitchSfxSrc?: string;
     subscribeVideoSrc?: string;
   };
