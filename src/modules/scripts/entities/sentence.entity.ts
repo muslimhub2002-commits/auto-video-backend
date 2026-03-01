@@ -35,6 +35,10 @@ export class Sentence {
   @Column({ type: 'uuid', nullable: true })
   video_id: string | null;
 
+  // Optional per-sentence video prompt (used for AI video generation modes).
+  @Column({ type: 'text', nullable: true })
+  video_prompt: string | null;
+
   // Optional per-sentence override for the cut/transition to the next sentence.
   // Null means auto-selection by the renderer.
   @Column({ type: 'text', nullable: true })

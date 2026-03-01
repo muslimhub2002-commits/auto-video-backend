@@ -23,6 +23,7 @@ import {
 import { UpdateSentenceMediaDto } from './dto/update-sentence-media.dto';
 import { GenerateSentenceVideoDto } from './dto/generate-sentence-video.dto';
 import { SaveSentenceVideoDto } from './dto/save-sentence-video.dto';
+import { uploadBufferToCloudinary } from '../render-videos/utils/cloudinary.utils';
 
 type UploadedImageFile = {
   buffer: Buffer;
@@ -152,6 +153,9 @@ export class ScriptsService implements OnModuleInit {
       const hasSentenceForcedEraKey = sentencesTableExists
         ? await this.sentencesColumnExists('forced_era_key')
         : true;
+      const hasSentenceVideoPrompt = sentencesTableExists
+        ? await this.sentencesColumnExists('video_prompt')
+        : true;
 
       if (
         !hasIsShortScript ||
@@ -160,7 +164,8 @@ export class ScriptsService implements OnModuleInit {
         !hasEras ||
         !hasSentenceCharacterKeys ||
         !hasSentenceEraKey ||
-        !hasSentenceForcedEraKey
+        !hasSentenceForcedEraKey ||
+        !hasSentenceVideoPrompt
       ) {
         await this.ensureScriptsSchema();
       }
@@ -180,6 +185,9 @@ export class ScriptsService implements OnModuleInit {
       const finalHasSentenceForcedEraKey = finalSentencesTableExists
         ? await this.sentencesColumnExists('forced_era_key')
         : true;
+      const finalHasSentenceVideoPrompt = finalSentencesTableExists
+        ? await this.sentencesColumnExists('video_prompt')
+        : true;
 
       if (
         !finalHasIsShortScript ||
@@ -188,7 +196,8 @@ export class ScriptsService implements OnModuleInit {
         !finalHasEras ||
         !finalHasSentenceCharacterKeys ||
         !finalHasSentenceEraKey ||
-        !finalHasSentenceForcedEraKey
+        !finalHasSentenceForcedEraKey ||
+        !finalHasSentenceVideoPrompt
       ) {
         throw new InternalServerErrorException(
           'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, eras, and sentences.character_keys/era_key/forced_era_key). ' +
@@ -300,6 +309,10 @@ export class ScriptsService implements OnModuleInit {
       );
       await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS forced_era_key TEXT NULL',
+      );
+
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS video_prompt TEXT NULL',
       );
     }
 
@@ -722,6 +735,7 @@ export class ScriptsService implements OnModuleInit {
               start_frame_image_id: s.start_frame_image_id ?? null,
               end_frame_image_id: s.end_frame_image_id ?? null,
               video_id: s.video_id ?? null,
+              video_prompt: String((s as any).video_prompt ?? '').trim() || null,
               transition_to_next: (s as any).transition_to_next ?? null,
               visual_effect: (s as any).visual_effect ?? null,
               isSuspense,
@@ -797,19 +811,56 @@ export class ScriptsService implements OnModuleInit {
         throw new BadRequestException('Video file must be a video');
       }
 
-      const ext = this.inferVideoExt({
-        originalName: file?.originalname,
-        mimeType,
-      });
-      const fileName = `${randomUUID()}${ext}`;
-      const relPath = join('sentence-videos', fileName);
-      const absDir = join(this.getStorageRoot(), 'sentence-videos');
-      this.ensureDir(absDir);
-      fs.writeFileSync(join(this.getStorageRoot(), relPath), file!.buffer);
+      const cloudinaryConfigured =
+        Boolean(process.env.CLOUDINARY_CLOUD_NAME) &&
+        Boolean(process.env.CLOUDINARY_API_KEY) &&
+        Boolean(process.env.CLOUDINARY_CLOUD_SECRET);
 
-      finalVideoUrl = this.toStaticUrl(relPath);
+      if (cloudinaryConfigured) {
+        try {
+          const uploaded = await uploadBufferToCloudinary({
+            buffer: file!.buffer,
+            folder: 'auto-video-generator/sentence-videos',
+            resource_type: 'video',
+          });
+          finalVideoUrl = uploaded.secure_url;
+        } catch {
+          // Fallback to local storage if upload fails.
+          const ext = this.inferVideoExt({
+            originalName: file?.originalname,
+            mimeType,
+          });
+          const fileName = `${randomUUID()}${ext}`;
+          const relPath = join('sentence-videos', fileName);
+          const absDir = join(this.getStorageRoot(), 'sentence-videos');
+          this.ensureDir(absDir);
+          fs.writeFileSync(join(this.getStorageRoot(), relPath), file!.buffer);
+          finalVideoUrl = this.toStaticUrl(relPath);
+        }
+      } else {
+        const ext = this.inferVideoExt({
+          originalName: file?.originalname,
+          mimeType,
+        });
+        const fileName = `${randomUUID()}${ext}`;
+        const relPath = join('sentence-videos', fileName);
+        const absDir = join(this.getStorageRoot(), 'sentence-videos');
+        this.ensureDir(absDir);
+        fs.writeFileSync(join(this.getStorageRoot(), relPath), file!.buffer);
+        finalVideoUrl = this.toStaticUrl(relPath);
+      }
     } else {
-      finalVideoUrl = this.assertHttpUrl(dto?.videoUrl ?? '', 'videoUrl');
+      const rawUrl = String(dto?.videoUrl ?? '').trim();
+      if (!rawUrl) {
+        throw new BadRequestException('videoUrl is required');
+      }
+
+      // Allow local server URLs produced by our own generators.
+      if (rawUrl.startsWith('/static/')) {
+        finalVideoUrl = rawUrl;
+      } else {
+        finalVideoUrl = this.assertHttpUrl(rawUrl, 'videoUrl');
+      }
     }
 
     // Column length is 255; keep a safety cap.
@@ -937,13 +988,38 @@ export class ScriptsService implements OnModuleInit {
         : undefined,
     });
 
-    const ext = this.inferVideoExt({ mimeType: generated.mimeType });
-    const fileName = `${randomUUID()}${ext}`;
-    const relPath = join('sentence-videos', fileName);
-    const absDir = join(this.getStorageRoot(), 'sentence-videos');
-    this.ensureDir(absDir);
-    fs.writeFileSync(join(this.getStorageRoot(), relPath), generated.buffer);
-    const finalVideoUrl = this.toStaticUrl(relPath);
+    const cloudinaryConfigured =
+      Boolean(process.env.CLOUDINARY_CLOUD_NAME) &&
+      Boolean(process.env.CLOUDINARY_API_KEY) &&
+      Boolean(process.env.CLOUDINARY_CLOUD_SECRET);
+
+    let finalVideoUrl: string;
+    if (cloudinaryConfigured) {
+      try {
+        const uploaded = await uploadBufferToCloudinary({
+          buffer: generated.buffer,
+          folder: 'auto-video-generator/sentence-videos',
+          resource_type: 'video',
+        });
+        finalVideoUrl = uploaded.secure_url;
+      } catch {
+        const ext = this.inferVideoExt({ mimeType: generated.mimeType });
+        const fileName = `${randomUUID()}${ext}`;
+        const relPath = join('sentence-videos', fileName);
+        const absDir = join(this.getStorageRoot(), 'sentence-videos');
+        this.ensureDir(absDir);
+        fs.writeFileSync(join(this.getStorageRoot(), relPath), generated.buffer);
+        finalVideoUrl = this.toStaticUrl(relPath);
+      }
+    } else {
+      const ext = this.inferVideoExt({ mimeType: generated.mimeType });
+      const fileName = `${randomUUID()}${ext}`;
+      const relPath = join('sentence-videos', fileName);
+      const absDir = join(this.getStorageRoot(), 'sentence-videos');
+      this.ensureDir(absDir);
+      fs.writeFileSync(join(this.getStorageRoot(), relPath), generated.buffer);
+      finalVideoUrl = this.toStaticUrl(relPath);
+    }
 
     const videoEntity = this.videoRepository.create({
       video: finalVideoUrl,
@@ -1190,6 +1266,7 @@ export class ScriptsService implements OnModuleInit {
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
+            video_prompt: String((s as any).video_prompt ?? '').trim() || null,
             transition_to_next: (s as any).transition_to_next ?? null,
             visual_effect: (s as any).visual_effect ?? null,
             isSuspense,
@@ -1286,6 +1363,7 @@ export class ScriptsService implements OnModuleInit {
           start_frame_image_id: s.start_frame_image_id ?? null,
           end_frame_image_id: s.end_frame_image_id ?? null,
           video_id: s.video_id ?? null,
+          video_prompt: String((s as any).video_prompt ?? '').trim() || null,
           transition_to_next: (s as any).transition_to_next ?? null,
           visual_effect: (s as any).visual_effect ?? null,
           isSuspense,
@@ -1336,6 +1414,7 @@ export class ScriptsService implements OnModuleInit {
     userId: string,
     page = 1,
     limit = 10,
+    q?: string,
   ): Promise<{
     items: Array<{
       id: string;
@@ -1353,6 +1432,8 @@ export class ScriptsService implements OnModuleInit {
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
     const safeLimit =
       Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 10;
+
+    const query = typeof q === 'string' ? q.trim() : '';
 
     // Performance notes:
     // 1) Always filter by user_id.
@@ -1381,6 +1462,12 @@ export class ScriptsService implements OnModuleInit {
       .where('script.user_id = :userId', { userId })
       .andWhere('(script.isShortScript IS NULL OR script.isShortScript = false)')
       .andWhere('short_ref.short_id IS NULL');
+
+    if (query) {
+      baseQb.andWhere("COALESCE(script.title, '') ILIKE :q", {
+        q: `%${query}%`,
+      });
+    }
 
     const [idRows, total] = await Promise.all([
       baseQb
@@ -1635,6 +1722,7 @@ export class ScriptsService implements OnModuleInit {
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
+            video_prompt: String((s as any).video_prompt ?? '').trim() || null,
             transition_to_next: (s as any).transition_to_next ?? null,
             visual_effect: (s as any).visual_effect ?? null,
             isSuspense,

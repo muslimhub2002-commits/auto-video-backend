@@ -27,6 +27,7 @@ import { YoutubeWallpaperDto } from './dto/youtube-wallpaper.dto';
 import { GenerateVideoFromFramesDto } from './dto/generate-video-from-frames.dto';
 import { GenerateVideoFromTextDto } from './dto/generate-video-from-text.dto';
 import { GenerateVideoFromReferenceImageDto } from './dto/generate-video-from-reference-image.dto';
+import { GenerateVideoPromptDto } from './dto/generate-video-prompt.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { User } from '../users/entities/user.entity';
@@ -272,6 +273,20 @@ export class AiController {
     );
 
     return result;
+  }
+
+  /**
+   * Generates a detailed per-sentence video prompt using full script context.
+   * This endpoint does not persist anything in the DB.
+   */
+  @Post('generate-video-prompt')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async generateVideoPrompt(
+    @Body() body: GenerateVideoPromptDto,
+  ): Promise<{ prompt: string }> {
+    const prompt = await this.aiService.generateVideoPrompt(body);
+    return { prompt };
   }
 
   /**

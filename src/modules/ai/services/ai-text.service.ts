@@ -860,4 +860,55 @@ export class AiTextService {
       return 'Untitled Script';
     }
   }
+
+  async generateVideoPrompt(dto: {
+    script?: string;
+    sentence: string;
+    mode?: 'text' | 'referenceImage';
+    model?: string;
+  }): Promise<string> {
+    const sentence = String(dto?.sentence ?? '').trim();
+    if (!sentence) return '';
+
+    const mode = (dto?.mode ?? 'text') as 'text' | 'referenceImage';
+    const rawScript = String(dto?.script ?? '').trim();
+
+    // Keep token usage bounded; still enough context for tone/consistency.
+    const script = rawScript.length > 8000 ? rawScript.slice(0, 8000) : rawScript;
+
+    try {
+      const result = (await this.llm.completeText({
+        model: (dto?.model ?? this.model) as any,
+        maxTokens: 320,
+        temperature: 0.5,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You write prompts for AI video generation. ' +
+              'Return ONLY the final prompt text (no quotes, no markdown, no labels). ' +
+              'Make it vivid and specific: shot type, camera motion, lighting, mood, setting, subject, composition. ' +
+              'Avoid violence/gore, explicit content, or hateful content.',
+          },
+          {
+            role: 'user',
+            content:
+              `MODE: ${mode}\n` +
+              (script
+                ? `FULL SCRIPT CONTEXT (for consistency):\n${script}\n\n`
+                : '') +
+              `SENTENCE (this scene):\n${sentence}\n\n` +
+              'Generate a single, model-ready video prompt for this sentence. ' +
+              'Keep it under ~80 words.',
+          },
+        ],
+      }))?.trim();
+
+      if (!result) return sentence;
+      // Safety cap to avoid extremely long prompts.
+      return result.length > 2000 ? result.slice(0, 2000).trimEnd() : result;
+    } catch {
+      return sentence;
+    }
+  }
 }

@@ -24,6 +24,7 @@ import { ChatsModule } from './modules/chats/chats.module';
 import { RenderJob } from './modules/render-videos/entities/render-job.entity';
 import { YoutubeModule } from './modules/youtube/youtube.module';
 import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/background-soundtrack.entity';
+import { VideosLibraryModule } from './modules/videos-library/videos-library.module';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/
     AuthModule,
     AiModule,
     RenderVideosModule,
+    VideosLibraryModule,
     VoiceOversModule,
     ImagesModule,
     VoicesModule,

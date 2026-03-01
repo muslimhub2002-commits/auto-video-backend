@@ -60,7 +60,10 @@ export class ScriptsController {
   async findAll(
     @Req() req: Request,
     @Query('page') page: string = '1',
-    @Query('limit') limit: string = '20',
+    @Query('limit') limit: string = '10',
+    @Query('title') title?: string,
+    // Backwards-compatible alias (older clients)
+    @Query('q') q?: string,
   ) {
     const user = (req as any).user;
     const user_id = user?.id;
@@ -70,9 +73,10 @@ export class ScriptsController {
     }
 
     const pageNum = Number.parseInt(page, 10) || 1;
-    const limitNum = Number.parseInt(limit, 10) || 20;
+    const limitNum = Number.parseInt(limit, 10) || 10;
 
-    return this.scriptsService.findAllByUser(user_id, pageNum, limitNum);
+    const titleQuery = typeof title === 'string' ? title : q;
+    return this.scriptsService.findAllByUser(user_id, pageNum, limitNum, titleQuery);
   }
 
   @Get(':id')

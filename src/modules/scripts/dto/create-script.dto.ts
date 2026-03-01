@@ -43,6 +43,10 @@ class CreateSentenceInput {
   @IsOptional()
   video_id?: string;
 
+  @IsString()
+  @IsOptional()
+  video_prompt?: string;
+
   @IsIn(ALLOWED_TRANSITIONS)
   @IsOptional()
   transition_to_next?: (typeof ALLOWED_TRANSITIONS)[number] | null;
