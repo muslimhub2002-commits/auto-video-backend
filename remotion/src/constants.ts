@@ -32,4 +32,8 @@ export const DEFAULT_BACKGROUND_MUSIC_SRC = 'audio/background_3.mp3';
 export const DEFAULT_GLITCH_FX_URL = 'sfx/glitch.mp3';
 export const DEFAULT_WHOOSH_SFX_URL = 'sfx/whoosh.mp3';
 export const DEFAULT_CAMERA_CLICK_SFX_URL = 'sfx/camera_click.mp3';
+// There is no dedicated chroma leak SFX file in `remotion/public/sfx` right now,
+// so default to an existing whoosh to avoid silent chromaLeak transitions in local renders.
+// Can be overridden via `timeline.assets.chromaLeakSfxSrc`.
+export const DEFAULT_CHROMA_LEAK_SFX_URL = 'sfx/whoosh-end.mp3';
 export const DEFAULT_SUSPENSE_GLITCH_SFX_URL = 'sfx/suspense-glitch.mp3';

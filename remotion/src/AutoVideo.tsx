@@ -11,6 +11,7 @@ import {
   CHROMA_EDGE_FRAMES,
   DEFAULT_BACKGROUND_MUSIC_SRC,
   DEFAULT_CAMERA_CLICK_SFX_URL,
+  DEFAULT_CHROMA_LEAK_SFX_URL,
   DEFAULT_GLITCH_FX_URL,
   DEFAULT_SUSPENSE_GLITCH_SFX_URL,
   DEFAULT_WHOOSH_SFX_URL,
@@ -39,7 +40,14 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   const whooshSfxSrc = timeline.assets?.whooshSfxSrc || DEFAULT_WHOOSH_SFX_URL;
   const cameraClickSfxSrc =
     timeline.assets?.cameraClickSfxSrc || DEFAULT_CAMERA_CLICK_SFX_URL;
-  const chromaLeakSfxSrc = timeline.assets?.chromaLeakSfxSrc || '';
+
+  // Allow explicit disabling via null, otherwise fall back to a local `staticFile()`.
+  // Treat empty strings from the backend as "unset".
+  const rawChromaLeakSfxSrc = timeline.assets?.chromaLeakSfxSrc;
+  const chromaLeakSfxSrc =
+    rawChromaLeakSfxSrc === null
+      ? null
+      : rawChromaLeakSfxSrc || DEFAULT_CHROMA_LEAK_SFX_URL;
   const suspenseGlitchSfxSrc =
     timeline.assets?.suspenseGlitchSfxSrc || DEFAULT_SUSPENSE_GLITCH_SFX_URL;
 
