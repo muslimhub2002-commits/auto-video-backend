@@ -232,6 +232,9 @@ export class RenderVideosController {
         | 'none'
         | 'colorGrading'
         | 'animatedLighting'
+        | 'glassSubtle'
+        | 'glassReflections'
+        | 'glassStrong'
         | null;
     }>;
     try {
@@ -252,6 +255,9 @@ export class RenderVideosController {
           | 'none'
           | 'colorGrading'
           | 'animatedLighting'
+          | 'glassSubtle'
+          | 'glassReflections'
+          | 'glassStrong'
           | null;
       }>;
     } catch {
@@ -275,6 +281,9 @@ export class RenderVideosController {
       'none',
       'colorGrading',
       'animatedLighting',
+      'glassSubtle',
+      'glassReflections',
+      'glassStrong',
     ] as const);
 
     for (const [idx, s] of sentences.entries()) {

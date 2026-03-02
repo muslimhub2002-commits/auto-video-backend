@@ -30,7 +30,9 @@ export class AiVideoService {
   }
 
   private isGrokVideoModel(model?: string | null): boolean {
-    const m = String(model ?? '').trim().toLowerCase();
+    const m = String(model ?? '')
+      .trim()
+      .toLowerCase();
     return m === 'grok-imagine-video' || m.startsWith('grok-');
   }
 
@@ -110,10 +112,13 @@ export class AiVideoService {
     const intervalMs = 4_000;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const pollRes = await fetch(`${base}/videos/${encodeURIComponent(requestId)}`, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${this.grokApiKey}` },
-      });
+      const pollRes = await fetch(
+        `${base}/videos/${encodeURIComponent(requestId)}`,
+        {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${this.grokApiKey}` },
+        },
+      );
 
       if (pollRes.status === 202) {
         await sleep(intervalMs);
@@ -646,13 +651,20 @@ export class AiVideoService {
       throw new BadRequestException('Prompt is required');
     }
 
-    const fromUploaded = (file: UploadedImageFile | undefined, label: string) => {
+    const fromUploaded = (
+      file: UploadedImageFile | undefined,
+      label: string,
+    ) => {
       if (!file) return null;
       const mimeType = String(file.mimetype ?? '').trim();
       if (!mimeType || !mimeType.startsWith('image/')) {
         throw new BadRequestException(`${label} must be an image`);
       }
-      if (!file.buffer || !(file.buffer instanceof Buffer) || file.buffer.length === 0) {
+      if (
+        !file.buffer ||
+        !(file.buffer instanceof Buffer) ||
+        file.buffer.length === 0
+      ) {
         throw new BadRequestException(`${label} is missing file data`);
       }
       return { buffer: file.buffer, mimeType };

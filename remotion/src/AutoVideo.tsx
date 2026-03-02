@@ -62,17 +62,10 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
     return base.map((t, idx) => {
       if (idx === 0) return 'none';
       const prev = timeline.scenes[idx - 1];
-      const next = timeline.scenes[idx];
       const override = prev?.transitionToNext;
       if (override == null) return t;
 
-      const isImageToImage =
-        !!prev?.imageSrc &&
-        !!next?.imageSrc &&
-        !prev?.videoSrc &&
-        !next?.videoSrc;
-
-      return isImageToImage ? override : t;
+      return override;
     });
   }, [timeline.scenes]);
   const showSubtitles = timeline.addSubtitles !== false;
@@ -156,7 +149,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         </Sequence>
       ) : null}
 
-      {/* Glitch SFX only during image->image cut windows */}
+      {/* Glitch SFX during glitch cut windows */}
       {timeline.scenes.map((next, idx) => {
         if (idx === 0) return null;
         const prevIndex = timeline.scenes[idx - 1].index;
@@ -176,7 +169,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         );
       })}
 
-      {/* Whoosh SFX only during whip image->image cut windows */}
+      {/* Whoosh SFX during whip cut windows */}
       {timeline.scenes.map((next, idx) => {
         if (idx === 0) return null;
         const prevIndex = timeline.scenes[idx - 1].index;
@@ -196,7 +189,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         );
       })}
 
-      {/* Camera click SFX only during flash image->image cut windows */}
+      {/* Camera click SFX during flash cut windows */}
       {timeline.scenes.map((next, idx) => {
         if (idx === 0) return null;
         const prevIndex = timeline.scenes[idx - 1].index;
@@ -217,7 +210,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         );
       })}
 
-      {/* Chroma leak SFX only during chromaLeak image->image cut windows */}
+      {/* Chroma leak SFX during chromaLeak cut windows */}
       {timeline.scenes.map((next, idx) => {
         if (idx === 0) return null;
         const prevIndex = timeline.scenes[idx - 1].index;

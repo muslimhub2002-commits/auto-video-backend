@@ -9,13 +9,12 @@ export type TransitionType =
   | 'fade'
   | 'chromaLeak';
 
-export const isImageToImageCut = (prev?: TimelineScene, next?: TimelineScene) => {
-  return (
-    !!prev?.imageSrc &&
-    !prev?.videoSrc &&
-    !!next?.imageSrc &&
-    !next?.videoSrc
-  );
+const hasVisualMedia = (scene?: TimelineScene) => {
+  return Boolean(scene?.imageSrc || scene?.videoSrc);
+};
+
+export const isMediaToMediaCut = (prev?: TimelineScene, next?: TimelineScene) => {
+  return hasVisualMedia(prev) && hasVisualMedia(next);
 };
 
 export const getCutSeed = (prev: TimelineScene, next: TimelineScene) => {
@@ -34,7 +33,7 @@ const shuffleInPlace = <T,>(arr: T[], rand: () => number) => {
 
 // Transition plan per cut index (i = cut from scenes[i-1] -> scenes[i]).
 // Rules:
-// - Glitch happens ONLY on first and last eligible image->image cut.
+// - Glitch happens ONLY on first and last eligible cut.
 // - Other transitions don't repeat until all have been used once.
 export const buildCutTransitions = (scenes: TimelineScene[]): TransitionType[] => {
   const transitions: TransitionType[] = new Array(scenes.length).fill('none');
@@ -42,7 +41,7 @@ export const buildCutTransitions = (scenes: TimelineScene[]): TransitionType[] =
 
   const eligibleCuts: number[] = [];
   for (let i = 1; i < scenes.length; i += 1) {
-    if (isImageToImageCut(scenes[i - 1], scenes[i])) eligibleCuts.push(i);
+    if (isMediaToMediaCut(scenes[i - 1], scenes[i])) eligibleCuts.push(i);
   }
   if (eligibleCuts.length === 0) return transitions;
 

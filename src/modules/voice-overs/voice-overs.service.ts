@@ -390,13 +390,16 @@ export class VoiceOversService {
       });
 
       // Note: withSettings is deprecated upstream, but harmless.
-      const result = await client.voices.get(rawId as any, {
-        withSettings: true as any,
-      } as any);
+      const result = await client.voices.get(
+        rawId as any,
+        {
+          withSettings: true as any,
+        } as any,
+      );
       voice = (result ?? null) as any;
     } catch (error) {
       this.logger.warn(
-        `ElevenLabs SDK fetch failed for voice ${rawId}; falling back to HTTP: ${(error as any)?.message ?? error}`,
+        `ElevenLabs SDK fetch failed for voice ${rawId}; falling back to HTTP: ${error?.message ?? error}`,
       );
 
       const url = `https://api.elevenlabs.io/v1/voices/${encodeURIComponent(rawId)}`;
@@ -466,18 +469,24 @@ export class VoiceOversService {
         this.logger.error(
           `Failed to fetch ElevenLabs voice ${rawId}: ${response.status} ${response.statusText} - ${text}`,
         );
-        throw new InternalServerErrorException('Failed to fetch ElevenLabs voice');
+        throw new InternalServerErrorException(
+          'Failed to fetch ElevenLabs voice',
+        );
       }
 
       voice = (await response.json()) as Partial<ElevenLabsVoice>;
     }
 
     if (!voice) {
-      throw new InternalServerErrorException('Failed to fetch ElevenLabs voice');
+      throw new InternalServerErrorException(
+        'Failed to fetch ElevenLabs voice',
+      );
     }
     const resolvedRawId = String(voice.voice_id ?? rawId).trim();
     if (!resolvedRawId) {
-      throw new InternalServerErrorException('ElevenLabs response missing voice_id');
+      throw new InternalServerErrorException(
+        'ElevenLabs response missing voice_id',
+      );
     }
 
     const nextVoiceId = this.namespacedVoiceId(provider, resolvedRawId);
@@ -485,21 +494,19 @@ export class VoiceOversService {
       where: [{ voice_id: nextVoiceId }, { voice_id: resolvedRawId }],
     });
 
-    const labels = (voice.labels || {}) as Record<string, string>;
+    const labels = voice.labels || {};
 
     const payload: Partial<VoiceOver> = {
       provider,
       voice_id: nextVoiceId,
       name: String(voice.name ?? '').trim() || nextVoiceId,
-      preview_url: (voice.preview_url as string | undefined) ?? null,
-      description: (voice.description as string | undefined) ?? null,
-      category: (voice.category as string | undefined) ?? null,
-      gender:
-        (voice.gender as string | undefined) ?? (labels.gender as string) ?? null,
-      accent:
-        (voice.accent as string | undefined) ?? (labels.accent as string) ?? null,
-      descriptive: (labels.descriptive as string) ?? null,
-      use_case: (labels.use_case as string) ?? null,
+      preview_url: voice.preview_url ?? null,
+      description: voice.description ?? null,
+      category: voice.category ?? null,
+      gender: voice.gender ?? labels.gender ?? null,
+      accent: voice.accent ?? labels.accent ?? null,
+      descriptive: labels.descriptive ?? null,
+      use_case: labels.use_case ?? null,
     };
 
     if (existing) {
@@ -508,7 +515,9 @@ export class VoiceOversService {
       }
       await this.voiceOverRepository.update({ id: existing.id }, payload);
     } else {
-      await this.voiceOverRepository.save(this.voiceOverRepository.create(payload));
+      await this.voiceOverRepository.save(
+        this.voiceOverRepository.create(payload),
+      );
     }
 
     const saved = await this.voiceOverRepository.findOne({

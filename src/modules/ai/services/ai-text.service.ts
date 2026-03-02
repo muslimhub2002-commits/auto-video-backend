@@ -247,7 +247,11 @@ export class AiTextService {
         parsed: unknown,
         validCharacterKeys: Set<string>,
         validEraKeys: Set<string>,
-      ): Array<{ text: string; characterKeys: string[]; eraKey: string | null }> => {
+      ): Array<{
+        text: string;
+        characterKeys: string[];
+        eraKey: string | null;
+      }> => {
         const raw =
           parsed &&
           typeof parsed === 'object' &&
@@ -255,7 +259,11 @@ export class AiTextService {
             ? ((parsed as any).sentences as unknown[])
             : [];
 
-        const out: Array<{ text: string; characterKeys: string[]; eraKey: string | null }> = [];
+        const out: Array<{
+          text: string;
+          characterKeys: string[];
+          eraKey: string | null;
+        }> = [];
 
         for (const item of raw) {
           if (!item || typeof item !== 'object') continue;
@@ -268,7 +276,11 @@ export class AiTextService {
           const characterKeys = Array.from(
             new Set(
               rawKeys
-                .map((k) => String(k ?? '').trim().toUpperCase())
+                .map((k) =>
+                  String(k ?? '')
+                    .trim()
+                    .toUpperCase(),
+                )
                 .filter(Boolean)
                 .filter((k) => validCharacterKeys.has(k)),
             ),
@@ -278,9 +290,7 @@ export class AiTextService {
             .trim()
             .toUpperCase();
           const eraKey =
-            eraKeyRaw && validEraKeys.has(eraKeyRaw)
-              ? eraKeyRaw
-              : null;
+            eraKeyRaw && validEraKeys.has(eraKeyRaw) ? eraKeyRaw : null;
 
           out.push({ text, characterKeys, eraKey });
         }
@@ -347,7 +357,9 @@ export class AiTextService {
 
         for (let i = 0; i < raw.length; i += 1) {
           const e: any = raw[i] ?? {};
-          const key = String(e?.key ?? '').trim().toUpperCase();
+          const key = String(e?.key ?? '')
+            .trim()
+            .toUpperCase();
           if (!key || usedKeys.has(key)) continue;
           if (!/^E\d+$/i.test(key)) continue;
           if (key === 'E0') continue;
@@ -445,7 +457,10 @@ export class AiTextService {
         .join('\n');
 
       const erasList = eras
-        .map((e) => `${e.key}: ${e.name}${e.description ? ` — ${e.description}` : ''}`)
+        .map(
+          (e) =>
+            `${e.key}: ${e.name}${e.description ? ` — ${e.description}` : ''}`,
+        )
         .join('\n');
 
       const parsedSentences = await this.llm.completeJson<unknown>({
@@ -509,10 +524,7 @@ export class AiTextService {
     const minSecondsPerShort = 60;
 
     const wordCount = (text: string) =>
-      text
-        .trim()
-        .split(/\s+/u)
-        .filter(Boolean).length;
+      text.trim().split(/\s+/u).filter(Boolean).length;
 
     const sentenceMeta = sentences.map((text, index) => {
       const words = wordCount(text);
@@ -522,7 +534,9 @@ export class AiTextService {
 
     const totalSeconds = sentenceMeta.reduce((sum, s) => sum + s.estSeconds, 0);
 
-    const greedyFallback = (): { ranges: Array<{ start: number; end: number }> } => {
+    const greedyFallback = (): {
+      ranges: Array<{ start: number; end: number }>;
+    } => {
       if (sentences.length === 1) {
         return { ranges: [{ start: 0, end: 0 }] };
       }
@@ -544,7 +558,8 @@ export class AiTextService {
           .reduce((sum, s) => sum + s.estSeconds, 0);
 
         const canCutHere = cursorSeconds >= minSecondsPerShort;
-        const remainderWouldBeValid = remainingSeconds === 0 || remainingSeconds >= minSecondsPerShort;
+        const remainderWouldBeValid =
+          remainingSeconds === 0 || remainingSeconds >= minSecondsPerShort;
 
         if (canCutHere && remainderWouldBeValid) {
           ranges.push({ start, end: i });
@@ -566,7 +581,10 @@ export class AiTextService {
       const normalized: Array<{ start: number; end: number }> = [];
       let expectedStart = 0;
       for (const r of ranges) {
-        const s = Math.max(expectedStart, Math.min(r.start, sentenceMeta.length - 1));
+        const s = Math.max(
+          expectedStart,
+          Math.min(r.start, sentenceMeta.length - 1),
+        );
         const e = Math.max(s, Math.min(r.end, sentenceMeta.length - 1));
         normalized.push({ start: s, end: e });
         expectedStart = e + 1;
@@ -613,8 +631,7 @@ export class AiTextService {
       'Here are the sentences with estimated seconds:\n' +
       sentenceMeta
         .map(
-          (s) =>
-            `${s.index}. (${s.estSeconds}s est) ${JSON.stringify(s.text)}`,
+          (s) => `${s.index}. (${s.estSeconds}s est) ${JSON.stringify(s.text)}`,
         )
         .join('\n');
 
@@ -629,7 +646,9 @@ export class AiTextService {
       });
 
       const rangesRaw =
-        parsed && typeof parsed === 'object' && Array.isArray((parsed as any).ranges)
+        parsed &&
+        typeof parsed === 'object' &&
+        Array.isArray((parsed as any).ranges)
           ? ((parsed as any).ranges as any[])
           : null;
 
@@ -639,8 +658,8 @@ export class AiTextService {
 
       const ranges = rangesRaw
         .map((r) => ({
-          start: Number((r as any)?.start),
-          end: Number((r as any)?.end),
+          start: Number(r?.start),
+          end: Number(r?.end),
         }))
         .filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end))
         .map((r) => ({ start: Math.trunc(r.start), end: Math.trunc(r.end) }));
@@ -656,7 +675,8 @@ export class AiTextService {
 
       for (let i = 0; i < ranges.length; i += 1) {
         const r = ranges[i];
-        if (r.start < 0 || r.end < r.start || r.end > lastIndex) return greedyFallback();
+        if (r.start < 0 || r.end < r.start || r.end > lastIndex)
+          return greedyFallback();
         if (i > 0) {
           const prev = ranges[i - 1];
           if (r.start !== prev.end + 1) return greedyFallback();
@@ -870,39 +890,42 @@ export class AiTextService {
     const sentence = String(dto?.sentence ?? '').trim();
     if (!sentence) return '';
 
-    const mode = (dto?.mode ?? 'text') as 'text' | 'referenceImage';
+    const mode = dto?.mode ?? 'text';
     const rawScript = String(dto?.script ?? '').trim();
 
     // Keep token usage bounded; still enough context for tone/consistency.
-    const script = rawScript.length > 8000 ? rawScript.slice(0, 8000) : rawScript;
+    const script =
+      rawScript.length > 8000 ? rawScript.slice(0, 8000) : rawScript;
 
     try {
-      const result = (await this.llm.completeText({
-        model: (dto?.model ?? this.model) as any,
-        maxTokens: 320,
-        temperature: 0.5,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You write prompts for AI video generation. ' +
-              'Return ONLY the final prompt text (no quotes, no markdown, no labels). ' +
-              'Make it vivid and specific: shot type, camera motion, lighting, mood, setting, subject, composition. ' +
-              'Avoid violence/gore, explicit content, or hateful content.',
-          },
-          {
-            role: 'user',
-            content:
-              `MODE: ${mode}\n` +
-              (script
-                ? `FULL SCRIPT CONTEXT (for consistency):\n${script}\n\n`
-                : '') +
-              `SENTENCE (this scene):\n${sentence}\n\n` +
-              'Generate a single, model-ready video prompt for this sentence. ' +
-              'Keep it under ~80 words.',
-          },
-        ],
-      }))?.trim();
+      const result = (
+        await this.llm.completeText({
+          model: (dto?.model ?? this.model) as any,
+          maxTokens: 320,
+          temperature: 0.5,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You write prompts for AI video generation. ' +
+                'Return ONLY the final prompt text (no quotes, no markdown, no labels). ' +
+                'Make it vivid and specific: shot type, camera motion, lighting, mood, setting, subject, composition. ' +
+                'Avoid violence/gore, explicit content, or hateful content.',
+            },
+            {
+              role: 'user',
+              content:
+                `MODE: ${mode}\n` +
+                (script
+                  ? `FULL SCRIPT CONTEXT (for consistency):\n${script}\n\n`
+                  : '') +
+                `SENTENCE (this scene):\n${sentence}\n\n` +
+                'Generate a single, model-ready video prompt for this sentence. ' +
+                'Keep it under ~80 words.',
+            },
+          ],
+        })
+      )?.trim();
 
       if (!result) return sentence;
       // Safety cap to avoid extremely long prompts.

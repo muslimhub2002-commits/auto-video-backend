@@ -174,7 +174,9 @@ export class AiService {
       safeCharacters,
     });
 
-    const style = String(dto?.style ?? '').trim() || 'Cinematic, ultra-detailed, high contrast, high quality';
+    const style =
+      String(dto?.style ?? '').trim() ||
+      'Cinematic, ultra-detailed, high contrast, high quality';
 
     const imageResult = await this.imageService.generateImageForSentence(
       {
@@ -184,7 +186,9 @@ export class AiService {
         style,
         isShort: false,
         imageModel: dto.imageModel,
-        characters: canonicalCharacters.length ? canonicalCharacters : undefined,
+        characters: canonicalCharacters.length
+          ? canonicalCharacters
+          : undefined,
         forcedCharacterKeys: wallpaper.characterKeys.length
           ? wallpaper.characterKeys
           : undefined,

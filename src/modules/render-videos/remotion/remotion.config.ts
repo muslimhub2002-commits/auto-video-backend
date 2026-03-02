@@ -31,7 +31,7 @@ export const REMOTION_BACKGROUND_REL = 'audio/background_3.mp3';
 export const REMOTION_GLITCH_SFX_REL = 'sfx/glitch.mp3';
 export const REMOTION_WHOOSH_SFX_REL = 'sfx/whoosh.mp3';
 export const REMOTION_CAMERA_CLICK_SFX_REL = 'sfx/camera_click.mp3';
-export const REMOTION_CHROMA_LEAK_SFX_REL = 'sfx/chroma_leak.mp3';
+export const REMOTION_CHROMA_LEAK_SFX_REL = 'sfx/whoosh-end.mp3';
 export const REMOTION_SUSPENSE_GLITCH_SFX_REL = 'sfx/suspense-glitch.mp3';
 // Keep this aligned with the actual asset in remotion/public.
 // On Windows, trying to read a non-existent/incorrect nested path can surface as EPERM.

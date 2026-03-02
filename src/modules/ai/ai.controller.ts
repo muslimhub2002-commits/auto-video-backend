@@ -244,15 +244,12 @@ export class AiController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
-    FileFieldsInterceptor(
-      [{ name: 'referenceImage', maxCount: 1 }],
-      {
-        limits: {
-          fileSize: 12 * 1024 * 1024,
-          files: 1,
-        },
+    FileFieldsInterceptor([{ name: 'referenceImage', maxCount: 1 }], {
+      limits: {
+        fileSize: 12 * 1024 * 1024,
+        files: 1,
       },
-    ),
+    }),
   )
   async generateVideoFromReferenceImage(
     @GetUser() user: User,

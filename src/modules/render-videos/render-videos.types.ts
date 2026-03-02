@@ -15,6 +15,9 @@ export type SentenceInput = {
     | 'none'
     | 'colorGrading'
     | 'animatedLighting'
+    | 'glassSubtle'
+    | 'glassReflections'
+    | 'glassStrong'
     | null;
 };
 

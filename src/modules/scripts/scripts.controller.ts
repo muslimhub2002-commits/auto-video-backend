@@ -76,7 +76,12 @@ export class ScriptsController {
     const limitNum = Number.parseInt(limit, 10) || 10;
 
     const titleQuery = typeof title === 'string' ? title : q;
-    return this.scriptsService.findAllByUser(user_id, pageNum, limitNum, titleQuery);
+    return this.scriptsService.findAllByUser(
+      user_id,
+      pageNum,
+      limitNum,
+      titleQuery,
+    );
   }
 
   @Get(':id')

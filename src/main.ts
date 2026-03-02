@@ -66,9 +66,9 @@ async function bootstrap() {
   // Ensure range requests + CORS work for browser fetch() + blob/arrayBuffer.
   app.use('/static', (req, res, next) => {
     const origin = req.headers.origin as string | undefined;
-    const requestedHeaders = req.headers[
-      'access-control-request-headers'
-    ] as string | undefined;
+    const requestedHeaders = req.headers['access-control-request-headers'] as
+      | string
+      | undefined;
     if (origin && isAllowedOrigin(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
@@ -94,7 +94,10 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin, callback) => {
       if (isAllowedOrigin(origin)) return callback(null, true);
-      return callback(new Error(`Not allowed by CORS: ${origin ?? '(no origin)'}`), false);
+      return callback(
+        new Error(`Not allowed by CORS: ${origin ?? '(no origin)'}`),
+        false,
+      );
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true,

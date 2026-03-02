@@ -16,7 +16,8 @@ export class VideosLibraryService {
     limit = 20,
   ): Promise<{ items: Video[]; total: number; page: number; limit: number }> {
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
-    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
+    const safeLimit =
+      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
 
     // Only include videos that are actually referenced by a sentence (sentences.video_id).
     // This ensures the "Video Library" contains only sentence-generated/saved videos.

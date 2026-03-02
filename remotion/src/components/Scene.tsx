@@ -65,12 +65,26 @@ export const Scene: React.FC<{
 
     const visualEffect = scene.visualEffect ?? null;
 
+    const isGlassSubtle = visualEffect === 'glassSubtle';
+    const isGlassReflections = visualEffect === 'glassReflections';
+    const isGlassStrong = visualEffect === 'glassStrong';
+
+    const glassFilter = isGlassSubtle
+      ? 'contrast(1.06) saturate(1.08) brightness(1.02)'
+      : isGlassReflections
+        ? 'contrast(1.07) saturate(1.10) brightness(1.02)'
+        : isGlassStrong
+          ? 'contrast(1.10) saturate(1.12) brightness(1.03)'
+          : undefined;
+
     const colorGradingFilter =
       visualEffect === 'colorGrading'
         ? 'contrast(1.12) saturate(1.16) brightness(0.98)'
         : undefined;
 
-    const wrapperFilter = [suspenseFilter, colorGradingFilter].filter(Boolean).join(' ') || undefined;
+    const wrapperFilter = [suspenseFilter, colorGradingFilter, glassFilter]
+      .filter(Boolean)
+      .join(' ') || undefined;
 
     // Subtle film flicker for the suspense opening.
     const suspenseFlicker = isSuspenseOpening
@@ -454,9 +468,13 @@ export const Scene: React.FC<{
 
     const animatedLightingOn = visualEffect === 'animatedLighting';
     const lightingSeed = mulberry32((scene.index + 1) * 4409)();
-    const lightingX = ((frame * 0.55 + lightingSeed * 320) % 100 + 100) % 100;
-    const lightingY = (35 + 25 * Math.sin(frame * 0.03 + lightingSeed * 8)) % 100;
-    const lightingAlpha = 0.22 + 0.10 * Math.sin(frame * 0.045 + lightingSeed * 12);
+    // Disable animation: keep the initial (frame=0) lighting look.
+    const lightingX = ((lightingSeed * 320) % 100 + 100) % 100;
+    const lightingY = (35 + 25 * Math.sin(lightingSeed * 8) + 100) % 100;
+    const lightingAlpha = 0.22 + 0.1 * Math.sin(lightingSeed * 12);
+
+    const glassOverlayOn = isGlassReflections || isGlassStrong;
+    const glassOverlayOpacity = isGlassStrong ? 0.22 : 0.16;
 
     const mediaLayer = mediaContent ? (
       <AbsoluteFill style={{ ...backgroundStyle, filter: wrapperFilter }}>
@@ -473,6 +491,18 @@ export const Scene: React.FC<{
               )}% ${lightingY.toFixed(
                 2,
               )}%, rgba(255, 80, 200, 0.55) 0%, rgba(80, 160, 255, 0.30) 38%, rgba(0,0,0,0) 70%)`,
+              pointerEvents: 'none',
+            }}
+          />
+        ) : null}
+
+        {glassOverlayOn ? (
+          <AbsoluteFill
+            style={{
+              opacity: glassOverlayOpacity,
+              mixBlendMode: 'screen',
+              background:
+                'linear-gradient(135deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 18%, rgba(255,255,255,0.00) 45%, rgba(255,255,255,0.10) 62%, rgba(255,255,255,0.00) 100%)',
               pointerEvents: 'none',
             }}
           />

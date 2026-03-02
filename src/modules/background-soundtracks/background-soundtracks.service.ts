@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v2 as cloudinary } from 'cloudinary';
@@ -100,7 +104,9 @@ export class BackgroundSoundtracksService {
     }
 
     const raw = Number(params.volumePercent);
-    const volumePercent = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 100;
+    const volumePercent = Number.isFinite(raw)
+      ? Math.max(0, Math.min(100, raw))
+      : 100;
 
     const target = await this.repo.findOne({
       where: { id: soundtrackId, user_id: params.user_id },
@@ -173,7 +179,6 @@ export class BackgroundSoundtracksService {
 
       return { ...uploaded, hash };
     } catch (error: any) {
-      // eslint-disable-next-line no-console
       console.error('Error in uploadUseOnce (background soundtrack):', error);
       throw new InternalServerErrorException(
         error?.message ?? 'Failed to upload background soundtrack',
@@ -219,7 +224,6 @@ export class BackgroundSoundtracksService {
 
       return this.repo.save(entity);
     } catch (error: any) {
-      // eslint-disable-next-line no-console
       console.error('Error in uploadAndCreate (background soundtrack):', error);
       throw new InternalServerErrorException(
         error?.message ?? 'Failed to save background soundtrack',

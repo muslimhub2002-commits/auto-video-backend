@@ -110,7 +110,6 @@ export class AiImageService {
     );
   }
 
-
   private hashScriptForCache(script: string): string {
     return createHash('sha1').update(script, 'utf8').digest('hex');
   }
@@ -246,8 +245,7 @@ export class AiImageService {
         content:
           (script
             ? `SCRIPT CONTEXT (for reference resolution):\n${script.slice(0, 8000)}\n\n`
-            : '') +
-          `TARGET SENTENCE (infer era for this ONLY):\n${sentence}`,
+            : '') + `TARGET SENTENCE (infer era for this ONLY):\n${sentence}`,
       },
     ];
 
@@ -683,7 +681,9 @@ export class AiImageService {
   }
 
   private computeIsShortForm(dto: GenerateImageDto): boolean {
-    const rawLength = String(dto.scriptLength ?? '').trim().toLowerCase();
+    const rawLength = String(dto.scriptLength ?? '')
+      .trim()
+      .toLowerCase();
 
     const parsedMinutes: number | null = (() => {
       const secondsMatch = /([0-9]+(?:\.[0-9]+)?)\s*second/u.exec(rawLength);
@@ -737,15 +737,30 @@ export class AiImageService {
     const raw = String((dto as any).aspectRatio ?? '').trim();
 
     if (raw === '1:1') {
-      return { aspectRatio: '1:1', isShortForm: false, width: 1024, height: 1024 };
+      return {
+        aspectRatio: '1:1',
+        isShortForm: false,
+        width: 1024,
+        height: 1024,
+      };
     }
 
     if (raw === '9:16') {
-      return { aspectRatio: '9:16', isShortForm: true, width: 768, height: 1344 };
+      return {
+        aspectRatio: '9:16',
+        isShortForm: true,
+        width: 768,
+        height: 1344,
+      };
     }
 
     if (raw === '16:9') {
-      return { aspectRatio: '16:9', isShortForm: false, width: 1344, height: 768 };
+      return {
+        aspectRatio: '16:9',
+        isShortForm: false,
+        width: 1344,
+        height: 768,
+      };
     }
 
     const isShortForm = this.computeIsShortForm(dto);
@@ -852,7 +867,7 @@ export class AiImageService {
       : String(dto.eraKey ?? '').trim();
 
     const requestedEra = requestedEraKeyRaw
-      ? canonicalEras.find((e) => e.key === requestedEraKeyRaw) ?? null
+      ? (canonicalEras.find((e) => e.key === requestedEraKeyRaw) ?? null)
       : null;
 
     const forcedCharacterKeysInput = Array.isArray(dto.forcedCharacterKeys)
@@ -860,7 +875,9 @@ export class AiImageService {
       : null;
     const forcedCharactersProvided = forcedCharacterKeysInput !== null;
     const forcedKeysRaw = forcedCharactersProvided
-      ? forcedCharacterKeysInput.map((k) => String(k ?? '').trim()).filter(Boolean)
+      ? forcedCharacterKeysInput
+          .map((k) => String(k ?? '').trim())
+          .filter(Boolean)
       : [];
     const forcedKeys = canonicalCharacters?.length
       ? forcedKeysRaw.filter((k) =>
@@ -873,12 +890,13 @@ export class AiImageService {
       ? null
       : await this.getOrCreateCharacterBible(fullScriptContext);
 
-    const inferredEra = !requestedEra && !forcedEraKeyProvided
-      ? await this.getOrCreateEraForSentence({
-          scriptRaw: fullScriptContext,
-          sentenceRaw: sentenceText,
-        })
-      : null;
+    const inferredEra =
+      !requestedEra && !forcedEraKeyProvided
+        ? await this.getOrCreateEraForSentence({
+            scriptRaw: fullScriptContext,
+            sentenceRaw: sentenceText,
+          })
+        : null;
 
     const effectiveEraLine = requestedEra
       ? `Era:${requestedEra.name}${requestedEra.description ? ` - ${requestedEra.description}` : ''}`

@@ -39,20 +39,20 @@ export class AiYoutubeService {
 
     const safeChars = Array.isArray(params?.safeCharacters)
       ? params.safeCharacters
-        .map((c) => ({
-          key: String(c?.key ?? '').trim(),
-          name: String(c?.name ?? '').trim(),
-          description: String(c?.description ?? '').trim(),
-        }))
-        .filter((c) => c.key && c.name && c.description)
-        .slice(0, 12)
+          .map((c) => ({
+            key: String(c?.key ?? '').trim(),
+            name: String(c?.name ?? '').trim(),
+            description: String(c?.description ?? '').trim(),
+          }))
+          .filter((c) => c.key && c.name && c.description)
+          .slice(0, 12)
       : [];
 
     const safeCharBlock = safeChars.length
       ? 'SAFE CHARACTERS (ONLY these may be depicted as humans):\n' +
-      safeChars
-        .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
-        .join('\n')
+        safeChars
+          .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
+          .join('\n')
       : 'SAFE CHARACTERS: (none provided)';
 
     let parsed: any;
@@ -94,7 +94,9 @@ export class AiYoutubeService {
             role: 'user',
             content:
               'Generate a YouTube wallpaper prompt for this script.\n\n' +
-              (title ? `VIDEO TITLE (do NOT copy this text as the headline):\n${title}\n\n` : '') +
+              (title
+                ? `VIDEO TITLE (do NOT copy this text as the headline):\n${title}\n\n`
+                : '') +
               safeCharBlock +
               '\n\nSCRIPT:\n' +
               trimmed,
@@ -337,7 +339,7 @@ export class AiYoutubeService {
         attempt === 1
           ? baseSystem
           : baseSystem +
-          '\n\nIMPORTANT: Your previous response was invalid. Return ONLY valid JSON (no prose, no markdown, no code fences).';
+            '\n\nIMPORTANT: Your previous response was invalid. Return ONLY valid JSON (no prose, no markdown, no code fences).';
 
       try {
         const msg: any = await anthropic.messages.create({

@@ -41,9 +41,7 @@ import {
   safeCopyFile as safeCopyFileExternal,
   safeRmDir as safeRmDirExternal,
 } from './utils/fs.utils';
-import {
-  uploadBufferToCloudinary as uploadBufferToCloudinaryExternal,
-} from './utils/cloudinary.utils';
+import { uploadBufferToCloudinary as uploadBufferToCloudinaryExternal } from './utils/cloudinary.utils';
 import {
   REMOTION_BACKGROUND_REL,
   REMOTION_CAMERA_CLICK_SFX_REL,
@@ -102,12 +100,11 @@ export class RenderVideosService implements OnModuleInit {
     try {
       const message =
         'Render worker restarted while this job was running. Please start a new render.';
-      const updated = (await this.dataSource.query(
+      const updated = await this.dataSource.query(
         'UPDATE render_jobs SET status = $1, error = $2 WHERE trim(lower(status)) IN ($3, $4) AND ("lastProgressAt" IS NULL OR "lastProgressAt" < NOW() - ($5 * INTERVAL \'1 minute\')) RETURNING id',
         ['failed', message, 'processing', 'rendering', staleMinutes],
-      )) as Array<{ id: string }>;
+      );
 
-      // eslint-disable-next-line no-console
       console.log(
         `[render-jobs] Startup cleanup ran (env=${nodeEnv || 'unset'}, watch=${isWatchMode}, staleMinutes=${staleMinutes}). Updated=${
           Array.isArray(updated) ? updated.length : 0
@@ -115,21 +112,19 @@ export class RenderVideosService implements OnModuleInit {
       );
 
       if (Array.isArray(updated) && updated.length > 0) {
-        // eslint-disable-next-line no-console
         console.log(
           `[render-jobs] Marked ${updated.length} orphaned job(s) as failed on startup`,
         );
       } else {
-        // eslint-disable-next-line no-console
-        const counts = (await this.dataSource.query(
+        const counts = await this.dataSource.query(
           'SELECT status, COUNT(*)::int AS count FROM render_jobs GROUP BY status ORDER BY count DESC',
-        )) as Array<{ status: string; count: number }>;
-        // eslint-disable-next-line no-console
+        );
+
         console.log('[render-jobs] Startup status counts:', counts);
       }
     } catch (err) {
       // Never fail app startup due to cleanup.
-      // eslint-disable-next-line no-console
+
       console.warn(
         '[render-jobs] Failed to cleanup orphaned jobs on startup:',
         err instanceof Error ? err.message : err,
@@ -647,7 +642,9 @@ export class RenderVideosService implements OnModuleInit {
         publicDir = prepared.publicDir;
         // Prefer local assets in local rendering (avoids network/proxy failures).
         // If copying the subscribe clip fails on Windows (rare EPERM cases), fall back to CDN.
-        subscribeVideoSrc = hasSubscribeSentence ? prepared.subscribeVideoSrc : null;
+        subscribeVideoSrc = hasSubscribeSentence
+          ? prepared.subscribeVideoSrc
+          : null;
         publicDirToClean = jobDir;
 
         // Materialize required Remotion assets into the job-scoped publicDir.
@@ -665,6 +662,10 @@ export class RenderVideosService implements OnModuleInit {
         this.safeCopyFile(
           join(remotionAssetsDir, 'whoosh.mp3'),
           join(jobDir, REMOTION_WHOOSH_SFX_REL),
+        );
+        this.safeCopyFile(
+          join(remotionAssetsDir, 'whoosh-end.mp3'),
+          join(jobDir, REMOTION_CHROMA_LEAK_SFX_REL),
         );
         this.safeCopyFile(
           join(remotionAssetsDir, 'camera_click.mp3'),
@@ -709,11 +710,13 @@ export class RenderVideosService implements OnModuleInit {
 
             const mime = String(downloaded.mimeType ?? '').toLowerCase();
             const extFromMime = () => {
-              if (mime.includes('audio/mpeg') || mime.includes('audio/mp3')) return '.mp3';
+              if (mime.includes('audio/mpeg') || mime.includes('audio/mp3'))
+                return '.mp3';
               if (mime.includes('audio/wav')) return '.wav';
               if (mime.includes('audio/aac')) return '.aac';
               if (mime.includes('audio/ogg')) return '.ogg';
-              if (mime.includes('audio/mp4') || mime.includes('audio/x-m4a')) return '.m4a';
+              if (mime.includes('audio/mp4') || mime.includes('audio/x-m4a'))
+                return '.m4a';
               return '';
             };
 

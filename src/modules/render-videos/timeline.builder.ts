@@ -10,7 +10,9 @@ import {
 } from './render-videos.constants';
 
 export const isShortScript = (scriptLength: string) => {
-  const s = String(scriptLength ?? '').trim().toLowerCase();
+  const s = String(scriptLength ?? '')
+    .trim()
+    .toLowerCase();
   if (!s) return false;
 
   const secondsMatch = /([0-9]+(?:\.[0-9]+)?)\s*second/u.exec(s);
@@ -120,6 +122,8 @@ export const buildTimeline = (params: {
       s.mediaType === 'video' &&
       !!String(s.videoUrl ?? '').trim();
 
+    const isImageScene = !isSubscribeLike && !wantsSentenceVideo;
+
     // Critical: ensure scenes are frame-contiguous.
     // Any gap from rounding would otherwise show as black in Remotion.
     const startFrame = index === 0 ? 0 : cursor;
@@ -134,7 +138,9 @@ export const buildTimeline = (params: {
       index,
       text: s.text,
       isSuspense: !!s.isSuspense,
-      ...(s.visualEffect != null ? { visualEffect: s.visualEffect } : {}),
+      ...(isImageScene && s.visualEffect != null
+        ? { visualEffect: s.visualEffect }
+        : {}),
       imageSrc:
         isSubscribeLike || wantsSentenceVideo
           ? undefined

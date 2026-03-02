@@ -8,6 +8,9 @@ export type TimelineScene = {
     | 'none'
     | 'colorGrading'
     | 'animatedLighting'
+    | 'glassSubtle'
+    | 'glassReflections'
+    | 'glassStrong'
     | null;
   startFrame: number;
   durationFrames: number;

@@ -37,11 +37,17 @@ class SentenceDto {
     'none',
     'colorGrading',
     'animatedLighting',
+    'glassSubtle',
+    'glassReflections',
+    'glassStrong',
   ])
   visualEffect?:
     | 'none'
     | 'colorGrading'
     | 'animatedLighting'
+    | 'glassSubtle'
+    | 'glassReflections'
+    | 'glassStrong'
     | null;
 }
 

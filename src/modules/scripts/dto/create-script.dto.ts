@@ -20,7 +20,13 @@ const ALLOWED_TRANSITIONS = [
   'chromaLeak',
 ] as const;
 
-const ALLOWED_VISUAL_EFFECTS = ['colorGrading', 'animatedLighting'] as const;
+const ALLOWED_VISUAL_EFFECTS = [
+  'colorGrading',
+  'animatedLighting',
+  'glassSubtle',
+  'glassReflections',
+  'glassStrong',
+] as const;
 
 class CreateSentenceInput {
   @IsString()

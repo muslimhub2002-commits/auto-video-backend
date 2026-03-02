@@ -84,7 +84,7 @@ export class MessagesService {
       };
     }
 
-    let finalVideoUrl = video_url;
+    const finalVideoUrl = video_url;
 
     // Cloudinary video uploads are disabled; keep the provided video URL.
 
@@ -152,5 +152,4 @@ export class MessagesService {
       message_id: savedMessage.id,
     };
   }
-
 }
