@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   Get,
   Post,
   Patch,
@@ -155,5 +156,26 @@ export class BackgroundSoundtracksController {
       soundtrackId,
       volumePercent: body?.volumePercent,
     });
+  }
+
+  @Delete(':soundtrackId')
+  @UseGuards(JwtAuthGuard)
+  async remove(
+    @Req() req: Request,
+    @Param('soundtrackId') soundtrackId: string,
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    const deletedId = await this.service.deleteById({
+      user_id,
+      soundtrackId,
+    });
+
+    return { id: deletedId };
   }
 }

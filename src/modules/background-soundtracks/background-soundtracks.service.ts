@@ -120,6 +120,50 @@ export class BackgroundSoundtracksService {
     return this.repo.save(target);
   }
 
+  async deleteById(params: {
+    user_id: string;
+    soundtrackId: string;
+  }): Promise<string> {
+    const soundtrackId = String(params.soundtrackId ?? '').trim();
+    if (!soundtrackId) {
+      throw new NotFoundException('Soundtrack not found');
+    }
+
+    const target = await this.repo.findOne({
+      where: { id: soundtrackId, user_id: params.user_id },
+    });
+
+    if (!target) {
+      throw new NotFoundException('Soundtrack not found');
+    }
+
+    // Best-effort Cloudinary cleanup. The upload uses `resource_type: 'video'`.
+    const publicId = String((target as any)?.public_id ?? '').trim();
+    if (publicId) {
+      try {
+        if (
+          process.env.CLOUDINARY_CLOUD_NAME &&
+          process.env.CLOUDINARY_API_KEY &&
+          process.env.CLOUDINARY_CLOUD_SECRET
+        ) {
+          await cloudinary.uploader.destroy(publicId, {
+            resource_type: 'video',
+          } as any);
+        }
+      } catch (error) {
+        // Don't block deletion if Cloudinary cleanup fails.
+        console.error('Failed to delete soundtrack from Cloudinary', {
+          soundtrackId,
+          publicId,
+          error,
+        });
+      }
+    }
+
+    await this.repo.delete({ id: target.id, user_id: params.user_id } as any);
+    return target.id;
+  }
+
   private ensureCloudinaryConfigured() {
     if (
       !process.env.CLOUDINARY_CLOUD_NAME ||
