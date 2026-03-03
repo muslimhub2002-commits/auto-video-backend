@@ -19,6 +19,7 @@ export type TimelineScene = {
 };
 
 export type Timeline = {
+  language?: string;
   width: number;
   height: number;
   fps: number;

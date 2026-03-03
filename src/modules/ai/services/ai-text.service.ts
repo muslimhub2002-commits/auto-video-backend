@@ -6,8 +6,12 @@ import {
 import { GenerateScriptDto } from '../dto/generate-script.dto';
 import { EnhanceScriptDto } from '../dto/enhance-script.dto';
 import { EnhanceSentenceDto } from '../dto/enhance-sentence.dto';
+import { TranslateDto } from '../dto/translate.dto';
 import type { LlmMessage } from '../llm/llm-types';
 import { AiRuntimeService } from './ai-runtime.service';
+// translate-google is a CommonJS export. This project compiles to CommonJS without
+// `esModuleInterop`, so we must import it via `require` to avoid `.default` being undefined.
+import translateGoogle = require('translate-google');
 
 @Injectable()
 export class AiTextService {
@@ -114,9 +118,49 @@ export class AiTextService {
     const length = options.length?.trim() || '1 minute';
     const style = options.style?.trim() || 'Conversational';
     const technique = this.normalizeTechnique(options.technique);
+    const languageCode = String(options.language ?? '').trim() || 'en';
     const model = options.model?.trim() || this.model;
     const customSystemPrompt = options.systemPrompt?.trim() || '';
     const wordRange = this.getStrictWordRange(length);
+
+    const languageDesc = (() => {
+      const code = languageCode;
+      switch (code.toLowerCase()) {
+        case 'en':
+          return 'English (en)';
+        case 'ar':
+          return 'Arabic (ar)';
+        case 'fr':
+          return 'French (fr)';
+        case 'es':
+          return 'Spanish (es)';
+        case 'de':
+          return 'German (de)';
+        case 'it':
+          return 'Italian (it)';
+        case 'pt':
+          return 'Portuguese (pt)';
+        case 'ru':
+          return 'Russian (ru)';
+        case 'tr':
+          return 'Turkish (tr)';
+        case 'hi':
+          return 'Hindi (hi)';
+        case 'ur':
+          return 'Urdu (ur)';
+        case 'id':
+          return 'Indonesian (id)';
+        case 'ja':
+          return 'Japanese (ja)';
+        case 'ko':
+          return 'Korean (ko)';
+        case 'zh-cn':
+        case 'zh':
+          return 'Chinese (Simplified) (zh-CN)';
+        default:
+          return `${code} (target language code)`;
+      }
+    })();
 
     const referenceScripts = (options.referenceScripts ?? [])
       .map((r) => ({
@@ -138,7 +182,8 @@ export class AiTextService {
             'You ONLY respond with the script text, no explanations, headings, or markdown. ' +
             'You have a talent for getting straight to the point and engaging the audience quickly. ' +
             'Aim for driving a comment from the viewer. ' +
-            `HARD LENGTH CONSTRAINT: Output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.`,
+            `HARD LENGTH CONSTRAINT: Output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.\n` +
+            `LANGUAGE REQUIREMENT: Write the entire script in ${languageDesc}. Do NOT mix languages.`,
         },
       ];
 
@@ -185,6 +230,7 @@ export class AiTextService {
           `Generate a detailed video narration script.\n` +
           `Approximate length: ${length}.\n` +
           `Strict word count requirement: ${wordRange.minWords}-${wordRange.maxWords} words (target ${wordRange.targetWords}).\n` +
+          `Language: ${languageDesc}.\n` +
           `Subject: ${subject}.\n` +
           (subjectContent
             ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${subjectContent}.\n`
@@ -412,14 +458,16 @@ export class AiTextService {
       const characters = normalizeCharacters(parsedCharacters);
 
       const requiredErasPrompt =
-        'You extract canonical ERAS / time periods from a narration script.\n' +
+        'You extract the different canonical ERAS periods from a narration script.\n' +
         'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
         '{"eras": [{"key": string, "name": string, "description"?: string}]}\n\n' +
         'Rules:\n' +
-        '- Extract time periods/eras that are relevant to the story.\n' +
+        '- Extract the different canonical ERAS that are relevant to the story.\n' +
         '- Use keys E1, E2, E3... (do NOT use E0).\n' +
         '- Keep era.name short (e.g. "7th century Arabia", "Ottoman era", "Modern day").\n' +
-        '- No extra keys. No extra text.';
+        '- The description should include any important contextual details for that era that could impact visual depiction (e.g. clothing, environment, lighting, color tone).\n'
+        '- Don\'t add in the description any human or character details that belong in the character descriptions; focus only on era-specific contextual/atmospheric details.\n' +
+        '- If the script implies a time progression, assign eras accordingly. If the era is ambiguous or not visually distinct, it can be null.\n' 
 
       const parsedEras = await this.llm.completeJson<unknown>({
         model,
@@ -703,9 +751,49 @@ export class AiTextService {
     const length = dto.length?.trim() || '1 minute';
     const style = dto.style?.trim() || 'Conversational';
     const technique = this.normalizeTechnique(dto.technique);
+    const languageCode = String(dto.language ?? '').trim() || 'en';
     const model = dto.model?.trim() || this.model;
     const customSystemPrompt = dto.systemPrompt?.trim();
     const wordRange = this.getStrictWordRange(length);
+
+    const languageDesc = (() => {
+      const code = languageCode;
+      switch (code.toLowerCase()) {
+        case 'en':
+          return 'English (en)';
+        case 'ar':
+          return 'Arabic (ar)';
+        case 'fr':
+          return 'French (fr)';
+        case 'es':
+          return 'Spanish (es)';
+        case 'de':
+          return 'German (de)';
+        case 'it':
+          return 'Italian (it)';
+        case 'pt':
+          return 'Portuguese (pt)';
+        case 'ru':
+          return 'Russian (ru)';
+        case 'tr':
+          return 'Turkish (tr)';
+        case 'hi':
+          return 'Hindi (hi)';
+        case 'ur':
+          return 'Urdu (ur)';
+        case 'id':
+          return 'Indonesian (id)';
+        case 'ja':
+          return 'Japanese (ja)';
+        case 'ko':
+          return 'Korean (ko)';
+        case 'zh-cn':
+        case 'zh':
+          return 'Chinese (Simplified) (zh-CN)';
+        default:
+          return `${code} (target language code)`;
+      }
+    })();
 
     const techniqueBlock = this.getTechniquePromptBlock(technique);
 
@@ -719,6 +807,7 @@ export class AiTextService {
     const enhanceSystemPrompt = [
       customSystemPrompt,
       requiredEnhanceRoleLine,
+      `LANGUAGE REQUIREMENT: Output MUST be in ${languageDesc}. Do NOT mix languages.`,
       'You improve existing narration scripts by enhancing clarity, flow, and emotional impact, while strictly preserving the original meaning, topic, and approximate length.',
       techniqueBlock
         ? 'Also enforce the selected narrative technique below while editing. Integrate it naturally; do not add extra sections.'
@@ -933,5 +1022,135 @@ export class AiTextService {
     } catch {
       return sentence;
     }
+  }
+
+  async translate(dto: TranslateDto): Promise<{ script?: string; sentences?: string[] }> {
+    const targetLanguage = String(dto?.targetLanguage ?? '').trim();
+    if (!targetLanguage) {
+      throw new BadRequestException('targetLanguage is required');
+    }
+
+    const normalizeLanguageCode = (code: string): string => {
+      const trimmed = String(code ?? '').trim();
+      if (!trimmed) return '';
+      const lower = trimmed.toLowerCase();
+
+      // Frontend uses zh-CN; translate-google generally expects lowercase.
+      if (lower === 'zh-cn' || lower === 'zh-hans' || lower === 'zh') return 'zh-cn';
+      return lower;
+    };
+
+    const normalizedTargetLanguage = normalizeLanguageCode(targetLanguage);
+
+    const method: 'google' | 'llm' = dto?.method ?? 'google';
+
+    const scriptRaw = dto?.script;
+    const script = typeof scriptRaw === 'string' ? scriptRaw.trim() : '';
+
+    const sentencesRaw = Array.isArray(dto?.sentences) ? dto.sentences : undefined;
+    const sentences =
+      sentencesRaw === undefined
+        ? undefined
+        : sentencesRaw.map((s) => String(s ?? ''));
+
+    if (!script && (!sentences || sentences.length === 0)) {
+      throw new BadRequestException('Provide `script` and/or a non-empty `sentences` array');
+    }
+
+    const normalizeGoogleResult = (result: any): string => {
+      if (typeof result === 'string') return result;
+      const text = typeof result?.text === 'string' ? result.text : '';
+      return text || '';
+    };
+
+    const translateWithGoogle = async (text: string): Promise<string> => {
+      const res = await translateGoogle(text, {
+        to: normalizedTargetLanguage,
+      });
+      return normalizeGoogleResult(res);
+    };
+
+    const translateManyWithGoogle = async (texts: string[]): Promise<string[]> => {
+      const out: string[] = [];
+      for (const t of texts) {
+        // Preserve array length exactly. Allow empty strings.
+        if (!t) {
+          out.push('');
+          continue;
+        }
+        out.push(await translateWithGoogle(t));
+      }
+      return out;
+    };
+
+    const translateManyWithLlm = async (texts: string[]): Promise<string[]> => {
+      const model = String(dto?.model ?? '').trim() || this.model;
+      const chunkSize = 20;
+      const out: string[] = [];
+
+      for (let i = 0; i < texts.length; i += chunkSize) {
+        const chunk = texts.slice(i, i + chunkSize);
+
+        const systemPrompt =
+          'You are a professional translator for short narration scripts.\n' +
+          'Translate every input string into the requested target language.\n' +
+          'IMPORTANT: You must preserve the number of items and their order.\n' +
+          'Return ONLY valid JSON in this exact shape: {"translations": string[]}.\n' +
+          'Do not add explanations or extra keys.';
+
+        const userPrompt =
+          `Target language: ${targetLanguage} (code: ${normalizedTargetLanguage})\n` +
+          'Translate these items. Preserve meaning and natural tone for narration.\n\n' +
+          'Input JSON:\n' +
+          JSON.stringify({ items: chunk });
+
+        const parsed = await this.llm.completeJson<unknown>({
+          model,
+          temperature: 0.2,
+          maxTokens: 2000,
+          retries: 1,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+        });
+
+        const translations = (parsed as any)?.translations;
+        if (!Array.isArray(translations) || translations.length !== chunk.length) {
+          throw new InternalServerErrorException(
+            'LLM translation returned an invalid shape/length',
+          );
+        }
+
+        for (const t of translations) {
+          out.push(String(t ?? ''));
+        }
+      }
+
+      return out;
+    };
+
+    const translateMany = async (texts: string[]): Promise<string[]> => {
+      try {
+        if (method === 'llm') return await translateManyWithLlm(texts);
+        return await translateManyWithGoogle(texts);
+      } catch (err) {
+        console.error('Translation failed', err);
+        throw new InternalServerErrorException('Failed to translate');
+      }
+    };
+
+    const result: { script?: string; sentences?: string[] } = {};
+
+    if (script) {
+      const [translated] = await translateMany([script]);
+      result.script = translated;
+    }
+
+    if (sentences !== undefined) {
+      result.sentences = await translateMany(sentences);
+    }
+
+    return result;
   }
 }

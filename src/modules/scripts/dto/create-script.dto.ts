@@ -160,6 +160,11 @@ export class CreateScriptDto {
   @IsNotEmpty()
   script: string;
 
+  // ISO language code (e.g. "en", "ar").
+  @IsString()
+  @IsOptional()
+  language?: string;
+
   @IsString()
   @IsOptional()
   subject?: string | null;

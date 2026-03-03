@@ -8,6 +8,7 @@ import { GenerateVideoFromFramesDto } from './dto/generate-video-from-frames.dto
 import { GenerateVideoFromTextDto } from './dto/generate-video-from-text.dto';
 import { GenerateVideoFromReferenceImageDto } from './dto/generate-video-from-reference-image.dto';
 import { GenerateVideoPromptDto } from './dto/generate-video-prompt.dto';
+import { TranslateDto } from './dto/translate.dto';
 import { AiTextService } from './services/ai-text.service';
 import { AiImageService } from './services/ai-image.service';
 import { AiVoiceService } from './services/ai-voice.service';
@@ -132,6 +133,10 @@ export class AiService {
 
   generateTitleForScript(script: string): Promise<string> {
     return this.textService.generateTitleForScript(script);
+  }
+
+  translate(dto: TranslateDto): Promise<{ script?: string; sentences?: string[] }> {
+    return this.textService.translate(dto);
   }
 
   generateVideoPrompt(dto: GenerateVideoPromptDto): Promise<string> {

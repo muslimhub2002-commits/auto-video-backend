@@ -21,8 +21,6 @@ import { CreateRenderVideoDto } from './dto/create-render-video.dto';
 import { CreateRenderVideoUrlDto } from './dto/create-render-video-url.dto';
 import { RenderVideosService } from './render-videos.service';
 import {
-  SHORTS_CTA_SENTENCE,
-  SUBSCRIBE_SENTENCE,
   isSubscribeLikeSentence,
 } from './render-videos.constants';
 
@@ -155,6 +153,7 @@ export class RenderVideosController {
         : undefined;
 
     const job = await this.renderVideosService.createJob({
+      language: typeof body.language === 'string' ? body.language.trim() : undefined,
       audioFile: null,
       audioUrl: body.audioUrl,
       sentences,
@@ -382,6 +381,7 @@ export class RenderVideosController {
       : undefined;
 
     const job = await this.renderVideosService.createJob({
+      language: typeof body.language === 'string' ? body.language.trim() : undefined,
       audioFile: voice
         ? {
             buffer: voice.buffer,

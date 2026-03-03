@@ -22,6 +22,7 @@ import { GenerateVoiceDto } from './dto/generate-voice.dto';
 import { GenerateVoiceStyleDto } from './dto/generate-voice-style.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
+import { TranslateDto } from './dto/translate.dto';
 import { YoutubeSeoDto } from './dto/youtube-seo.dto';
 import { YoutubeWallpaperDto } from './dto/youtube-wallpaper.dto';
 import { GenerateVideoFromFramesDto } from './dto/generate-video-from-frames.dto';
@@ -159,6 +160,16 @@ export class AiController {
       }
       res.end('\n[Error] Failed to stream enhanced sentence.');
     }
+  }
+
+  /**
+   * Translates an existing script and/or an ordered list of sentences.
+   * Returns JSON: { script?: string, sentences?: string[] }
+   */
+  @Post('translate')
+  @HttpCode(HttpStatus.OK)
+  async translate(@Body() body: TranslateDto) {
+    return this.aiService.translate(body);
   }
 
   /**

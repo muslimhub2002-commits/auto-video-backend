@@ -257,6 +257,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
           >
             <Scene
               scene={scene}
+              language={timeline.language}
               fontScale={fontScale}
               showSubtitles={showSubtitles}
               transitionFromPrev={transitionFromPrev}

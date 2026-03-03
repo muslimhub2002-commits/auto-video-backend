@@ -6,6 +6,10 @@ import {
 } from 'class-validator';
 
 export class CreateRenderVideoDto {
+  @IsOptional()
+  @IsString()
+  language?: string;
+
   @IsString()
   @IsNotEmpty()
   sentences: string;

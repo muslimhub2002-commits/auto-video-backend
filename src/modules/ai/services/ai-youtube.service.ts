@@ -184,7 +184,7 @@ export class AiYoutubeService {
     const baseTitle = String(parsed.title ?? '').trim();
 
     // Shorts keep the hashtags; regular videos do not.
-    const title = isShort ? `${baseTitle} #allah #shorts` : baseTitle;
+    const title = baseTitle;
 
     const pickShortSentence = (raw: string) => {
       const cleaned = String(raw || '')
@@ -205,7 +205,7 @@ export class AiYoutubeService {
     const description = (() => {
       if (isShort) {
         const shortSentence = pickShortSentence(modelDesc);
-        return `${title}\n${shortSentence}\n\n#allah,#islamicShorts,#shorts`;
+        return `${title}\n${shortSentence}`;
       }
 
       // Long-form: a separate long SEO description (not equal to the title).
@@ -233,9 +233,7 @@ export class AiYoutubeService {
 
     const tags = await this.buildFinalYoutubeTags({
       script: trimmed,
-      primary: isShort
-        ? ['Allah', 'Islamic Shorts', ...webTags]
-        : ['Allah', 'Islamic Stories', ...webTags],
+      primary: webTags,
       fallback: llmFallbackTags,
       min: 3,
       max: 5,
@@ -244,8 +242,10 @@ export class AiYoutubeService {
     if (!title) {
       throw new InternalServerErrorException('OpenAI returned empty title');
     }
-
-    return { title, description, tags };
+    const updatedTags = isShort
+        ? ['Allah','Muslim','Muslims', 'Islamic Shorts', ...tags]
+        : ['Allah','Muslim','Muslims', 'Islamic Stories', ...tags]
+    return { title, description, tags:updatedTags };
   }
 
   private tryExtractJson(raw: string): string {

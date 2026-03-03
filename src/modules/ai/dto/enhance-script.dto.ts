@@ -5,6 +5,11 @@ export class EnhanceScriptDto {
   @IsNotEmpty()
   script: string;
 
+  // Output language ISO code (e.g. "en", "ar").
+  @IsString()
+  @IsOptional()
+  language?: string;
+
   // Desired length, e.g. "30 seconds", "1 minute"
   @IsString()
   @IsOptional()

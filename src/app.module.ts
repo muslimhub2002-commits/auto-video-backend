@@ -12,6 +12,7 @@ import { Message } from './modules/messages/entities/message.entity';
 import { Script } from './modules/scripts/entities/script.entity';
 import { Sentence } from './modules/scripts/entities/sentence.entity';
 import { ScriptTemplate } from './modules/scripts/entities/script-template.entity';
+import { ScriptTranslationGroup } from './modules/scripts/entities/script-translation-group.entity';
 import { AiModule } from './modules/ai/ai.module';
 import { RenderVideosModule } from './modules/render-videos/render-videos.module';
 import { VoiceOversModule } from './modules/voice-overs/voice-overs.module';
@@ -66,6 +67,7 @@ import { VideosLibraryModule } from './modules/videos-library/videos-library.mod
         Script,
         Sentence,
         ScriptTemplate,
+        ScriptTranslationGroup,
       ],
     }),
 

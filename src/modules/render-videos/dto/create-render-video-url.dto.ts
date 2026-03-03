@@ -52,6 +52,10 @@ class SentenceDto {
 }
 
 export class CreateRenderVideoUrlDto {
+  @IsOptional()
+  @IsString()
+  language?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

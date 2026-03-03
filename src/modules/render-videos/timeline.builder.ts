@@ -1,7 +1,5 @@
 import type { SentenceInput, SentenceTiming } from './render-videos.types';
 import {
-  SUBSCRIBE_SENTENCE,
-  SHORTS_CTA_SENTENCE,
   CHROMA_LEAK_SFX_CLOUDINARY_URL,
   GLITCH_FX_CLOUDINARY_URL,
   WHOOSH_CLOUDINARY_URL,
@@ -34,6 +32,7 @@ export const isShortScript = (scriptLength: string) => {
 };
 
 export const buildTimeline = (params: {
+  language?: string;
   sentences: SentenceInput[];
   imagePaths: string[];
   scriptLength: string;
@@ -114,11 +113,11 @@ export const buildTimeline = (params: {
   let cursor = 0;
   const scenes = params.sentences.map((s, index) => {
     const trimmedText = String(s.text ?? '').trim();
-    const isSubscribeLike =
-      isSubscribeLikeSentence(trimmedText) && !!params.subscribeVideoSrc;
+    const isSubscribeLikeText = isSubscribeLikeSentence(trimmedText);
+    const isSubscribeLike = isSubscribeLikeText && !!params.subscribeVideoSrc;
 
     const wantsSentenceVideo =
-      !isSubscribeLike &&
+      !isSubscribeLikeText &&
       s.mediaType === 'video' &&
       !!String(s.videoUrl ?? '').trim();
 
@@ -201,6 +200,7 @@ export const buildTimeline = (params: {
   }
 
   return {
+    language: params.language,
     width,
     height,
     fps,

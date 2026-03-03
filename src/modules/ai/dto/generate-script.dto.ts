@@ -15,6 +15,11 @@ class ReferenceScriptDto {
 }
 
 export class GenerateScriptDto {
+  // Output language ISO code (e.g. "en", "ar").
+  @IsString()
+  @IsOptional()
+  language?: string;
+
   // High-level topic, e.g. "religious (Islam)", "motivational"
   @IsString()
   @IsOptional()

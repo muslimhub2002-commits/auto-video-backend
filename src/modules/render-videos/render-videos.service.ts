@@ -19,8 +19,6 @@ import type {
 } from './render-videos.types';
 import {
   CHROMA_LEAK_SFX_CLOUDINARY_URL,
-  SHORTS_CTA_SENTENCE,
-  SUBSCRIBE_SENTENCE,
   SUBSCRIBE_VIDEO_CLOUDINARY_URL,
   isSubscribeLikeSentence,
 } from './render-videos.constants';
@@ -167,6 +165,7 @@ export class RenderVideosService implements OnModuleInit {
   }
 
   async createJob(params: {
+    language?: string;
     audioFile: UploadedAsset | null;
     audioUrl?: string | null;
     sentences: SentenceInput[];
@@ -260,6 +259,7 @@ export class RenderVideosService implements OnModuleInit {
   }
 
   private buildTimeline(params: {
+    language?: string;
     sentences: SentenceInput[];
     imagePaths: string[];
     scriptLength: string;
@@ -476,6 +476,7 @@ export class RenderVideosService implements OnModuleInit {
   private async processJob(
     jobId: string,
     params: {
+      language?: string;
       audioFile: UploadedAsset | null;
       audioUrl?: string | null;
       sentences: SentenceInput[];
@@ -809,6 +810,7 @@ export class RenderVideosService implements OnModuleInit {
       );
 
       const timeline = this.buildTimeline({
+        language: params.language,
         sentences: params.sentences,
         imagePaths: imageSrcs,
         scriptLength: params.scriptLength,

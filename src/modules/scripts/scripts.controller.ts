@@ -21,6 +21,7 @@ import { UpdateScriptDto } from './dto/update-script.dto';
 import { UpdateSentenceMediaDto } from './dto/update-sentence-media.dto';
 import { GenerateSentenceVideoDto } from './dto/generate-sentence-video.dto';
 import { SaveSentenceVideoDto } from './dto/save-sentence-video.dto';
+import { TranslateScriptDto } from './dto/translate-script.dto';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadedFile } from '@nestjs/common';
@@ -94,6 +95,22 @@ export class ScriptsController {
     }
 
     return this.scriptsService.findOne(id, user_id);
+  }
+
+  @Post(':id/translate')
+  async translateToDraft(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: TranslateScriptDto,
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    return this.scriptsService.translateToDraft(id, user_id, dto);
   }
 
   @Patch(':id')

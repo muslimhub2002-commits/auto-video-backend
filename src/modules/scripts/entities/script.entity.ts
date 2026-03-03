@@ -21,6 +21,10 @@ export class Script {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  // ISO language code for this script (e.g. "en", "ar", "fr", "zh-CN").
+  @Column({ type: 'varchar', length: 20, default: 'en' })
+  language: string;
+
   // When true, this script row represents a short derived from a long-form script.
   // These rows are hidden from the normal scripts listing.
   @Column({ type: 'boolean', default: false })

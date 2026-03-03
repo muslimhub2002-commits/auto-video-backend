@@ -27,9 +27,13 @@ import type { TransitionType } from '../utils/transitions';
 import { getChromaParams } from '../utils/transitions';
 import { GlitchImage } from './GlitchImage';
 import { SuspenseOverlay } from './SuspenseOverlay';
+// import { loadFont as loadNotoKufiArabic } from '@remotion/google-fonts/NotoKufiArabic';
+
+// const { fontFamily: notoKufiArabicFontFamily } = loadNotoKufiArabic();
 
 export const Scene: React.FC<{
   scene: TimelineScene;
+  language?: string;
   fontScale: number;
   showSubtitles: boolean;
   transitionFromPrev: TransitionType;
@@ -41,6 +45,7 @@ export const Scene: React.FC<{
 }> = React.memo(
   ({
     scene,
+    language,
     fontScale,
     showSubtitles,
     transitionFromPrev,
@@ -53,6 +58,18 @@ export const Scene: React.FC<{
     const frame = useCurrentFrame();
     const { fps, width, height } = useVideoConfig();
     const isShort = height > width;
+
+    const normalizedLanguage = String(language ?? '')
+      .trim()
+      .toLowerCase();
+    const isArabic =
+      normalizedLanguage === 'ar' ||
+      normalizedLanguage.startsWith('ar-') ||
+      normalizedLanguage.startsWith('ar_') ||
+      normalizedLanguage.includes('arab');
+    const subtitleFontFamily = isArabic
+      ? `Noto Kufi Arabic, sans-serif`
+      : 'Oswald, system-ui, sans-serif';
 
     // Inside a <Sequence>, useCurrentFrame() is already relative to the Sequence start.
     // Clamp to 0 to ensure each scene starts at default scale.
@@ -550,7 +567,7 @@ export const Scene: React.FC<{
                 borderRadius: 18,
                 fontSize: 60 * fontScale,
                 fontWeight: 700,
-                fontFamily: 'Oswald, system-ui, sans-serif',
+                fontFamily: subtitleFontFamily,
                 lineHeight: 1.15,
                 marginBottom: isShort ? '400px' : '10px',
                 textAlign: 'center',

@@ -24,6 +24,8 @@ import { UpdateSentenceMediaDto } from './dto/update-sentence-media.dto';
 import { GenerateSentenceVideoDto } from './dto/generate-sentence-video.dto';
 import { SaveSentenceVideoDto } from './dto/save-sentence-video.dto';
 import { uploadBufferToCloudinary } from '../render-videos/utils/cloudinary.utils';
+import { TranslateScriptDto } from './dto/translate-script.dto';
+import { ScriptTranslationGroup } from './entities/script-translation-group.entity';
 
 type UploadedImageFile = {
   buffer: Buffer;
@@ -55,6 +57,8 @@ export class ScriptsService implements OnModuleInit {
     private readonly imageRepository: Repository<Image>,
     @InjectRepository(VideoEntity)
     private readonly videoRepository: Repository<VideoEntity>,
+    @InjectRepository(ScriptTranslationGroup)
+    private readonly scriptTranslationGroupRepository: Repository<ScriptTranslationGroup>,
     private readonly aiService: AiService,
   ) {}
 
@@ -142,6 +146,7 @@ export class ScriptsService implements OnModuleInit {
       const hasShortsScripts = await this.scriptsColumnExists('shorts_scripts');
       const hasYoutubeUrl = await this.scriptsColumnExists('youtube_url');
       const hasEras = await this.scriptsColumnExists('eras');
+      const hasLanguage = await this.scriptsColumnExists('language');
 
       const sentencesTableExists = await this.sentencesTableExists();
       const hasSentenceCharacterKeys = sentencesTableExists
@@ -162,6 +167,7 @@ export class ScriptsService implements OnModuleInit {
         !hasShortsScripts ||
         !hasYoutubeUrl ||
         !hasEras ||
+        !hasLanguage ||
         !hasSentenceCharacterKeys ||
         !hasSentenceEraKey ||
         !hasSentenceForcedEraKey ||
@@ -174,6 +180,7 @@ export class ScriptsService implements OnModuleInit {
       const finalHasShortsScripts = await this.scriptsColumnExists('shorts_scripts');
       const finalHasYoutubeUrl = await this.scriptsColumnExists('youtube_url');
       const finalHasEras = await this.scriptsColumnExists('eras');
+      const finalHasLanguage = await this.scriptsColumnExists('language');
 
       const finalSentencesTableExists = await this.sentencesTableExists();
       const finalHasSentenceCharacterKeys = finalSentencesTableExists
@@ -194,13 +201,14 @@ export class ScriptsService implements OnModuleInit {
         !finalHasShortsScripts ||
         !finalHasYoutubeUrl ||
         !finalHasEras ||
+        !finalHasLanguage ||
         !finalHasSentenceCharacterKeys ||
         !finalHasSentenceEraKey ||
         !finalHasSentenceForcedEraKey ||
         !finalHasSentenceVideoPrompt
       ) {
         throw new InternalServerErrorException(
-          'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, eras, and sentences.character_keys/era_key/forced_era_key). ' +
+          'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, eras, language, and sentences.character_keys/era_key/forced_era_key). ' +
             'Ensure your DB user has ALTER permissions, or apply the schema update SQL in `ScriptsService.ensureScriptsSchema()`.',
         );
       }
@@ -271,6 +279,22 @@ export class ScriptsService implements OnModuleInit {
     try {
       await this.dataSource.query(
         'ALTER TABLE scripts ADD COLUMN IF NOT EXISTS eras JSONB NULL',
+      );
+    } catch (err: any) {
+      const message = String(err?.message || '');
+      if (
+        message.includes('does not exist') ||
+        message.includes('permission denied')
+      ) {
+        return;
+      }
+      throw err;
+    }
+
+    // Script language (ISO code), e.g. "en", "ar".
+    try {
+      await this.dataSource.query(
+        "ALTER TABLE scripts ADD COLUMN IF NOT EXISTS language VARCHAR(20) NOT NULL DEFAULT 'en'",
       );
     } catch (err: any) {
       const message = String(err?.message || '');
@@ -1129,6 +1153,7 @@ export class ScriptsService implements OnModuleInit {
     await this.ensureScriptsSchemaLazy();
     const {
       script,
+      language,
       subject,
       subject_content,
       length,
@@ -1151,6 +1176,11 @@ export class ScriptsService implements OnModuleInit {
 
     const cleanedSubject =
       subject === undefined ? undefined : (subject ?? '').trim() || null;
+
+    const cleanedLanguage =
+      language === undefined
+        ? undefined
+        : (language ?? '').trim() || 'en';
     const cleanedSubjectContent =
       subject_content === undefined
         ? undefined
@@ -1227,6 +1257,10 @@ export class ScriptsService implements OnModuleInit {
       if (cleanedStyle !== undefined) existingScript.style = cleanedStyle;
       if (cleanedTechnique !== undefined)
         existingScript.technique = cleanedTechnique;
+
+      if (cleanedLanguage !== undefined) {
+        existingScript.language = cleanedLanguage;
+      }
 
       if (referenceScripts !== undefined) {
         existingScript.reference_scripts = referenceScripts;
@@ -1332,6 +1366,7 @@ export class ScriptsService implements OnModuleInit {
       video_url: cleanedVideoUrl ?? null,
       youtube_url: cleanedYoutubeUrl ?? null,
       title: title || null,
+      language: cleanedLanguage ?? 'en',
       subject: cleanedSubject ?? null,
       subject_content: cleanedSubjectContent ?? null,
       length: cleanedLength ?? null,
@@ -1419,6 +1454,7 @@ export class ScriptsService implements OnModuleInit {
     items: Array<{
       id: string;
       title: string | null;
+      language: string;
       script: string;
       created_at: Date;
       sentences_count: number;
@@ -1501,6 +1537,7 @@ export class ScriptsService implements OnModuleInit {
       .createQueryBuilder('script')
       .select('script.id', 'id')
       .addSelect('script.title', 'title')
+      .addSelect('script.language', 'language')
       .addSelect('script.script', 'script')
       .addSelect('script.created_at', 'created_at')
       .where('script.user_id = :userId', { userId })
@@ -1510,6 +1547,7 @@ export class ScriptsService implements OnModuleInit {
       .getRawMany<{
         id: string;
         title: string | null;
+        language: string;
         script: string;
         created_at: Date;
       }>();
@@ -1615,6 +1653,11 @@ export class ScriptsService implements OnModuleInit {
     if (dto.subject !== undefined) {
       const trimmed = (dto.subject ?? '').trim();
       script.subject = trimmed ? trimmed : null;
+    }
+
+    if (dto.language !== undefined) {
+      const trimmed = String(dto.language ?? '').trim();
+      script.language = trimmed ? trimmed : 'en';
     }
 
     if (dto.subject_content !== undefined) {
@@ -1775,6 +1818,169 @@ export class ScriptsService implements OnModuleInit {
     }
 
     return this.findOne(id, userId);
+  }
+
+  async translateToDraft(
+    id: string,
+    userId: string,
+    dto: TranslateScriptDto,
+  ): Promise<Script> {
+    await this.ensureScriptsSchemaLazy();
+
+    const targetLanguage = String(dto?.targetLanguage ?? '').trim();
+    if (!targetLanguage) {
+      throw new BadRequestException('targetLanguage is required');
+    }
+
+    const source = await this.scriptRepository.findOne({
+      where: { id, user_id: userId },
+    });
+
+    if (!source) {
+      throw new NotFoundException('Script not found');
+    }
+
+    const sourceSentences = await this.sentenceRepository.find({
+      where: { script_id: source.id },
+      order: { index: 'ASC' },
+    });
+
+    const hasSentences = sourceSentences.length > 0;
+
+    let translatedScriptText = '';
+    let translatedSentences: string[] | null = null;
+
+    if (hasSentences) {
+      const sentenceTexts = sourceSentences.map((s) => String(s.text ?? ''));
+      const result = await this.aiService.translate({
+        targetLanguage,
+        method: dto.method,
+        model: dto.model,
+        sentences: sentenceTexts,
+      });
+
+      if (!Array.isArray(result?.sentences)) {
+        throw new InternalServerErrorException(
+          'Translation failed: expected sentences array',
+        );
+      }
+
+      if (result.sentences.length !== sentenceTexts.length) {
+        throw new InternalServerErrorException(
+          'Translation failed: sentence count mismatch',
+        );
+      }
+
+      translatedSentences = result.sentences;
+      translatedScriptText = translatedSentences.join('\n');
+    } else {
+      const sourceText = String(source.script ?? '').trim();
+      if (!sourceText) {
+        throw new BadRequestException('Script text is empty');
+      }
+
+      const result = await this.aiService.translate({
+        targetLanguage,
+        method: dto.method,
+        model: dto.model,
+        script: sourceText,
+      });
+
+      const translated = String(result?.script ?? '').trim();
+      if (!translated) {
+        throw new InternalServerErrorException(
+          'Translation failed: expected script text',
+        );
+      }
+      translatedScriptText = translated;
+    }
+
+    const savedDraft = await this.dataSource.transaction(async (manager) => {
+      const scriptRepo = manager.getRepository(Script);
+      const sentenceRepo = manager.getRepository(Sentence);
+      const groupRepo = manager.getRepository(ScriptTranslationGroup);
+
+      const draft = scriptRepo.create({
+        user_id: userId,
+        language: targetLanguage,
+        title: source.title ?? null,
+        script: translatedScriptText,
+        subject: source.subject ?? null,
+        subject_content: source.subject_content ?? null,
+        length: source.length ?? null,
+        style: source.style ?? null,
+        technique: source.technique ?? null,
+        characters: source.characters ?? null,
+        eras: (source as any).eras ?? null,
+        isShortScript: Boolean(source.isShortScript),
+        shorts_scripts: null,
+        message_id: null,
+        voice_id: null,
+        video_url: null,
+        youtube_url: null,
+      });
+
+      const saved = await scriptRepo.save(draft);
+
+      if (hasSentences) {
+        let suspenseAlreadyUsed = false;
+        const sentenceEntities = sourceSentences.map((s, idx) => {
+          const wantsSuspense = Boolean(s.isSuspense);
+          const isSuspense = wantsSuspense && !suspenseAlreadyUsed;
+          if (isSuspense) suspenseAlreadyUsed = true;
+
+          return sentenceRepo.create({
+            script_id: saved.id,
+            index: s.index ?? idx,
+            text: String(translatedSentences?.[idx] ?? ''),
+            image_id: s.image_id ?? null,
+            start_frame_image_id: s.start_frame_image_id ?? null,
+            end_frame_image_id: s.end_frame_image_id ?? null,
+            video_id: s.video_id ?? null,
+            video_prompt: s.video_prompt ?? null,
+            transition_to_next: s.transition_to_next ?? null,
+            visual_effect: s.visual_effect ?? null,
+            isSuspense,
+            forced_character_keys: s.forced_character_keys ?? null,
+            character_keys: s.character_keys ?? null,
+            era_key: s.era_key ?? null,
+            forced_era_key: s.forced_era_key ?? null,
+          });
+        });
+
+        await sentenceRepo.save(sentenceEntities);
+      }
+
+      // Translation grouping is created/updated when saving a translated draft.
+      // Reuse an existing group if the source is already part of one.
+      let group = await groupRepo
+        .createQueryBuilder('g')
+        .innerJoin('g.scripts', 's', 's.id = :scriptId', { scriptId: source.id })
+        .where('g.user_id = :userId', { userId })
+        .getOne();
+
+      if (!group) {
+        group = await groupRepo.save(groupRepo.create({ user_id: userId }));
+      }
+
+      const groupWithScripts = await groupRepo.findOne({
+        where: { id: group.id, user_id: userId },
+        relations: ['scripts'],
+      });
+
+      if (groupWithScripts) {
+        const uniqueById = new Map<string, Script>();
+        for (const s of groupWithScripts.scripts ?? []) uniqueById.set(s.id, s);
+        uniqueById.set(source.id, source);
+        uniqueById.set(saved.id, saved);
+        groupWithScripts.scripts = Array.from(uniqueById.values());
+        await groupRepo.save(groupWithScripts);
+      }
+
+      return saved;
+    });
+
+    return this.findOne(savedDraft.id, userId);
   }
 
   async remove(id: string, userId: string): Promise<{ deleted: true }> {
