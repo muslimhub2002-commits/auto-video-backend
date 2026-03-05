@@ -159,10 +159,4 @@ export class GenerateImageDto {
   @IsString({ each: true })
   @IsOptional()
   forcedCharacterKeys?: string[];
-
-  // Optional: allow textual elements in the generated image.
-  // Default behavior is to enforce "no text" to avoid gibberish overlays.
-  @IsBoolean()
-  @IsOptional()
-  allowText?: boolean;
 }

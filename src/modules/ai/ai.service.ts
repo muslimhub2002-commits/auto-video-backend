@@ -197,7 +197,6 @@ export class AiService {
         forcedCharacterKeys: wallpaper.characterKeys.length
           ? wallpaper.characterKeys
           : undefined,
-        allowText: true,
       },
       userId,
     );

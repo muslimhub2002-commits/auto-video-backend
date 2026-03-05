@@ -53,7 +53,7 @@ export class AiImageService {
   constructor(
     private readonly runtime: AiRuntimeService,
     private readonly imagesService: ImagesService,
-  ) {}
+  ) { }
 
   private static readonly NO_TEXT_PROMPT_SUFFIX =
     'No text, no letters, no words, no captions, no subtitles, no watermark, no logo, no signature, no symbols, no numbers.';
@@ -563,9 +563,15 @@ export class AiImageService {
       isWoman: boolean;
     }> | null;
     characterBible?: CharacterBible | null;
-  }): Promise<{ mentions: boolean; characterKeys: string[] }> {
+  }): Promise<{
+    blockHumans: boolean;
+    forceBackView: boolean;
+    characterKeys: string[];
+  }> {
     const sentence = (params.sentence ?? '').trim();
-    if (!sentence) return { mentions: false, characterKeys: [] };
+    if (!sentence) {
+      return { blockHumans: false, forceBackView: false, characterKeys: [] };
+    }
 
     const script = (params.script ?? '').trim();
 
@@ -621,13 +627,19 @@ export class AiImageService {
         const mentionsAllah = Boolean((parsed as any)?.mentionsAllah);
         const characterKeys = sanitizeKeys((parsed as any)?.characterKeys);
 
-        const mentionsRestrictedCharacter = characterKeys.some((k) => {
+        const mentionsProphetOrSahaba = characterKeys.some((k) => {
           const c = charactersByKey.get(k);
-          return Boolean(c && (c.isSahaba || c.isProphet || c.isWoman));
+          return Boolean(c && (c.isSahaba || c.isProphet));
         });
-        console.log(mentionsAllah, characterKeys, 'New Payload');
-        const mentions = mentionsAllah || mentionsRestrictedCharacter;
-        return { mentions, characterKeys };
+        const mentionsWoman = characterKeys.some((k) => {
+          const c = charactersByKey.get(k);
+          return Boolean(c && c.isWoman);
+        });
+
+        const forceBackView = mentionsProphetOrSahaba;
+        const blockHumans = Boolean(mentionsWoman || (mentionsAllah && !forceBackView));
+
+        return { blockHumans, forceBackView, characterKeys };
       }
 
       // Fallback path: boolean-only classifier.
@@ -662,7 +674,9 @@ export class AiImageService {
 
       const parsed = this.extractBooleanFromModelText(raw);
       const mentions = parsed ?? false;
-      if (mentions) return { mentions: true, characterKeys: [] };
+      if (mentions) {
+        return { blockHumans: true, forceBackView: false, characterKeys: [] };
+      }
 
       if (params.characterBible && params.characterBible.characters.length) {
         const characterKeys = await this.mapSentenceToCharacterKeys({
@@ -670,13 +684,13 @@ export class AiImageService {
           script: params.script,
           bible: params.characterBible,
         });
-        return { mentions: false, characterKeys };
+        return { blockHumans: false, forceBackView: false, characterKeys };
       }
 
-      return { mentions: false, characterKeys: [] };
+      return { blockHumans: false, forceBackView: false, characterKeys: [] };
     } catch (error) {
       console.error('Error classifying Allah/Prophet/Sahaba reference:', error);
-      return { mentions: false, characterKeys: [] };
+      return { blockHumans: false, forceBackView: false, characterKeys: [] };
     }
   }
 
@@ -853,12 +867,12 @@ export class AiImageService {
 
     const canonicalEras = Array.isArray(dto.eras)
       ? dto.eras
-          .map((e) => ({
-            key: String((e as any)?.key ?? '').trim(),
-            name: String((e as any)?.name ?? '').trim(),
-            description: String((e as any)?.description ?? '').trim(),
-          }))
-          .filter((e) => e.key && e.name)
+        .map((e) => ({
+          key: String((e as any)?.key ?? '').trim(),
+          name: String((e as any)?.name ?? '').trim(),
+          description: String((e as any)?.description ?? '').trim(),
+        }))
+        .filter((e) => e.key && e.name)
       : [];
 
     const forcedEraKeyProvided = dto.forcedEraKey !== undefined;
@@ -876,13 +890,13 @@ export class AiImageService {
     const forcedCharactersProvided = forcedCharacterKeysInput !== null;
     const forcedKeysRaw = forcedCharactersProvided
       ? forcedCharacterKeysInput
-          .map((k) => String(k ?? '').trim())
-          .filter(Boolean)
+        .map((k) => String(k ?? '').trim())
+        .filter(Boolean)
       : [];
     const forcedKeys = canonicalCharacters?.length
       ? forcedKeysRaw.filter((k) =>
-          canonicalCharacters.some((c) => c.key === k),
-        )
+        canonicalCharacters.some((c) => c.key === k),
+      )
       : [];
     const useForcedCharactersOverride = forcedCharactersProvided;
 
@@ -893,9 +907,9 @@ export class AiImageService {
     const inferredEra =
       !requestedEra && !forcedEraKeyProvided
         ? await this.getOrCreateEraForSentence({
-            scriptRaw: fullScriptContext,
-            sentenceRaw: sentenceText,
-          })
+          scriptRaw: fullScriptContext,
+          sentenceRaw: sentenceText,
+        })
         : null;
 
     const effectiveEraLine = requestedEra
@@ -911,14 +925,15 @@ export class AiImageService {
       characterBible,
     });
 
-    const enforceNoHumanFigures = mentionResult.mentions;
+    const blockHumans = mentionResult.blockHumans;
+    const forceBackView = mentionResult.forceBackView;
     const referencedCharacterKeys = useForcedCharactersOverride
       ? forcedKeys
-      : enforceNoHumanFigures
+      : blockHumans
         ? []
         : mentionResult.characterKeys;
     const focusMaleCharacter =
-      !enforceNoHumanFigures &&
+      !blockHumans &&
       (this.sentenceContainsMaleCharacter(sentenceText) ||
         referencedCharacterKeys.length > 0);
 
@@ -926,6 +941,9 @@ export class AiImageService {
       'ABSOLUTE RULE: Do NOT depict any humans or human-like figures. ' +
       'NO people, NO faces, NO heads, NO hands, NO bodies, NO skin, NO silhouettes, NO characters, NO crowds, NO humanoid statues.';
 
+    const backViewOnlyRule =
+      'show the person ONLY from behind (back view) & relatable to the sentence scene. ' +
+      'He can be lying down, sitting, fallen on the ground, walking away, etc., but you MUST NOT show any face or facial details. '
     try {
       let prompt = (dto.prompt ?? '').trim();
       if (!prompt) {
@@ -936,48 +954,48 @@ export class AiImageService {
           frameType === 'single'
             ? ''
             : (frameType === 'start'
-                ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
-                : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
-              (continuityPrompt
-                ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
-                : '');
+              ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
+              : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
+            (continuityPrompt
+              ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
+              : '');
 
         const characterRefsBlock = referencedCharacterKeys.length
           ? (() => {
-              const resolveDescription = (key: string): string | null => {
-                if (canonicalCharacters?.length) {
-                  const c = canonicalCharacters.find((cc) => cc.key === key);
-                  return c ? `${c.key}: ${c.description}` : null;
-                }
-                if (characterBible) {
-                  const c = characterBible.byKey[key];
-                  return c ? `${c.key}: ${c.description}` : null;
-                }
-                return null;
-              };
+            const resolveDescription = (key: string): string | null => {
+              if (canonicalCharacters?.length) {
+                const c = canonicalCharacters.find((cc) => cc.key === key);
+                return c ? `${c.key}: ${c.description}` : null;
+              }
+              if (characterBible) {
+                const c = characterBible.byKey[key];
+                return c ? `${c.key}: ${c.description}` : null;
+              }
+              return null;
+            };
 
-              const lines = referencedCharacterKeys
-                .map(resolveDescription)
-                .filter(Boolean)
-                .join('\n');
+            const lines = referencedCharacterKeys
+              .map(resolveDescription)
+              .filter(Boolean)
+              .join('\n');
 
-              return lines
-                ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
-                    lines +
-                    '\n\n'
-                : '';
-            })()
+            return lines
+              ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
+              lines +
+              '\n\n'
+              : '';
+          })()
           : '';
 
         if (!useForcedCharactersOverride) {
-          console.log(mentionResult.mentions, 'mentionsAllah/Prophet/Sahaba');
+          console.log(
+            { blockHumans, forceBackView },
+            'mentionsAllah/Prophet/Sahaba flags',
+          );
           console.log(referencedCharacterKeys, 'referencedCharacterKeys');
           console.log(effectiveEraLine, 'effectiveEraLine');
         } else {
-          console.log(
-            referencedCharacterKeys,
-            'forced referencedCharacterKeys',
-          );
+          console.log(referencedCharacterKeys, 'forced referencedCharacterKeys');
         }
 
         prompt =
@@ -996,11 +1014,16 @@ export class AiImageService {
                     'ABSOLUTE RULE: Do not add any textual elements in the image. ' +
                     AiImageService.NO_TEXT_PROMPT_SUFFIX +
                     (frameBlock ? frameBlock + '\n' : '') +
-                    (enforceNoHumanFigures
+                    (blockHumans
                       ? noHumanFiguresRule
-                      : referencedCharacterKeys.length
-                        ? 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
-                        : ''),
+                      : forceBackView
+                        ? backViewOnlyRule +
+                        (referencedCharacterKeys.length
+                          ? ' You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s).'
+                          : '')
+                        : referencedCharacterKeys.length
+                          ? 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
+                          : ''),
                 },
                 {
                   role: 'user',
@@ -1014,18 +1037,11 @@ export class AiImageService {
                     `Desired style: ${style}.\n\n` +
                     'Important constraints:\n' +
                     '- Do not depict women/females.\n' +
-                    '- Do not add any textual elements in the image.\n' +
-                    `- ${AiImageService.NO_TEXT_PROMPT_SUFFIX}\n` +
-                    (enforceNoHumanFigures
-                      ? '- ABSOLUTELY NO humans/human figures: no people, no faces, no hands, no bodies, no silhouettes.\n' +
-                        `${noHumanFiguresRule}\n`
-                      : focusMaleCharacter
-                        ? '- Include the male character(s) implied by the sentence and focus on their action; do not add extra characters beyond what the sentence implies.\n'
-                        : '') +
-                    (referencedCharacterKeys.length
-                      ? '- You MUST include the referenced character(s) facial + physical attributes from the CHARACTER CONSISTENCY block in your final prompt sentence.\n'
+                    (focusMaleCharacter
+                      ? '- Include the male character(s) implied by the sentence and focus on their action; do not add extra characters beyond what the sentence implies.\n'
                       : '') +
-                    'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.',
+                    'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.' +
+                    'The prompt should be on point and concise to best capture the scene for image generation. ',
                 },
               ],
             })
@@ -1071,7 +1087,7 @@ export class AiImageService {
           }
         }
 
-        if (enforceNoHumanFigures) {
+        if (blockHumans) {
           const hasNoHumans =
             /\bno\s+(people|humans|human\s+figures?)\b|\bno\s+faces\b|\bno\s+hands\b|\bno\s+silhouettes\b|\bnon[-\s]?figurative\b/i.test(
               prompt,
@@ -1079,25 +1095,54 @@ export class AiImageService {
           if (!hasNoHumans) {
             prompt = `${prompt}, no people, no humans, no faces, no hands, no silhouettes`;
           }
-        } else if (referencedCharacterKeys.length && characterBible) {
-          const characterSuffix = referencedCharacterKeys
-            .map((k) => characterBible.byKey[k])
-            .filter(Boolean)
-            .map((c) => `${c.key} (${c.description})`)
-            .join(', ');
-          if (
-            characterSuffix &&
-            !prompt.includes('CHARACTER') &&
-            !prompt.includes('C1')
-          ) {
-            prompt = `${prompt}, character details: ${characterSuffix}`;
+        } else {
+          if (forceBackView) {
+            const hasBackView =
+              /\b(back\s*view|from\s+behind|rear\s*view|seen\s+from\s+behind)\b/i.test(
+                prompt,
+              );
+            const hasNoFace =
+              /\bno\s+face\b|\bface\s+not\s+visible\b|\bwithout\s+(a\s+)?face\b/i.test(
+                prompt,
+              );
+            if (!hasBackView || !hasNoFace) {
+              prompt = `${prompt}, back view only, seen from behind, face not visible`;
+            }
+          }
+
+          if (referencedCharacterKeys.length) {
+            const resolveCharacterDetail = (key: string): string | null => {
+              if (canonicalCharacters?.length) {
+                const c = canonicalCharacters.find((cc) => cc.key === key);
+                return c ? `${c.key} (${c.description})` : null;
+              }
+              if (characterBible) {
+                const c = characterBible.byKey[key];
+                return c ? `${c.key} (${c.description})` : null;
+              }
+              return null;
+            };
+
+            const characterSuffix = referencedCharacterKeys
+              .map(resolveCharacterDetail)
+              .filter(Boolean)
+              .join(', ');
+
+            if (
+              characterSuffix &&
+              !prompt.toLowerCase().includes('character details:') &&
+              !prompt.includes('CHARACTER') &&
+              !prompt.includes('C1')
+            ) {
+              prompt = `${prompt}, character details: ${characterSuffix}`;
+            }
           }
         }
       }
 
       // Enforce a strong "no text" constraint in the final prompt sent to providers,
       // unless the caller explicitly allows text (e.g. YouTube wallpapers/thumbnails).
-      if (!dto.allowText) {
+      if (prompt.includes('quran') || prompt.includes('verse') || prompt.includes('qur\'an')) {
         prompt = this.enforceNoTextInPrompt(prompt);
       }
 
@@ -1127,7 +1172,7 @@ export class AiImageService {
           isShortForm,
         });
       }
-
+      prompt = `${prompt}, NO WOMEN, NO GIRLS, NO LADIES.`;
       if (AiImageService.OPENAI_IMAGE_MODELS.has(imageModel)) {
         const image = await generateWithOpenAi({
           openai: this.openai,
@@ -1189,11 +1234,6 @@ export class AiImageService {
         width,
         height,
       });
-
-      // Some providers return a modified prompt; re-apply constraints.
-      prompt = dto.allowText
-        ? String(leonardo.prompt ?? '').trim()
-        : this.enforceNoTextInPrompt(leonardo.prompt);
 
       return this.persistToCloudinary({
         userId,

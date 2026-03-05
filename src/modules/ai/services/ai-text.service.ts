@@ -18,7 +18,7 @@ export class AiTextService {
   // Narration pacing assumption (words per minute) used to derive strict word-count targets.
   private readonly narrationWpm = 150;
 
-  constructor(private readonly runtime: AiRuntimeService) {}
+  constructor(private readonly runtime: AiRuntimeService) { }
 
   private get llm() {
     return this.runtime.llm;
@@ -300,8 +300,8 @@ export class AiTextService {
       }> => {
         const raw =
           parsed &&
-          typeof parsed === 'object' &&
-          Array.isArray((parsed as any).sentences)
+            typeof parsed === 'object' &&
+            Array.isArray((parsed as any).sentences)
             ? ((parsed as any).sentences as unknown[])
             : [];
 
@@ -347,8 +347,8 @@ export class AiTextService {
       const normalizeCharacters = (parsed: unknown): ScriptCharacter[] => {
         const raw =
           parsed &&
-          typeof parsed === 'object' &&
-          Array.isArray((parsed as any).characters)
+            typeof parsed === 'object' &&
+            Array.isArray((parsed as any).characters)
             ? ((parsed as any).characters as unknown[])
             : [];
 
@@ -393,8 +393,8 @@ export class AiTextService {
       const normalizeEras = (parsed: unknown): ScriptEra[] => {
         const raw =
           parsed &&
-          typeof parsed === 'object' &&
-          Array.isArray((parsed as any).eras)
+            typeof parsed === 'object' &&
+            Array.isArray((parsed as any).eras)
             ? ((parsed as any).eras as unknown[])
             : [];
 
@@ -433,9 +433,12 @@ export class AiTextService {
         '{"characters": [{"key": string, "name": string, "description": string, "isSahaba": boolean, "isProphet": boolean, "isWoman": boolean}]}\n\n' +
         'Rules:\n' +
         '- Include ONLY people/human characters that could be visually depicted.\n' +
+        '- If the script includes a battle/fight/combat scene, represent each SIDE as a SINGLE GROUP character entry (e.g., "Muslim army", "Opposing army", "Enemy army"). The group description MUST clearly depict a large crowd (many people) to sell the battle scale: formation, density, mixed armor/clothing, banners, dust, movement, silhouettes.\n' +
+        '- If the army is the Muslim Army make sure to make their faces covered with cloth (e.g. keffiyeh) to avoid any depiction of facial features for the soldiers, to keep it respectful and in line with common Islamic art conventions.\n' +
         '- Do NOT include Allah/God as a character.\n' +
-        '- If the script mentions Prophets / Sahaba / women, still extract them but set the boolean flags accordingly.\n' +
-        '- Each character.description MUST include facial + physical attributes for consistency.\n' +
+        '- If the script mentions Sahaba (companions of Prophet Muhammad), still extract them but set the boolean flags accordingly.\n' +
+        '- Each character.description MUST include facial + physical attributes for consistency unless it is a Prophet or Sahaba or a Woman.\n' +
+        '- For any character with isProphet=true or isSahaba=true (except an Army): DO NOT describe face details (no eyes/nose/mouth). Write the description to be safe for BACK VIEW depiction only (physique + clothing + silhouette).\n' +
         '- Character keys must be short like C1, C2, C3... in first-appearance order.\n' +
         '- If unsure about any boolean flag, set it to false.\n' +
         '- No extra keys. No extra text.';
@@ -465,8 +468,8 @@ export class AiTextService {
         '- Extract the different canonical ERAS that are relevant to the story.\n' +
         '- Use keys E1, E2, E3... (do NOT use E0).\n' +
         '- Keep era.name short (e.g. "7th century Arabia", "Ottoman era", "Modern day").\n' +
-        '- The description should include any important contextual details for that era that could impact visual depiction (e.g. clothing, environment, lighting, color tone).\n'
-        '- Don\'t add in the description any human or character details that belong in the character descriptions; focus only on era-specific contextual/atmospheric details.\n' +
+        '- The description should include any important contextual details for that era that could impact visual depiction (environment, lighting, color tone).\n'
+        '- Don\'t add in the description any human or character details; focus only on era-specific environment/atmospheric details.\n' +
         '- If the script implies a time progression, assign eras accordingly. If the era is ambiguous or not visually distinct, it can be null.\n' 
 
       const parsedEras = await this.llm.completeJson<unknown>({
@@ -494,6 +497,7 @@ export class AiTextService {
         'Rules:\n' +
         '- Do NOT add/remove/rewrite words; only split into sentences. Sentence text MUST match the script wording verbatim.\n' +
         '- characterKeys must be a subset of the provided character keys (or empty).\n' +
+        '- If a sentence describes a battle/fight/combat moment, include the relevant GROUP/ARMY character keys for the sides involved (in addition to any named protagonists mentioned).\n' +
         '- eraKey must be one of the provided era keys OR null.\n' +
         '- Infer an era ONLY if the TARGET sentence clearly implies a time period (explicitly or via strong cues).\n' +
         '- Use script context only to resolve references/pronouns for the target sentence.\n' +
@@ -695,8 +699,8 @@ export class AiTextService {
 
       const rangesRaw =
         parsed &&
-        typeof parsed === 'object' &&
-        Array.isArray((parsed as any).ranges)
+          typeof parsed === 'object' &&
+          Array.isArray((parsed as any).ranges)
           ? ((parsed as any).ranges as any[])
           : null;
 
