@@ -159,6 +159,8 @@ export class AiYoutubeService {
               'You are an expert YouTube SEO copywriter. ' +
               'Given a video narration script, you produce metadata optimized for search and click-through. ' +
               'Return ONLY valid JSON as: {"title": string, "description": string, "tags": string[]}. ' +
+              'CRITICAL language rule: Detect the primary language of the SCRIPT and write the title, description, and tags in that SAME language. ' +
+              'Do NOT translate into English unless the script is English. Preserve the script’s writing system (e.g., Arabic/Cyrillic). ' +
               'Rules: title <= 100 chars, description <= 5000 chars, tags: 3-5 items, each tag <= 30 chars, no emojis. ' +
               (isShort
                 ? 'This video is a SHORT. Return a strong base title (no hashtags) and a one-sentence description idea (no hashtags). '
@@ -172,6 +174,7 @@ export class AiYoutubeService {
               (isShort
                 ? 'This is a SHORT. Provide a base title (no hashtags) and a one-sentence description idea (no hashtags). '
                 : 'This is a regular long-form video. Provide a base title (no hashtags) and a long SEO description (2-4 short paragraphs) that is NOT the same as the title. ') +
+              'Language rule: Title/description/tags MUST be in the same language as the script. ' +
               'Tags should be relevant and specific (mix broad + long-tail). Return 3-5 tags max.\n\n' +
               trimmed,
           },
@@ -242,10 +245,7 @@ export class AiYoutubeService {
     if (!title) {
       throw new InternalServerErrorException('OpenAI returned empty title');
     }
-    const updatedTags = isShort
-      ? ['Allah', 'Muslim', 'Muslims', 'Islamic Shorts', ...tags]
-      : ['Allah', 'Muslim', 'Muslims', 'Islamic Stories', ...tags]
-    return { title, description, tags: updatedTags };
+    return { title, description, tags };
   }
 
   private tryExtractJson(raw: string): string {
@@ -320,6 +320,7 @@ export class AiYoutubeService {
       'You are an expert YouTube growth strategist and SEO tag researcher.\n' +
       'You have access to a web search tool. Use it to find currently viral / trending tags and keywords relevant to the provided script topic.\n' +
       'Return ONLY valid JSON with this exact shape: {"tags": string[]}.\n' +
+      'CRITICAL language rule: Detect the primary language of the SCRIPT and output tags in that SAME language. Do NOT translate into English unless the script is English.\n' +
       'Constraints for tags:\n' +
       '- 3 to 5 tags total\n' +
       '- No leading #\n' +
@@ -404,6 +405,7 @@ export class AiYoutubeService {
                 role: 'user',
                 content:
                   'Using the web search results above, return ONLY valid JSON as {"tags": string[]}. ' +
+                  'Language rule: tags MUST be in the same language as the script. ' +
                   'Constraints: 3-5 tags, no leading #, each <= 30 chars, only relevant to the script topic.',
               },
             ],
@@ -514,6 +516,7 @@ export class AiYoutubeService {
               'You extract YouTube tags from a narration script. ' +
               'Return ONLY valid JSON: {"tags": string[]}. ' +
               `Return ${safeCount} tags. ` +
+              'CRITICAL language rule: Detect the primary language of the script and return tags in that SAME language. Do NOT translate into English unless the script is English. ' +
               'Constraints: no leading #, each tag <= 30 chars, highly relevant to the script.',
           },
           { role: 'user', content: script },
