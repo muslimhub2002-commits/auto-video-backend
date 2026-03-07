@@ -12,7 +12,10 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { Script } from './entities/script.entity';
 import { Sentence } from './entities/sentence.entity';
-import { SentenceSoundEffect } from './entities/sentence-sound-effect.entity';
+import {
+  SentenceSoundEffect,
+  type SentenceSoundEffectTimingMode,
+} from './entities/sentence-sound-effect.entity';
 import { CreateScriptDto } from './dto/create-script.dto';
 import { UpdateScriptDto } from './dto/update-script.dto';
 import { AiService } from '../ai/ai.service';
@@ -67,6 +70,14 @@ export class ScriptsService implements OnModuleInit {
     private readonly scriptTranslationGroupRepository: Repository<ScriptTranslationGroup>,
     private readonly aiService: AiService,
   ) {}
+
+  private normalizeSentenceSoundEffectTimingMode(
+    value: unknown,
+  ): SentenceSoundEffectTimingMode {
+    return value === 'after_previous_ends'
+      ? 'after_previous_ends'
+      : 'with_previous';
+  }
 
   private async saveSentenceSoundEffectsForSentenceInputs(params: {
     userId: string;
@@ -143,6 +154,9 @@ export class ScriptsService implements OnModuleInit {
                 if (!Number.isFinite(v)) return null;
                 return Math.max(0, Math.min(300, Math.round(v)));
               })();
+        const timingMode = this.normalizeSentenceSoundEffectTimingMode(
+          item?.timing_mode,
+        );
 
         joinRows.push(
           this.sentenceSoundEffectRepository.create({
@@ -151,6 +165,7 @@ export class ScriptsService implements OnModuleInit {
             index: i,
             delay_seconds: delaySeconds,
             volume_percent: volumePercent,
+            timing_mode: timingMode,
           }),
         );
       }
@@ -272,6 +287,41 @@ export class ScriptsService implements OnModuleInit {
     }
   }
 
+  private async sentenceSoundEffectsTableExists(): Promise<boolean> {
+    try {
+      const rows = await this.dataSource.query(
+        "SELECT to_regclass('sentence_sound_effects') as reg",
+      );
+      return Boolean(rows?.[0]?.reg);
+    } catch {
+      return false;
+    }
+  }
+
+  private async sentenceSoundEffectsColumnExists(
+    columnName: string,
+  ): Promise<boolean> {
+    const name = String(columnName ?? '').trim();
+    if (!name) return false;
+
+    try {
+      const rows = await this.dataSource.query(
+        `
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = 'sentence_sound_effects'
+            AND column_name = $1
+          LIMIT 1
+        `,
+        [name],
+      );
+      return rows.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   private async ensureScriptsSchemaLazy(): Promise<void> {
     if (this.scriptsSchemaEnsured) return;
     if (this.scriptsSchemaEnsuring) return this.scriptsSchemaEnsuring;
@@ -299,6 +349,11 @@ export class ScriptsService implements OnModuleInit {
       const hasSentenceVideoPrompt = sentencesTableExists
         ? await this.sentencesColumnExists('video_prompt')
         : true;
+      const sentenceSoundEffectsTableExists =
+        await this.sentenceSoundEffectsTableExists();
+      const hasSentenceSoundEffectTimingMode = sentenceSoundEffectsTableExists
+        ? await this.sentenceSoundEffectsColumnExists('timing_mode')
+        : true;
 
       if (
         !hasIsShortScript ||
@@ -309,7 +364,8 @@ export class ScriptsService implements OnModuleInit {
         !hasSentenceCharacterKeys ||
         !hasSentenceEraKey ||
         !hasSentenceForcedEraKey ||
-        !hasSentenceVideoPrompt
+        !hasSentenceVideoPrompt ||
+        !hasSentenceSoundEffectTimingMode
       ) {
         await this.ensureScriptsSchema();
       }
@@ -335,6 +391,12 @@ export class ScriptsService implements OnModuleInit {
       const finalHasSentenceVideoPrompt = finalSentencesTableExists
         ? await this.sentencesColumnExists('video_prompt')
         : true;
+      const finalSentenceSoundEffectsTableExists =
+        await this.sentenceSoundEffectsTableExists();
+      const finalHasSentenceSoundEffectTimingMode =
+        finalSentenceSoundEffectsTableExists
+          ? await this.sentenceSoundEffectsColumnExists('timing_mode')
+          : true;
 
       if (
         !finalHasIsShortScript ||
@@ -345,7 +407,8 @@ export class ScriptsService implements OnModuleInit {
         !finalHasSentenceCharacterKeys ||
         !finalHasSentenceEraKey ||
         !finalHasSentenceForcedEraKey ||
-        !finalHasSentenceVideoPrompt
+        !finalHasSentenceVideoPrompt ||
+        !finalHasSentenceSoundEffectTimingMode
       ) {
         throw new InternalServerErrorException(
           'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, eras, language, and sentences.character_keys/era_key/forced_era_key). ' +
@@ -478,6 +541,25 @@ export class ScriptsService implements OnModuleInit {
       await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS video_prompt TEXT NULL',
       );
+    }
+
+    const sentenceSoundEffectsExists =
+      await this.sentenceSoundEffectsTableExists();
+    if (sentenceSoundEffectsExists) {
+      try {
+        await this.dataSource.query(
+          "ALTER TABLE sentence_sound_effects ADD COLUMN IF NOT EXISTS timing_mode VARCHAR(32) NOT NULL DEFAULT 'with_previous'",
+        );
+      } catch (err: any) {
+        const message = String(err?.message || '');
+        if (
+          message.includes('does not exist') ||
+          message.includes('permission denied')
+        ) {
+          return;
+        }
+        throw err;
+      }
     }
 
     // Best-effort indexes for performance. If the DB user lacks permissions,

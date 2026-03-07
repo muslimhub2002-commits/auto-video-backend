@@ -13,6 +13,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { SENTENCE_SOUND_EFFECT_TIMING_MODES } from '../entities/sentence-sound-effect.entity';
 
 const ALLOWED_TRANSITIONS = [
   'none',
@@ -45,6 +46,10 @@ class SentenceSoundEffectInput {
   @Max(300)
   @IsOptional()
   volume_percent?: number;
+
+  @IsIn(SENTENCE_SOUND_EFFECT_TIMING_MODES)
+  @IsOptional()
+  timing_mode?: (typeof SENTENCE_SOUND_EFFECT_TIMING_MODES)[number];
 }
 
 class TransitionSoundEffectInput {

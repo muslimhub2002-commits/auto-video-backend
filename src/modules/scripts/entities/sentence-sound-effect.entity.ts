@@ -9,6 +9,14 @@ import {
 import { Sentence } from './sentence.entity';
 import { SoundEffect } from '../../sound-effects/entities/sound-effect.entity';
 
+export const SENTENCE_SOUND_EFFECT_TIMING_MODES = [
+  'with_previous',
+  'after_previous_ends',
+] as const;
+
+export type SentenceSoundEffectTimingMode =
+  (typeof SENTENCE_SOUND_EFFECT_TIMING_MODES)[number];
+
 @Entity('sentence_sound_effects')
 @Index(['sentence_id', 'index'], { unique: true })
 export class SentenceSoundEffect {
@@ -26,6 +34,9 @@ export class SentenceSoundEffect {
 
   @Column({ type: 'double precision', nullable: false, default: 0 })
   delay_seconds: number;
+
+  @Column({ type: 'varchar', length: 32, nullable: false, default: 'with_previous' })
+  timing_mode: SentenceSoundEffectTimingMode;
 
   // Optional per-sentence override. When null, the library item's volume_percent is used.
   @Column({ type: 'int', nullable: true })

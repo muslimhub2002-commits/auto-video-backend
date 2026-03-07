@@ -39,6 +39,9 @@ export class SoundEffect {
   @Column({ type: 'float', default: 100 })
   volume_percent: number;
 
+  @Column({ type: 'double precision', nullable: true })
+  duration_seconds: number | null;
+
   @Column({ type: 'boolean', default: false })
   is_transition_sound: boolean;
 

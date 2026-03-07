@@ -3,15 +3,17 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, ILike, Repository } from 'typeorm';
 import { v2 as cloudinary } from 'cloudinary';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import { RenderInternals } from '@remotion/renderer';
 import { SoundEffect } from './entities/sound-effect.entity';
 import { downloadUrlToBuffer } from '../render-videos/utils/net.utils';
 import type { MergeSoundEffectItemDto } from './dto/merge-sound-effects.dto';
@@ -20,8 +22,10 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const clampPercent = (v: number) => Math.max(0, Math.min(300, v));
 
 @Injectable()
-export class SoundEffectsService {
+export class SoundEffectsService implements OnModuleInit {
   constructor(
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     @InjectRepository(SoundEffect)
     private readonly repo: Repository<SoundEffect>,
   ) {
@@ -36,6 +40,140 @@ export class SoundEffectsService {
         api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
       });
     }
+  }
+
+  async onModuleInit() {
+    await this.ensureSoundEffectsSchema();
+  }
+
+  private async soundEffectsTableExists(): Promise<boolean> {
+    try {
+      const rows = await this.dataSource.query(
+        "SELECT to_regclass('sound_effects') as reg",
+      );
+      return Boolean(rows?.[0]?.reg);
+    } catch {
+      return false;
+    }
+  }
+
+  private async ensureSoundEffectsSchema() {
+    const tableExists = await this.soundEffectsTableExists();
+    if (!tableExists) return;
+
+    const queries = [
+      'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS is_transition_sound BOOLEAN NOT NULL DEFAULT false',
+      'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS duration_seconds DOUBLE PRECISION NULL',
+    ];
+
+    for (const query of queries) {
+      try {
+        await this.dataSource.query(query);
+      } catch (err: any) {
+        const message = String(err?.message || '');
+        if (
+          message.includes('does not exist') ||
+          message.includes('permission denied')
+        ) {
+          return;
+        }
+        throw err;
+      }
+    }
+  }
+
+  private async getAudioDurationSecondsFromFile(filePath: string): Promise<number | null> {
+    try {
+      const command: any = RenderInternals.callFf({
+        bin: 'ffprobe',
+        args: [
+          '-v',
+          'error',
+          '-show_entries',
+          'format=duration',
+          '-of',
+          'default=noprint_wrappers=1:nokey=1',
+          filePath,
+        ],
+        indent: false,
+        logLevel: 'error',
+        binariesDirectory: null,
+        cancelSignal: undefined,
+      });
+
+      const result = await command;
+      const raw = String(result?.stdout ?? '').trim();
+      const duration = Number(raw);
+      if (!Number.isFinite(duration) || duration <= 0) return null;
+      return duration;
+    } catch {
+      return null;
+    }
+  }
+
+  private async getAudioDurationSecondsFromBuffer(params: {
+    buffer: Buffer;
+    ext?: string;
+  }): Promise<number | null> {
+    const tmpDir = path.join(
+      os.tmpdir(),
+      `auto-video-sfx-duration-${randomUUID()}`,
+    );
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    const ext = String(params.ext ?? '').trim() || '.mp3';
+    const tempFilePath = path.join(
+      tmpDir,
+      `audio${ext.startsWith('.') ? ext : `.${ext}`}`,
+    );
+
+    try {
+      fs.writeFileSync(tempFilePath, params.buffer);
+      return await this.getAudioDurationSecondsFromFile(tempFilePath);
+    } finally {
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup failures
+      }
+    }
+  }
+
+  private async backfillMissingDurationSeconds(items: SoundEffect[]) {
+    const list = (Array.isArray(items) ? items : []).filter(
+      (item) =>
+        item &&
+        (item.duration_seconds === null || item.duration_seconds === undefined) &&
+        String(item.url ?? '').trim(),
+    );
+
+    if (list.length === 0) return;
+
+    await Promise.allSettled(
+      list.map(async (item) => {
+        try {
+          const downloaded = await downloadUrlToBuffer({
+            url: item.url,
+            maxBytes: 25 * 1024 * 1024,
+            label: `sound effect duration ${item.id}`,
+          });
+
+          const durationSeconds = await this.getAudioDurationSecondsFromBuffer({
+            buffer: downloaded.buffer,
+            ext:
+              this.inferExtFromMime(downloaded.mimeType ?? '') ||
+              path.extname(item.url.split('?')[0] || '') ||
+              '.mp3',
+          });
+
+          if (!durationSeconds) return;
+          item.duration_seconds = durationSeconds;
+          await this.repo.save(item);
+        } catch {
+          // Ignore best-effort backfill failures.
+        }
+      }),
+    );
   }
 
   async findAllByUser(
@@ -70,6 +208,8 @@ export class SoundEffectsService {
       skip: (safePage - 1) * safeLimit,
       take: safeLimit,
     });
+
+    await this.backfillMissingDurationSeconds(items);
 
     // Backfill name in-memory for rows created before `name` existed.
     const normalized = items.map((it: any) => {
@@ -116,6 +256,8 @@ export class SoundEffectsService {
       skip: (safePage - 1) * safeLimit,
       take: safeLimit,
     });
+
+    await this.backfillMissingDurationSeconds(items);
 
     const normalized = items.map((it: any) => {
       const name =
@@ -300,11 +442,18 @@ export class SoundEffectsService {
       const name = String(params.name ?? '').trim() || inferredName;
       // Keep title in sync for older clients.
       const title = String(params.title ?? '').trim() || name;
+      const durationSeconds = await this.getAudioDurationSecondsFromBuffer({
+        buffer: params.buffer,
+        ext: path.extname(String(params.filename ?? '').trim()) || '.mp3',
+      });
 
       if (existing) {
         existing.number_of_times_used += 1;
         if (title) existing.title = title;
         if (name) (existing as any).name = name;
+        if (durationSeconds && !existing.duration_seconds) {
+          existing.duration_seconds = durationSeconds;
+        }
         return this.repo.save(existing);
       }
 
@@ -321,6 +470,7 @@ export class SoundEffectsService {
         hash,
         number_of_times_used: 0,
         volume_percent: 100,
+        duration_seconds: durationSeconds,
       });
 
       return this.repo.save(entity);
@@ -510,6 +660,9 @@ export class SoundEffectsService {
 
       const outPath = fs.existsSync(outMp3) ? outMp3 : outWav;
       const mergedBuffer = fs.readFileSync(outPath);
+      const mergedDurationSeconds = await this.getAudioDurationSecondsFromFile(
+        outPath,
+      );
 
       const uploaded = await this.uploadAudioToCloudinary({
         buffer: mergedBuffer,
@@ -527,6 +680,7 @@ export class SoundEffectsService {
         hash: crypto.createHash('sha256').update(mergedBuffer).digest('hex'),
         number_of_times_used: 0,
         volume_percent: 100,
+        duration_seconds: mergedDurationSeconds,
         is_merged: true,
         merged_from: {
           items: items.map((i) => ({
