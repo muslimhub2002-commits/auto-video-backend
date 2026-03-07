@@ -11,16 +11,20 @@ import { ScriptTemplatesController } from './script-templates.controller';
 import { ScriptTemplatesService } from './script-templates.service';
 import { Image } from '../images/entities/image.entity';
 import { Video } from '../videos/entities/video.entity';
+import { SentenceSoundEffect } from './entities/sentence-sound-effect.entity';
+import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       Script,
       Sentence,
+      SentenceSoundEffect,
       ScriptTemplate,
       ScriptTranslationGroup,
       Image,
       Video,
+      SoundEffect,
     ]),
     AiModule,
   ],

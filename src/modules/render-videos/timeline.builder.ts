@@ -50,6 +50,7 @@ export const buildTimeline = (params: {
   useRemoteAssets?: boolean;
 }) => {
   const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+  const clamp03 = (value: number) => Math.max(0, Math.min(3, value));
 
   const backgroundMusicVolume =
     typeof params.backgroundMusicVolume === 'number' &&
@@ -137,6 +138,35 @@ export const buildTimeline = (params: {
       index,
       text: s.text,
       isSuspense: !!s.isSuspense,
+      ...(Array.isArray(s.soundEffects) && s.soundEffects.length > 0
+        ? {
+            soundEffects: s.soundEffects
+              .map((se) => {
+                const src = String(se?.src ?? '').trim();
+                if (!src) return null;
+
+                const delaySecondsRaw = Number(se?.delaySeconds ?? 0);
+                const delaySeconds = Number.isFinite(delaySecondsRaw)
+                  ? Math.max(0, delaySecondsRaw)
+                  : 0;
+
+                const volumePercentRaw =
+                  se?.volumePercent === null || se?.volumePercent === undefined
+                    ? 100
+                    : Number(se.volumePercent);
+                const volumePercent = Number.isFinite(volumePercentRaw)
+                  ? Math.max(0, Math.min(300, volumePercentRaw))
+                  : 100;
+
+                return {
+                  src,
+                  delaySeconds,
+                  volume: clamp03(volumePercent / 100),
+                };
+              })
+              .filter(Boolean),
+          }
+        : {}),
       ...(isImageScene && s.visualEffect != null
         ? { visualEffect: s.visualEffect }
         : {}),

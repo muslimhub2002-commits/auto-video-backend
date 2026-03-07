@@ -4,6 +4,7 @@ import {
   OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { RenderJob } from './entities/render-job.entity';
@@ -741,6 +742,58 @@ export class RenderVideosService implements OnModuleInit {
         params.backgroundMusicSrc = effectiveBackgroundMusicSrc;
 
         voiceoverAudioSrc = REMOTION_VOICEOVER_REL;
+
+        // Pre-download per-sentence sound effects into the job-scoped publicDir.
+        // This keeps renders stable (no runtime network fetches) and ensures audio can be
+        // fetched locally by Remotion.
+        const sfxCache = new Map<string, string>();
+        const sfxDirRel = 'audio/sentence-sfx';
+        this.ensureDir(join(jobDir, 'audio'));
+        this.ensureDir(join(jobDir, sfxDirRel));
+
+        const stageSfx = async (src: string, label: string) => {
+          const trimmed = String(src ?? '').trim();
+          if (!trimmed) return '';
+          if (!/^https?:\/\//i.test(trimmed)) return trimmed;
+          const cached = sfxCache.get(trimmed);
+          if (cached) return cached;
+
+          try {
+            const downloaded = await this.downloadUrlToBuffer({
+              url: trimmed,
+              maxBytes: 25 * 1024 * 1024,
+              label,
+            });
+
+            const ext = this.inferExt({
+              originalName: trimmed,
+              mimeType: downloaded.mimeType,
+              fallback: '.mp3',
+            });
+
+            const hash = createHash('sha1').update(trimmed).digest('hex').slice(0, 10);
+            const rel = `${sfxDirRel}/sfx-${hash}${ext}`;
+            fs.writeFileSync(join(jobDir, rel), downloaded.buffer);
+            sfxCache.set(trimmed, rel);
+            return rel;
+          } catch {
+            // If download fails (DNS/firewall/offline), keep the remote URL.
+            return trimmed;
+          }
+        };
+
+        for (let i = 0; i < params.sentences.length; i += 1) {
+          const soundEffects = (params.sentences[i] as any)?.soundEffects;
+          if (!Array.isArray(soundEffects) || soundEffects.length === 0) continue;
+
+          for (let j = 0; j < soundEffects.length; j += 1) {
+            const se = soundEffects[j];
+            const src = String(se?.src ?? '').trim();
+            if (!src) continue;
+            const staged = await stageSfx(src, `sentence ${i + 1} sound effect ${j + 1}`);
+            se.src = staged;
+          }
+        }
 
         for (let i = 0; i < params.sentences.length; i += 1) {
           const sentenceText = (params.sentences[i]?.text || '').trim();

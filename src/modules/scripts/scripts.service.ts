@@ -12,6 +12,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { Script } from './entities/script.entity';
 import { Sentence } from './entities/sentence.entity';
+import { SentenceSoundEffect } from './entities/sentence-sound-effect.entity';
 import { CreateScriptDto } from './dto/create-script.dto';
 import { UpdateScriptDto } from './dto/update-script.dto';
 import { AiService } from '../ai/ai.service';
@@ -26,6 +27,7 @@ import { SaveSentenceVideoDto } from './dto/save-sentence-video.dto';
 import { uploadBufferToCloudinary } from '../render-videos/utils/cloudinary.utils';
 import { TranslateScriptDto } from './dto/translate-script.dto';
 import { ScriptTranslationGroup } from './entities/script-translation-group.entity';
+import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
 
 type UploadedImageFile = {
   buffer: Buffer;
@@ -53,14 +55,107 @@ export class ScriptsService implements OnModuleInit {
     private readonly scriptRepository: Repository<Script>,
     @InjectRepository(Sentence)
     private readonly sentenceRepository: Repository<Sentence>,
+    @InjectRepository(SentenceSoundEffect)
+    private readonly sentenceSoundEffectRepository: Repository<SentenceSoundEffect>,
     @InjectRepository(Image)
     private readonly imageRepository: Repository<Image>,
     @InjectRepository(VideoEntity)
     private readonly videoRepository: Repository<VideoEntity>,
+    @InjectRepository(SoundEffect)
+    private readonly soundEffectRepository: Repository<SoundEffect>,
     @InjectRepository(ScriptTranslationGroup)
     private readonly scriptTranslationGroupRepository: Repository<ScriptTranslationGroup>,
     private readonly aiService: AiService,
   ) {}
+
+  private async saveSentenceSoundEffectsForSentenceInputs(params: {
+    userId: string;
+    sentenceInputs: Array<any>;
+    savedSentences: Sentence[];
+  }): Promise<void> {
+    const userId = params.userId;
+    const sentenceInputs = Array.isArray(params.sentenceInputs)
+      ? params.sentenceInputs
+      : [];
+    const savedSentences = Array.isArray(params.savedSentences)
+      ? params.savedSentences
+      : [];
+
+    if (sentenceInputs.length === 0 || savedSentences.length === 0) return;
+
+    const sentenceByIndex = new Map<number, Sentence>();
+    for (const s of savedSentences) {
+      if (typeof (s as any).index === 'number') {
+        sentenceByIndex.set((s as any).index as number, s);
+      }
+    }
+
+    const allIds: string[] = [];
+    for (const sentenceInput of sentenceInputs) {
+      const items = Array.isArray(sentenceInput?.sound_effects)
+        ? sentenceInput.sound_effects
+        : [];
+      for (const item of items) {
+        const id = String(item?.sound_effect_id ?? '').trim();
+        if (id) allIds.push(id);
+      }
+    }
+
+    const uniqueIds = Array.from(new Set(allIds));
+    if (uniqueIds.length === 0) return;
+
+    const owned = await this.soundEffectRepository.find({
+      where: { id: In(uniqueIds), user_id: userId },
+      select: { id: true },
+    });
+    const ownedSet = new Set(owned.map((s) => s.id));
+
+    const joinRows: SentenceSoundEffect[] = [];
+    for (let sentenceIndex = 0; sentenceIndex < sentenceInputs.length; sentenceIndex++) {
+      const sentenceInput = sentenceInputs[sentenceIndex];
+      const sentenceEntity = sentenceByIndex.get(sentenceIndex);
+      if (!sentenceEntity) continue;
+
+      const items = Array.isArray(sentenceInput?.sound_effects)
+        ? sentenceInput.sound_effects
+        : [];
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const soundEffectId = String(item?.sound_effect_id ?? '').trim();
+        if (!soundEffectId || !ownedSet.has(soundEffectId)) continue;
+
+        const delaySecondsRaw = Number(item?.delay_seconds ?? 0);
+        const delaySeconds = Number.isFinite(delaySecondsRaw)
+          ? Math.max(0, delaySecondsRaw)
+          : 0;
+
+        const volumeRaw = item?.volume_percent;
+        const volumePercent =
+          volumeRaw === null || volumeRaw === undefined
+            ? null
+            : (() => {
+                const v = Number(volumeRaw);
+                if (!Number.isFinite(v)) return null;
+                return Math.max(0, Math.min(300, Math.round(v)));
+              })();
+
+        joinRows.push(
+          this.sentenceSoundEffectRepository.create({
+            sentence_id: sentenceEntity.id,
+            sound_effect_id: soundEffectId,
+            index: i,
+            delay_seconds: delaySeconds,
+            volume_percent: volumePercent,
+          }),
+        );
+      }
+    }
+
+    if (joinRows.length > 0) {
+      await this.sentenceSoundEffectRepository.save(joinRows);
+    }
+  }
 
   async onModuleInit() {
     // Best-effort on boot. We also call this lazily in request paths because
@@ -778,7 +873,12 @@ export class ScriptsService implements OnModuleInit {
             });
           });
 
-          await this.sentenceRepository.save(sentenceEntities);
+          const savedSentences = await this.sentenceRepository.save(sentenceEntities);
+          await this.saveSentenceSoundEffectsForSentenceInputs({
+            userId,
+            sentenceInputs: item.sentences as any,
+            savedSentences,
+          });
         }
       }
 
@@ -1319,7 +1419,12 @@ export class ScriptsService implements OnModuleInit {
           });
         });
 
-        await this.sentenceRepository.save(sentenceEntities);
+        const savedSentences = await this.sentenceRepository.save(sentenceEntities);
+        await this.saveSentenceSoundEffectsForSentenceInputs({
+          userId,
+          sentenceInputs: sentences as any,
+          savedSentences,
+        });
       }
 
       const normalizedShorts = this.normalizeShortsPayload(shorts_scripts);
@@ -1417,7 +1522,12 @@ export class ScriptsService implements OnModuleInit {
         });
       });
 
-      await this.sentenceRepository.save(sentenceEntities);
+      const savedSentences = await this.sentenceRepository.save(sentenceEntities);
+      await this.saveSentenceSoundEffectsForSentenceInputs({
+        userId,
+        sentenceInputs: sentences as any,
+        savedSentences,
+      });
     }
 
     const normalizedShorts = this.normalizeShortsPayload(shorts_scripts);
@@ -1595,6 +1705,8 @@ export class ScriptsService implements OnModuleInit {
     const script = await this.scriptRepository
       .createQueryBuilder('script')
       .leftJoinAndSelect('script.sentences', 'sentence')
+      .leftJoinAndSelect('sentence.sound_effects', 'sentence_sound_effect')
+      .leftJoinAndSelect('sentence_sound_effect.sound_effect', 'sound_effect')
       .leftJoinAndSelect('sentence.image', 'image')
       .leftJoinAndSelect('sentence.startFrameImage', 'start_frame_image')
       .leftJoinAndSelect('sentence.endFrameImage', 'end_frame_image')
@@ -1607,6 +1719,7 @@ export class ScriptsService implements OnModuleInit {
       .where('script.id = :id', { id })
       .andWhere('script.user_id = :userId', { userId })
       .orderBy('sentence.index', 'ASC')
+      .addOrderBy('sentence_sound_effect.index', 'ASC')
       .getOne();
 
     if (!script) {
@@ -1783,7 +1896,12 @@ export class ScriptsService implements OnModuleInit {
             forced_era_key: String((s as any).forced_era_key ?? '').trim() || null,
           });
         });
-        await this.sentenceRepository.save(sentenceEntities);
+        const savedSentences = await this.sentenceRepository.save(sentenceEntities);
+        await this.saveSentenceSoundEffectsForSentenceInputs({
+          userId,
+          sentenceInputs: dto.sentences as any,
+          savedSentences,
+        });
       }
     }
 

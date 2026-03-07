@@ -3,6 +3,13 @@ export type SentenceInput = {
   isSuspense?: boolean;
   mediaType?: 'image' | 'video';
   videoUrl?: string;
+  soundEffects?: Array<{
+    // Absolute URL (e.g. Cloudinary) or static publicDir path (job-scoped) for local renders.
+    src: string;
+    delaySeconds?: number;
+    // 0..300 where 100 = normal volume. Optional.
+    volumePercent?: number;
+  }>;
   transitionToNext?:
     | 'none'
     | 'glitch'

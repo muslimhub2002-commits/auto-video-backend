@@ -4,10 +4,12 @@ import {
   PrimaryGeneratedColumn,
   ManyToOne,
   JoinColumn,
+  OneToMany,
 } from 'typeorm';
 import { Script } from './script.entity';
 import { Image } from '../../images/entities/image.entity';
 import { Video } from '../../videos/entities/video.entity';
+import { SentenceSoundEffect } from './sentence-sound-effect.entity';
 
 @Entity('sentences')
 export class Sentence {
@@ -90,4 +92,11 @@ export class Sentence {
   @ManyToOne(() => Video, { nullable: true })
   @JoinColumn({ name: 'video_id' })
   video: Video | null;
+
+  @OneToMany(
+    () => SentenceSoundEffect,
+    (sentenceSoundEffect) => sentenceSoundEffect.sentence,
+  )
+  sound_effects: SentenceSoundEffect[];
 }
+

@@ -3,6 +3,12 @@ export type TimelineScene = {
   text: string;
   imageSrc?: string; // static file path (publicDir) or absolute URL
   videoSrc?: string; // static file path (publicDir) or absolute URL
+  soundEffects?: Array<{
+    src: string; // static file path (publicDir) or absolute URL
+    delaySeconds?: number;
+    // Remotion Audio volume multiplier. 1 = normal volume.
+    volume?: number;
+  }>;
   transitionToNext?: 'none' | 'glitch' | 'whip' | 'flash' | 'fade' | 'chromaLeak' | null;
   visualEffect?:
     | 'none'

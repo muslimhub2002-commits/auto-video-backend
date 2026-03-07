@@ -135,6 +135,9 @@ export class RenderVideosController {
       text: s.text,
       isSuspense: s.isSuspense,
       mediaType: 'image',
+      ...(Array.isArray((s as any).soundEffects)
+        ? { soundEffects: (s as any).soundEffects }
+        : {}),
       ...(s.transitionToNext != null
         ? { transitionToNext: s.transitionToNext }
         : {}),
@@ -219,6 +222,11 @@ export class RenderVideosController {
       isSuspense?: boolean;
       mediaType?: 'image' | 'video';
       videoUrl?: string;
+      soundEffects?: Array<{
+        src: string;
+        delaySeconds?: number;
+        volumePercent?: number;
+      }>;
       transitionToNext?:
         | 'none'
         | 'glitch'
@@ -242,6 +250,11 @@ export class RenderVideosController {
         isSuspense?: boolean;
         mediaType?: 'image' | 'video';
         videoUrl?: string;
+        soundEffects?: Array<{
+          src: string;
+          delaySeconds?: number;
+          volumePercent?: number;
+        }>;
         transitionToNext?:
           | 'none'
           | 'glitch'
@@ -321,6 +334,45 @@ export class RenderVideosController {
           throw new BadRequestException(
             `Missing or invalid videoUrl for sentence ${idx + 1} on video tab.`,
           );
+        }
+      }
+
+      const soundEffects = (s as any)?.soundEffects;
+      if (soundEffects != null) {
+        if (!Array.isArray(soundEffects)) {
+          throw new BadRequestException(
+            `Invalid soundEffects for sentence ${idx + 1}. Expected an array.`,
+          );
+        }
+
+        for (const [sfxIdx, se] of soundEffects.entries()) {
+          const src = String(se?.src ?? '').trim();
+          const ok = src.startsWith('http://') || src.startsWith('https://');
+          if (!ok) {
+            throw new BadRequestException(
+              `Invalid soundEffects[${sfxIdx}] src for sentence ${idx + 1}. Expected http(s) URL.`,
+            );
+          }
+
+          const delayRaw = se?.delaySeconds;
+          if (delayRaw != null) {
+            const v = Number(delayRaw);
+            if (!Number.isFinite(v) || v < 0) {
+              throw new BadRequestException(
+                `Invalid soundEffects[${sfxIdx}] delaySeconds for sentence ${idx + 1}.`,
+              );
+            }
+          }
+
+          const volRaw = se?.volumePercent;
+          if (volRaw != null) {
+            const v = Number(volRaw);
+            if (!Number.isFinite(v) || v < 0 || v > 300) {
+              throw new BadRequestException(
+                `Invalid soundEffects[${sfxIdx}] volumePercent for sentence ${idx + 1}.`,
+              );
+            }
+          }
         }
       }
     }

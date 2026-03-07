@@ -1,0 +1,45 @@
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
+import { Sentence } from './sentence.entity';
+import { SoundEffect } from '../../sound-effects/entities/sound-effect.entity';
+
+@Entity('sentence_sound_effects')
+@Index(['sentence_id', 'index'], { unique: true })
+export class SentenceSoundEffect {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'uuid', nullable: false })
+  sentence_id: string;
+
+  @Column({ type: 'uuid', nullable: false })
+  sound_effect_id: string;
+
+  @Column({ type: 'int', nullable: false })
+  index: number;
+
+  @Column({ type: 'double precision', nullable: false, default: 0 })
+  delay_seconds: number;
+
+  // Optional per-sentence override. When null, the library item's volume_percent is used.
+  @Column({ type: 'int', nullable: true })
+  volume_percent: number | null;
+
+  @ManyToOne(() => Sentence, (sentence) => (sentence as any).sound_effects, {
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'sentence_id' })
+  sentence: Sentence;
+
+  @ManyToOne(() => SoundEffect, {
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'sound_effect_id' })
+  sound_effect: SoundEffect;
+}

@@ -11,6 +11,7 @@ import { Chat } from './modules/chats/entities/chat.entity';
 import { Message } from './modules/messages/entities/message.entity';
 import { Script } from './modules/scripts/entities/script.entity';
 import { Sentence } from './modules/scripts/entities/sentence.entity';
+import { SentenceSoundEffect } from './modules/scripts/entities/sentence-sound-effect.entity';
 import { ScriptTemplate } from './modules/scripts/entities/script-template.entity';
 import { ScriptTranslationGroup } from './modules/scripts/entities/script-translation-group.entity';
 import { AiModule } from './modules/ai/ai.module';
@@ -26,6 +27,8 @@ import { RenderJob } from './modules/render-videos/entities/render-job.entity';
 import { YoutubeModule } from './modules/youtube/youtube.module';
 import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/background-soundtrack.entity';
 import { VideosLibraryModule } from './modules/videos-library/videos-library.module';
+import { SoundEffectsModule } from './modules/sound-effects/sound-effects.module';
+import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entity';
 
 @Module({
   imports: [
@@ -59,6 +62,7 @@ import { VideosLibraryModule } from './modules/videos-library/videos-library.mod
         Image,
         Voice,
         BackgroundSoundtrack,
+        SoundEffect,
         VoiceOver,
         Video,
         Chat,
@@ -66,6 +70,7 @@ import { VideosLibraryModule } from './modules/videos-library/videos-library.mod
         RenderJob,
         Script,
         Sentence,
+        SentenceSoundEffect,
         ScriptTemplate,
         ScriptTranslationGroup,
       ],
@@ -79,6 +84,7 @@ import { VideosLibraryModule } from './modules/videos-library/videos-library.mod
     ImagesModule,
     VoicesModule,
     BackgroundSoundtracksModule,
+    SoundEffectsModule,
     ScriptsModule,
     MessagesModule,
     ChatsModule,

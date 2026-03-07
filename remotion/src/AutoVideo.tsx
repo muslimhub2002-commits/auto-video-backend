@@ -103,6 +103,14 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
     for (const scene of timeline.scenes) {
       if (scene.imageSrc) sources.add(resolveMediaSrc(scene.imageSrc));
       if (scene.videoSrc) sources.add(resolveMediaSrc(scene.videoSrc));
+
+      const soundEffects = Array.isArray(scene.soundEffects)
+        ? scene.soundEffects
+        : [];
+      for (const se of soundEffects) {
+        const src = String(se?.src ?? '').trim();
+        if (src) sources.add(resolveMediaSrc(src));
+      }
     }
 
     const run = async () => {
@@ -148,6 +156,41 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
           ) : null}
         </Sequence>
       ) : null}
+
+      {/* Per-sentence sound effects. */}
+      {timeline.scenes.map((scene) => {
+        const soundEffects = Array.isArray(scene.soundEffects)
+          ? scene.soundEffects
+          : [];
+        if (soundEffects.length === 0) return null;
+
+        return soundEffects.map((se, sfxIdx) => {
+          const src = String(se?.src ?? '').trim();
+          if (!src) return null;
+
+          const delaySecondsRaw = Number(se?.delaySeconds ?? 0);
+          const delaySeconds = Number.isFinite(delaySecondsRaw)
+            ? Math.max(0, delaySecondsRaw)
+            : 0;
+          const from =
+            scene.startFrame + Math.round(delaySeconds * (timeline.fps || 30));
+          if (from >= timeline.durationInFrames) return null;
+
+          const volumeRaw = Number(se?.volume ?? 1);
+          const volume = Number.isFinite(volumeRaw)
+            ? Math.max(0, Math.min(3, volumeRaw))
+            : 1;
+
+          return (
+            <Sequence
+              key={`sentence-sfx-${scene.index}-${sfxIdx}`}
+              from={Math.max(0, from)}
+            >
+              <Audio src={resolveMediaSrc(src)} volume={volume} />
+            </Sequence>
+          );
+        });
+      })}
 
       {/* Glitch SFX during glitch cut windows */}
       {timeline.scenes.map((next, idx) => {

@@ -8,9 +8,27 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+class SentenceSoundEffectDto {
+  @IsUrl({ require_tld: false })
+  src: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  delaySeconds?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(300)
+  volumePercent?: number;
+}
 
 class SentenceDto {
   @IsString()
@@ -49,6 +67,12 @@ class SentenceDto {
     | 'glassReflections'
     | 'glassStrong'
     | null;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SentenceSoundEffectDto)
+  soundEffects?: SentenceSoundEffectDto[];
 }
 
 export class CreateRenderVideoUrlDto {

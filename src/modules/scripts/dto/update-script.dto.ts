@@ -5,9 +5,12 @@ import {
   IsBoolean,
   IsIn,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
 
@@ -27,6 +30,22 @@ const ALLOWED_VISUAL_EFFECTS = [
   'glassReflections',
   'glassStrong',
 ] as const;
+
+class SentenceSoundEffectInput {
+  @IsUUID()
+  sound_effect_id: string;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  delay_seconds?: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(300)
+  @IsOptional()
+  volume_percent?: number;
+}
 
 class UpdateSentenceInput {
   @IsString()
@@ -84,6 +103,12 @@ class UpdateSentenceInput {
   @IsString()
   @IsOptional()
   forced_era_key?: string | null;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SentenceSoundEffectInput)
+  @IsOptional()
+  sound_effects?: SentenceSoundEffectInput[];
 }
 
 class ScriptCharacterInput {
@@ -243,3 +268,4 @@ export class UpdateScriptDto {
   @IsOptional()
   shorts_script_ids?: string[];
 }
+
