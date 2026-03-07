@@ -7,7 +7,7 @@ import { AiRuntimeService } from './ai-runtime.service';
 
 @Injectable()
 export class AiYoutubeService {
-  constructor(private readonly runtime: AiRuntimeService) { }
+  constructor(private readonly runtime: AiRuntimeService) {}
 
   private get llm() {
     return this.runtime.llm;
@@ -39,20 +39,20 @@ export class AiYoutubeService {
 
     const safeChars = Array.isArray(params?.safeCharacters)
       ? params.safeCharacters
-        .map((c) => ({
-          key: String(c?.key ?? '').trim(),
-          name: String(c?.name ?? '').trim(),
-          description: String(c?.description ?? '').trim(),
-        }))
-        .filter((c) => c.key && c.name && c.description)
-        .slice(0, 12)
+          .map((c) => ({
+            key: String(c?.key ?? '').trim(),
+            name: String(c?.name ?? '').trim(),
+            description: String(c?.description ?? '').trim(),
+          }))
+          .filter((c) => c.key && c.name && c.description)
+          .slice(0, 12)
       : [];
 
     const safeCharBlock = safeChars.length
       ? 'SAFE CHARACTERS (ONLY these may be depicted as humans):\n' +
-      safeChars
-        .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
-        .join('\n')
+        safeChars
+          .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
+          .join('\n')
       : 'SAFE CHARACTERS: (none provided)';
 
     let parsed: any;
@@ -340,7 +340,7 @@ export class AiYoutubeService {
         attempt === 1
           ? baseSystem
           : baseSystem +
-          '\n\nIMPORTANT: Your previous response was invalid. Return ONLY valid JSON (no prose, no markdown, no code fences).';
+            '\n\nIMPORTANT: Your previous response was invalid. Return ONLY valid JSON (no prose, no markdown, no code fences).';
 
       try {
         const msg: any = await anthropic.messages.create({

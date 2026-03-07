@@ -12,8 +12,7 @@ export const CTA_SENTENCES_BY_LANGUAGE: Record<
   },
   es: {
     subscribe: 'Suscríbete y ayúdanos a llegar a más personas.',
-    shorts:
-      'Puedes ver el video completo en el enlace del primer comentario.',
+    shorts: 'Puedes ver el video completo en el enlace del primer comentario.',
   },
   fr: {
     subscribe: 'Abonnez-vous et aidez-nous à toucher plus de personnes.',
@@ -37,21 +36,21 @@ export const CTA_SENTENCES_BY_LANGUAGE: Record<
   },
   ru: {
     subscribe: 'Подпишитесь и помогите нам охватить больше людей.',
-    shorts:
-      'Полное видео можно посмотреть по ссылке в первом комментарии.',
+    shorts: 'Полное видео можно посмотреть по ссылке в первом комментарии.',
   },
   tr: {
     subscribe:
       'Lütfen abone olun ve daha fazla insana ulaşmamıza yardımcı olun.',
-    shorts:
-      'Videonun tamamını ilk yorumdaki bağlantıdan izleyebilirsiniz.',
+    shorts: 'Videonun tamamını ilk yorumdaki bağlantıdan izleyebilirsiniz.',
   },
   hi: {
-    subscribe: 'कृपया सब्सक्राइब करें और हमें अधिक लोगों तक पहुँचने में मदद करें।',
+    subscribe:
+      'कृपया सब्सक्राइब करें और हमें अधिक लोगों तक पहुँचने में मदद करें।',
     shorts: 'पूरा वीडियो पहले कमेंट में दिए गए लिंक से देख सकते हैं।',
   },
   ur: {
-    subscribe: 'براہِ کرم سبسکرائب کریں اور ہمیں مزید لوگوں تک پہنچنے میں مدد کریں۔',
+    subscribe:
+      'براہِ کرم سبسکرائب کریں اور ہمیں مزید لوگوں تک پہنچنے میں مدد کریں۔',
     shorts: 'آپ مکمل ویڈیو پہلے کمنٹ میں دیے گئے لنک سے دیکھ سکتے ہیں۔',
   },
   id: {
@@ -61,7 +60,8 @@ export const CTA_SENTENCES_BY_LANGUAGE: Record<
       'Kamu bisa menonton video lengkapnya dari tautan di komentar pertama.',
   },
   ja: {
-    subscribe: 'チャンネル登録して、より多くの人に届けるお手伝いをお願いします。',
+    subscribe:
+      'チャンネル登録して、より多くの人に届けるお手伝いをお願いします。',
     shorts: 'フル動画は最初のコメントのリンクから視聴できます。',
   },
   ko: {

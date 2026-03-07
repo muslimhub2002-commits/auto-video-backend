@@ -43,7 +43,12 @@ export class SoundEffectsService {
     page = 1,
     limit = 20,
     q?: string,
-  ): Promise<{ items: SoundEffect[]; total: number; page: number; limit: number }> {
+  ): Promise<{
+    items: SoundEffect[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
     // Fixed page size for this resource.
     void limit;
@@ -68,11 +73,64 @@ export class SoundEffectsService {
 
     // Backfill name in-memory for rows created before `name` existed.
     const normalized = items.map((it: any) => {
-      const name = String(it?.name ?? '').trim() || String(it?.title ?? '').trim() || 'Sound Effect';
+      const name =
+        String(it?.name ?? '').trim() ||
+        String(it?.title ?? '').trim() ||
+        'Sound Effect';
       return { ...it, name };
     });
 
-    return { items: normalized as any, total, page: safePage, limit: safeLimit };
+    return {
+      items: normalized as any,
+      total,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
+  async findTransitionSoundsByUser(
+    user_id: string,
+    page = 1,
+    q?: string,
+  ): Promise<{
+    items: SoundEffect[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const safePage = Number.isFinite(page) && page > 0 ? page : 1;
+    const safeLimit = 10;
+    const search = String(q ?? '').trim();
+
+    const where: any =
+      search.length > 0
+        ? [
+            { user_id, is_transition_sound: true, name: ILike(`%${search}%`) },
+            { user_id, is_transition_sound: true, title: ILike(`%${search}%`) },
+          ]
+        : { user_id, is_transition_sound: true };
+
+    const [items, total] = await this.repo.findAndCount({
+      where,
+      order: { created_at: 'DESC' },
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
+    });
+
+    const normalized = items.map((it: any) => {
+      const name =
+        String(it?.name ?? '').trim() ||
+        String(it?.title ?? '').trim() ||
+        'Sound Effect';
+      return { ...it, name };
+    });
+
+    return {
+      items: normalized as any,
+      total,
+      page: safePage,
+      limit: safeLimit,
+    };
   }
 
   async setVolumeById(params: {
@@ -93,6 +151,24 @@ export class SoundEffectsService {
     if (!target) throw new NotFoundException('Sound effect not found');
 
     target.volume_percent = volumePercent;
+    return this.repo.save(target);
+  }
+
+  async setTransitionSoundById(params: {
+    user_id: string;
+    soundEffectId: string;
+    isTransitionSound: boolean;
+  }): Promise<SoundEffect> {
+    const soundEffectId = String(params.soundEffectId ?? '').trim();
+    if (!soundEffectId) throw new NotFoundException('Sound effect not found');
+
+    const target = await this.repo.findOne({
+      where: { id: soundEffectId, user_id: params.user_id },
+    });
+
+    if (!target) throw new NotFoundException('Sound effect not found');
+
+    target.is_transition_sound = Boolean(params.isTransitionSound);
     return this.repo.save(target);
   }
 
@@ -206,7 +282,10 @@ export class SoundEffectsService {
     name?: string;
   }): Promise<SoundEffect> {
     try {
-      const hash = crypto.createHash('sha256').update(params.buffer).digest('hex');
+      const hash = crypto
+        .createHash('sha256')
+        .update(params.buffer)
+        .digest('hex');
 
       const existing = await this.repo.findOne({
         where: { user_id: params.user_id, hash },
@@ -229,7 +308,9 @@ export class SoundEffectsService {
         return this.repo.save(existing);
       }
 
-      const uploaded = await this.uploadAudioToCloudinary({ buffer: params.buffer });
+      const uploaded = await this.uploadAudioToCloudinary({
+        buffer: params.buffer,
+      });
 
       const entity = this.repo.create({
         user_id: params.user_id,
@@ -299,7 +380,9 @@ export class SoundEffectsService {
     }
 
     const mixLabel = 'mix';
-    parts.push(`${outLabels.join('')}amix=inputs=${params.inputCount}:normalize=0[${mixLabel}]`);
+    parts.push(
+      `${outLabels.join('')}amix=inputs=${params.inputCount}:normalize=0[${mixLabel}]`,
+    );
 
     return { filterComplex: parts.join(';'), outLabel: mixLabel };
   }
@@ -311,10 +394,14 @@ export class SoundEffectsService {
   }): Promise<SoundEffect> {
     const items = Array.isArray(params.items) ? params.items : [];
     if (items.length < 2) {
-      throw new BadRequestException('At least 2 sound effects are required to merge');
+      throw new BadRequestException(
+        'At least 2 sound effects are required to merge',
+      );
     }
 
-    const ids = items.map((i) => String(i.sound_effect_id ?? '').trim()).filter(Boolean);
+    const ids = items
+      .map((i) => String(i.sound_effect_id ?? '').trim())
+      .filter(Boolean);
     if (ids.length < 2) {
       throw new BadRequestException('Invalid sound effect ids');
     }
@@ -328,9 +415,14 @@ export class SoundEffectsService {
     }
 
     // Maintain order as provided.
-    const ordered = ids.map((id) => effects.find((e) => e.id === id)!).filter(Boolean);
+    const ordered = ids
+      .map((id) => effects.find((e) => e.id === id)!)
+      .filter(Boolean);
 
-    const tmpDir = path.join(os.tmpdir(), `auto-video-sfx-merge-${randomUUID()}`);
+    const tmpDir = path.join(
+      os.tmpdir(),
+      `auto-video-sfx-merge-${randomUUID()}`,
+    );
     fs.mkdirSync(tmpDir, { recursive: true });
 
     const cleanupPaths: string[] = [tmpDir];
@@ -350,7 +442,10 @@ export class SoundEffectsService {
           path.extname(effect.url.split('?')[0] || '').toLowerCase() ||
           '.mp3';
 
-        const inputPath = path.join(tmpDir, `input-${String(idx + 1).padStart(2, '0')}${ext}`);
+        const inputPath = path.join(
+          tmpDir,
+          `input-${String(idx + 1).padStart(2, '0')}${ext}`,
+        );
         fs.writeFileSync(inputPath, downloaded.buffer);
         inputPaths.push(inputPath);
       }
@@ -359,8 +454,12 @@ export class SoundEffectsService {
         const delaySeconds = Number(it.delay_seconds ?? 0);
         const volumePercent = Number(it.volume_percent ?? 100);
         return {
-          delayMs: Number.isFinite(delaySeconds) ? Math.max(0, Math.round(delaySeconds * 1000)) : 0,
-          volume: Number.isFinite(volumePercent) ? clamp01(clampPercent(volumePercent) / 100) : 1,
+          delayMs: Number.isFinite(delaySeconds)
+            ? Math.max(0, Math.round(delaySeconds * 1000))
+            : 0,
+          volume: Number.isFinite(volumePercent)
+            ? clamp01(clampPercent(volumePercent) / 100)
+            : 1,
         };
       });
 
@@ -372,7 +471,14 @@ export class SoundEffectsService {
       const outMp3 = path.join(tmpDir, 'merged.mp3');
       const outWav = path.join(tmpDir, 'merged.wav');
 
-      const baseArgs = ['-y', ...inputPaths.flatMap((p) => ['-i', p]), '-filter_complex', filterComplex, '-map', `[${outLabel}]`];
+      const baseArgs = [
+        '-y',
+        ...inputPaths.flatMap((p) => ['-i', p]),
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        `[${outLabel}]`,
+      ];
 
       try {
         await this.callFfmpeg([
@@ -405,7 +511,9 @@ export class SoundEffectsService {
       const outPath = fs.existsSync(outMp3) ? outMp3 : outWav;
       const mergedBuffer = fs.readFileSync(outPath);
 
-      const uploaded = await this.uploadAudioToCloudinary({ buffer: mergedBuffer });
+      const uploaded = await this.uploadAudioToCloudinary({
+        buffer: mergedBuffer,
+      });
 
       const title = String(params.title ?? '').trim() || 'Merged sound';
       const name = title;

@@ -23,6 +23,14 @@ import { Scene } from './components/Scene';
 import { buildCutTransitions, getCutSeed, pickWhipDirection } from './utils/transitions';
 
 export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
+  const getTransitionSoundStartFrame = React.useCallback((nextStartFrame: number, transition: string) => {
+    if (transition === 'glitch') return Math.max(0, nextStartFrame - GLITCH_EDGE_FRAMES);
+    if (transition === 'whip') return Math.max(0, nextStartFrame - WHIP_EDGE_FRAMES - 10);
+    if (transition === 'flash') return Math.max(0, nextStartFrame - 8);
+    if (transition === 'chromaLeak') return Math.max(0, nextStartFrame - CHROMA_EDGE_FRAMES - 8);
+    return Math.max(0, nextStartFrame);
+  }, []);
+
   // Treat empty strings from the backend as "unset" so local `staticFile()` defaults work.
   const rawBackgroundMusicSrc = timeline.assets?.backgroundMusicSrc;
   const backgroundMusicSrc =
@@ -111,6 +119,14 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         const src = String(se?.src ?? '').trim();
         if (src) sources.add(resolveMediaSrc(src));
       }
+
+      const transitionSoundEffects = Array.isArray(scene.transitionSoundEffects)
+        ? scene.transitionSoundEffects
+        : [];
+      for (const se of transitionSoundEffects) {
+        const src = String(se?.src ?? '').trim();
+        if (src) sources.add(resolveMediaSrc(src));
+      }
     }
 
     const run = async () => {
@@ -192,12 +208,55 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         });
       })}
 
+      {/* Custom transition sound overrides. */}
+      {timeline.scenes.map((prev, idx) => {
+        if (idx >= timeline.scenes.length - 1) return null;
+
+        const next = timeline.scenes[idx + 1];
+        const transition = cutTransitions[idx + 1] ?? 'none';
+        const transitionSoundEffects = Array.isArray(prev.transitionSoundEffects)
+          ? prev.transitionSoundEffects
+          : [];
+
+        if (transitionSoundEffects.length === 0) return null;
+
+        const anchorFrame = getTransitionSoundStartFrame(next.startFrame, transition);
+
+        return transitionSoundEffects.map((se, sfxIdx) => {
+          const src = String(se?.src ?? '').trim();
+          if (!src) return null;
+
+          const delaySecondsRaw = Number(se?.delaySeconds ?? 0);
+          const delaySeconds = Number.isFinite(delaySecondsRaw)
+            ? Math.max(0, delaySecondsRaw)
+            : 0;
+          const from = anchorFrame + Math.round(delaySeconds * (timeline.fps || 30));
+          if (from >= timeline.durationInFrames) return null;
+
+          const volumeRaw = Number(se?.volume ?? 1);
+          const volume = Number.isFinite(volumeRaw)
+            ? Math.max(0, Math.min(3, volumeRaw))
+            : 1;
+
+          return (
+            <Sequence
+              key={`transition-sfx-${prev.index}-${next.index}-${sfxIdx}`}
+              from={Math.max(0, from)}
+            >
+              <Audio src={resolveMediaSrc(src)} volume={volume} />
+            </Sequence>
+          );
+        });
+      })}
+
       {/* Glitch SFX during glitch cut windows */}
       {timeline.scenes.map((next, idx) => {
         if (idx === 0) return null;
-        const prevIndex = timeline.scenes[idx - 1].index;
+        const prev = timeline.scenes[idx - 1];
+        const prevIndex = prev.index;
         const transition = cutTransitions[idx] ?? 'none';
         if (transition !== 'glitch') return null;
+        if ((prev.transitionSoundEffects ?? []).length > 0) return null;
         if (!glitchSfxSrc) return null;
 
         const from = Math.max(0, next.startFrame - GLITCH_EDGE_FRAMES);
@@ -215,9 +274,11 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       {/* Whoosh SFX during whip cut windows */}
       {timeline.scenes.map((next, idx) => {
         if (idx === 0) return null;
-        const prevIndex = timeline.scenes[idx - 1].index;
+        const prev = timeline.scenes[idx - 1];
+        const prevIndex = prev.index;
         const transition = cutTransitions[idx] ?? 'none';
         if (transition !== 'whip') return null;
+        if ((prev.transitionSoundEffects ?? []).length > 0) return null;
         if (!whooshSfxSrc) return null;
 
         const from = Math.max(0, next.startFrame - WHIP_EDGE_FRAMES - 10);
@@ -235,9 +296,11 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       {/* Camera click SFX during flash cut windows */}
       {timeline.scenes.map((next, idx) => {
         if (idx === 0) return null;
-        const prevIndex = timeline.scenes[idx - 1].index;
+        const prev = timeline.scenes[idx - 1];
+        const prevIndex = prev.index;
         const transition = cutTransitions[idx] ?? 'none';
         if (transition !== 'flash') return null;
+        if ((prev.transitionSoundEffects ?? []).length > 0) return null;
         if (!cameraClickSfxSrc) return null;
 
         // Trigger right on the cut.
@@ -256,9 +319,11 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       {/* Chroma leak SFX during chromaLeak cut windows */}
       {timeline.scenes.map((next, idx) => {
         if (idx === 0) return null;
-        const prevIndex = timeline.scenes[idx - 1].index;
+        const prev = timeline.scenes[idx - 1];
+        const prevIndex = prev.index;
         const transition = cutTransitions[idx] ?? 'none';
         if (transition !== 'chromaLeak') return null;
+        if ((prev.transitionSoundEffects ?? []).length > 0) return null;
         if (!chromaLeakSfxSrc) return null;
 
         const from = Math.max(0, next.startFrame - CHROMA_EDGE_FRAMES - 8);

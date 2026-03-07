@@ -53,7 +53,7 @@ export class AiImageService {
   constructor(
     private readonly runtime: AiRuntimeService,
     private readonly imagesService: ImagesService,
-  ) { }
+  ) {}
 
   private static readonly NO_TEXT_PROMPT_SUFFIX =
     'No text, no letters, no words, no captions, no subtitles, no watermark, no logo, no signature, no symbols, no numbers.';
@@ -637,7 +637,9 @@ export class AiImageService {
         });
 
         const forceBackView = mentionsProphetOrSahaba;
-        const blockHumans = Boolean(mentionsWoman || (mentionsAllah && !forceBackView));
+        const blockHumans = Boolean(
+          mentionsWoman || (mentionsAllah && !forceBackView),
+        );
 
         return { blockHumans, forceBackView, characterKeys };
       }
@@ -867,12 +869,12 @@ export class AiImageService {
 
     const canonicalEras = Array.isArray(dto.eras)
       ? dto.eras
-        .map((e) => ({
-          key: String((e as any)?.key ?? '').trim(),
-          name: String((e as any)?.name ?? '').trim(),
-          description: String((e as any)?.description ?? '').trim(),
-        }))
-        .filter((e) => e.key && e.name)
+          .map((e) => ({
+            key: String((e as any)?.key ?? '').trim(),
+            name: String((e as any)?.name ?? '').trim(),
+            description: String((e as any)?.description ?? '').trim(),
+          }))
+          .filter((e) => e.key && e.name)
       : [];
 
     const forcedEraKeyProvided = dto.forcedEraKey !== undefined;
@@ -890,13 +892,13 @@ export class AiImageService {
     const forcedCharactersProvided = forcedCharacterKeysInput !== null;
     const forcedKeysRaw = forcedCharactersProvided
       ? forcedCharacterKeysInput
-        .map((k) => String(k ?? '').trim())
-        .filter(Boolean)
+          .map((k) => String(k ?? '').trim())
+          .filter(Boolean)
       : [];
     const forcedKeys = canonicalCharacters?.length
       ? forcedKeysRaw.filter((k) =>
-        canonicalCharacters.some((c) => c.key === k),
-      )
+          canonicalCharacters.some((c) => c.key === k),
+        )
       : [];
     const useForcedCharactersOverride = forcedCharactersProvided;
 
@@ -907,9 +909,9 @@ export class AiImageService {
     const inferredEra =
       !requestedEra && !forcedEraKeyProvided
         ? await this.getOrCreateEraForSentence({
-          scriptRaw: fullScriptContext,
-          sentenceRaw: sentenceText,
-        })
+            scriptRaw: fullScriptContext,
+            sentenceRaw: sentenceText,
+          })
         : null;
 
     const effectiveEraLine = requestedEra
@@ -943,7 +945,7 @@ export class AiImageService {
 
     const backViewOnlyRule =
       'show the person ONLY from behind (back view) & relatable to the sentence scene. ' +
-      'He can be lying down, sitting, fallen on the ground, walking away, etc., but you MUST NOT show any face or facial details. '
+      'He can be lying down, sitting, fallen on the ground, walking away, etc., but you MUST NOT show any face or facial details. ';
     try {
       let prompt = (dto.prompt ?? '').trim();
       if (!prompt) {
@@ -954,37 +956,37 @@ export class AiImageService {
           frameType === 'single'
             ? ''
             : (frameType === 'start'
-              ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
-              : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
-            (continuityPrompt
-              ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
-              : '');
+                ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
+                : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
+              (continuityPrompt
+                ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
+                : '');
 
         const characterRefsBlock = referencedCharacterKeys.length
           ? (() => {
-            const resolveDescription = (key: string): string | null => {
-              if (canonicalCharacters?.length) {
-                const c = canonicalCharacters.find((cc) => cc.key === key);
-                return c ? `${c.key}: ${c.description}` : null;
-              }
-              if (characterBible) {
-                const c = characterBible.byKey[key];
-                return c ? `${c.key}: ${c.description}` : null;
-              }
-              return null;
-            };
+              const resolveDescription = (key: string): string | null => {
+                if (canonicalCharacters?.length) {
+                  const c = canonicalCharacters.find((cc) => cc.key === key);
+                  return c ? `${c.key}: ${c.description}` : null;
+                }
+                if (characterBible) {
+                  const c = characterBible.byKey[key];
+                  return c ? `${c.key}: ${c.description}` : null;
+                }
+                return null;
+              };
 
-            const lines = referencedCharacterKeys
-              .map(resolveDescription)
-              .filter(Boolean)
-              .join('\n');
+              const lines = referencedCharacterKeys
+                .map(resolveDescription)
+                .filter(Boolean)
+                .join('\n');
 
-            return lines
-              ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
-              lines +
-              '\n\n'
-              : '';
-          })()
+              return lines
+                ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
+                    lines +
+                    '\n\n'
+                : '';
+            })()
           : '';
 
         if (!useForcedCharactersOverride) {
@@ -995,7 +997,10 @@ export class AiImageService {
           console.log(referencedCharacterKeys, 'referencedCharacterKeys');
           console.log(effectiveEraLine, 'effectiveEraLine');
         } else {
-          console.log(referencedCharacterKeys, 'forced referencedCharacterKeys');
+          console.log(
+            referencedCharacterKeys,
+            'forced referencedCharacterKeys',
+          );
         }
 
         prompt =
@@ -1018,9 +1023,9 @@ export class AiImageService {
                       ? noHumanFiguresRule
                       : forceBackView
                         ? backViewOnlyRule +
-                        (referencedCharacterKeys.length
-                          ? ' You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s).'
-                          : '')
+                          (referencedCharacterKeys.length
+                            ? ' You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s).'
+                            : '')
                         : referencedCharacterKeys.length
                           ? 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
                           : ''),
@@ -1142,7 +1147,11 @@ export class AiImageService {
 
       // Enforce a strong "no text" constraint in the final prompt sent to providers,
       // unless the caller explicitly allows text (e.g. YouTube wallpapers/thumbnails).
-      if (prompt.includes('quran') || prompt.includes('verse') || prompt.includes('qur\'an')) {
+      if (
+        prompt.includes('quran') ||
+        prompt.includes('verse') ||
+        prompt.includes("qur'an")
+      ) {
         prompt = this.enforceNoTextInPrompt(prompt);
       }
 

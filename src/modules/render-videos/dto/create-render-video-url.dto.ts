@@ -30,6 +30,22 @@ class SentenceSoundEffectDto {
   volumePercent?: number;
 }
 
+class TransitionSoundEffectDto {
+  @IsUrl({ require_tld: false })
+  src: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  delaySeconds?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(300)
+  volumePercent?: number;
+}
+
 class SentenceDto {
   @IsString()
   @IsNotEmpty()
@@ -73,6 +89,12 @@ class SentenceDto {
   @ValidateNested({ each: true })
   @Type(() => SentenceSoundEffectDto)
   soundEffects?: SentenceSoundEffectDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TransitionSoundEffectDto)
+  transitionSoundEffects?: TransitionSoundEffectDto[];
 }
 
 export class CreateRenderVideoUrlDto {

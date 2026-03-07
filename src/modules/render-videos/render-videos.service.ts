@@ -169,6 +169,7 @@ export class RenderVideosService implements OnModuleInit {
     language?: string;
     audioFile: UploadedAsset | null;
     audioUrl?: string | null;
+    allowSilentAudio?: boolean;
     sentences: SentenceInput[];
     imageFiles: Array<UploadedAsset | null>;
     imageUrls?: Array<string | null> | null;
@@ -480,6 +481,7 @@ export class RenderVideosService implements OnModuleInit {
       language?: string;
       audioFile: UploadedAsset | null;
       audioUrl?: string | null;
+      allowSilentAudio?: boolean;
       sentences: SentenceInput[];
       imageFiles: Array<UploadedAsset | null>;
       imageUrls?: Array<string | null> | null;
@@ -506,13 +508,15 @@ export class RenderVideosService implements OnModuleInit {
       stopHeartbeat = this.startHeartbeat(jobId);
 
       const hasAudioBuffer = !!params.audioFile?.buffer?.length;
-      const hasAudioUrl = !!params.audioUrl;
-      if (!hasAudioBuffer && !hasAudioUrl) {
+      const normalizedAudioUrl = String(params.audioUrl ?? '').trim();
+      const hasAudioUrl = normalizedAudioUrl.length > 0;
+      const allowSilentAudio = params.allowSilentAudio === true;
+      if (!hasAudioBuffer && !hasAudioUrl && !allowSilentAudio) {
         throw new Error('Missing voiceOver audio file');
       }
 
-      let audioBuffer: Buffer;
-      let audioName: string;
+      let audioBuffer: Buffer | null = null;
+      let audioName = 'audio.mp3';
       let audioMimeType: string | undefined;
 
       if (hasAudioBuffer && params.audioFile) {
@@ -527,9 +531,9 @@ export class RenderVideosService implements OnModuleInit {
         fs.writeFileSync(audioFsPath, audioBuffer);
         job.audioPath = this.getPublicAudioUrl({ jobId, ext });
         await this.jobsRepo.save(job);
-      } else {
+      } else if (hasAudioUrl) {
         const downloaded = await this.downloadUrlToBuffer({
-          url: String(params.audioUrl),
+          url: normalizedAudioUrl,
           maxBytes: 30 * 1024 * 1024,
           label: 'voiceOver audioUrl',
         });
@@ -539,20 +543,27 @@ export class RenderVideosService implements OnModuleInit {
 
         // Use the provided URL directly (must be publicly accessible).
         // Cloudinary re-hosting is intentionally disabled.
-        job.audioPath = String(params.audioUrl);
+        job.audioPath = normalizedAudioUrl;
+        await this.jobsRepo.save(job);
+      } else {
+        job.audioPath = '';
         await this.jobsRepo.save(job);
       }
 
       // Create a temporary local audio file for alignment and audio analysis.
       // This is not persisted in project storage.
       const audioExt = extname(audioName || '') || '.mp3';
-      const tempAudioPath = join(tempDir, `audio${audioExt}`);
-      fs.writeFileSync(tempAudioPath, audioBuffer);
+      const tempAudioPath = audioBuffer
+        ? join(tempDir, `audio${audioExt}`)
+        : null;
+      if (tempAudioPath && audioBuffer) {
+        fs.writeFileSync(tempAudioPath, audioBuffer);
+      }
 
       const durationSeconds =
         params.audioDurationSeconds && params.audioDurationSeconds > 0
           ? params.audioDurationSeconds
-          : 1;
+          : this.estimateDurationSecondsForSilentRender(params.sentences);
 
       const useLambdaTestMode = this.useLambdaTestMode();
 
@@ -575,8 +586,9 @@ export class RenderVideosService implements OnModuleInit {
       );
 
       if (useLambdaTestMode) {
-        if (!job.audioPath) throw new Error('audioPath is missing');
-        voiceoverAudioSrc = job.audioPath;
+        if (job.audioPath) {
+          voiceoverAudioSrc = job.audioPath;
+        }
 
         subscribeVideoSrc = hasSubscribeSentence
           ? SUBSCRIBE_VIDEO_CLOUDINARY_URL
@@ -650,7 +662,9 @@ export class RenderVideosService implements OnModuleInit {
         publicDirToClean = jobDir;
 
         // Materialize required Remotion assets into the job-scoped publicDir.
-        fs.writeFileSync(join(jobDir, REMOTION_VOICEOVER_REL), audioBuffer);
+        if (audioBuffer) {
+          fs.writeFileSync(join(jobDir, REMOTION_VOICEOVER_REL), audioBuffer);
+        }
 
         const remotionAssetsDir = this.getRemotionPublicAssetsDir();
         this.safeCopyFile(
@@ -741,7 +755,7 @@ export class RenderVideosService implements OnModuleInit {
         // Reassign so the timeline uses the local asset path.
         params.backgroundMusicSrc = effectiveBackgroundMusicSrc;
 
-        voiceoverAudioSrc = REMOTION_VOICEOVER_REL;
+        voiceoverAudioSrc = audioBuffer ? REMOTION_VOICEOVER_REL : '';
 
         // Pre-download per-sentence sound effects into the job-scoped publicDir.
         // This keeps renders stable (no runtime network fetches) and ensures audio can be
@@ -771,7 +785,10 @@ export class RenderVideosService implements OnModuleInit {
               fallback: '.mp3',
             });
 
-            const hash = createHash('sha1').update(trimmed).digest('hex').slice(0, 10);
+            const hash = createHash('sha1')
+              .update(trimmed)
+              .digest('hex')
+              .slice(0, 10);
             const rel = `${sfxDirRel}/sfx-${hash}${ext}`;
             fs.writeFileSync(join(jobDir, rel), downloaded.buffer);
             sfxCache.set(trimmed, rel);
@@ -784,13 +801,17 @@ export class RenderVideosService implements OnModuleInit {
 
         for (let i = 0; i < params.sentences.length; i += 1) {
           const soundEffects = (params.sentences[i] as any)?.soundEffects;
-          if (!Array.isArray(soundEffects) || soundEffects.length === 0) continue;
+          if (!Array.isArray(soundEffects) || soundEffects.length === 0)
+            continue;
 
           for (let j = 0; j < soundEffects.length; j += 1) {
             const se = soundEffects[j];
             const src = String(se?.src ?? '').trim();
             if (!src) continue;
-            const staged = await stageSfx(src, `sentence ${i + 1} sound effect ${j + 1}`);
+            const staged = await stageSfx(
+              src,
+              `sentence ${i + 1} sound effect ${j + 1}`,
+            );
             se.src = staged;
           }
         }
@@ -856,11 +877,13 @@ export class RenderVideosService implements OnModuleInit {
       // Align audio with sentences to get per-sentence timings.
       // Currently uses a word-based proportional approach and is structured
       // so that a real aligner (e.g. Whisper-based) can be plugged in later.
-      const sentenceTimings = await this.alignAudioToSentences(
-        tempAudioPath,
-        params.sentences,
-        durationSeconds,
-      );
+      const sentenceTimings = tempAudioPath
+        ? await this.alignAudioToSentences(
+            tempAudioPath,
+            params.sentences,
+            durationSeconds,
+          )
+        : this.buildSyntheticSentenceTimings(params.sentences, durationSeconds);
 
       const timeline = this.buildTimeline({
         language: params.language,
@@ -944,6 +967,54 @@ export class RenderVideosService implements OnModuleInit {
       audioDurationSeconds,
       withTimeout: withTimeoutExternal,
       disableRenderer: shouldUseRemotionLambda(),
+    });
+  }
+
+  private estimateDurationSecondsForSilentRender(
+    sentences: SentenceInput[],
+  ): number {
+    const wordCount = sentences.reduce((total, sentence) => {
+      const words = String(sentence?.text ?? '')
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean).length;
+      return total + words;
+    }, 0);
+
+    const estimated = wordCount > 0 ? wordCount / 2.6 : sentences.length * 2.4;
+    return Math.max(sentences.length * 1.5, Math.min(estimated, 90), 1);
+  }
+
+  private buildSyntheticSentenceTimings(
+    sentences: SentenceInput[],
+    audioDurationSeconds: number,
+  ): SentenceTiming[] {
+    const totalDuration = Math.max(1, audioDurationSeconds || 1);
+    const weights = sentences.map((sentence) => {
+      const words = String(sentence?.text ?? '')
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean).length;
+      return Math.max(1, words);
+    });
+    const totalWeight = weights.reduce((sum, value) => sum + value, 0) || 1;
+
+    let cursor = 0;
+    return sentences.map((sentence, index) => {
+      const slice = (weights[index] / totalWeight) * totalDuration;
+      const startSeconds = cursor;
+      const endSeconds =
+        index === sentences.length - 1
+          ? totalDuration
+          : Math.min(totalDuration, startSeconds + slice);
+      cursor = endSeconds;
+
+      return {
+        index,
+        text: String(sentence?.text ?? ''),
+        startSeconds,
+        endSeconds: Math.max(startSeconds + 0.2, endSeconds),
+      };
     });
   }
 }

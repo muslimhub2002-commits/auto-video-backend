@@ -40,6 +40,9 @@ export class SoundEffect {
   volume_percent: number;
 
   @Column({ type: 'boolean', default: false })
+  is_transition_sound: boolean;
+
+  @Column({ type: 'boolean', default: false })
   is_merged: boolean;
 
   @Column({ type: 'jsonb', nullable: true })

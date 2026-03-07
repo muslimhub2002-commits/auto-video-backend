@@ -23,6 +23,7 @@ import { CreateSoundEffectDto } from './dto/create-sound-effect.dto';
 import { UpdateSoundEffectVolumeDto } from './dto/update-sound-effect-volume.dto';
 import { MergeSoundEffectsDto } from './dto/merge-sound-effects.dto';
 import { UpdateSoundEffectNameDto } from './dto/update-sound-effect-name.dto';
+import { UpdateSoundEffectTransitionDto } from './dto/update-sound-effect-transition.dto';
 
 @Controller('sound-effects')
 @UseGuards(JwtAuthGuard)
@@ -48,6 +49,21 @@ export class SoundEffectsController {
     const limitNum = 20;
 
     return this.service.findAllByUser(user_id, pageNum, limitNum, q);
+  }
+
+  @Get('transitions')
+  async findTransitionSounds(
+    @Req() req: Request,
+    @Query('page') page: string = '1',
+    @Query('q') q: string = '',
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) throw new UnauthorizedException('User not found in request');
+
+    const pageNum = Number.parseInt(page, 10) || 1;
+    return this.service.findTransitionSoundsByUser(user_id, pageNum, q);
   }
 
   @Post()
@@ -91,10 +107,7 @@ export class SoundEffectsController {
       limits: { files: 20, fileSize: 15 * 1024 * 1024 },
     }),
   )
-  async createBatch(
-    @Req() req: Request,
-    @UploadedFiles() files: any[],
-  ) {
+  async createBatch(@Req() req: Request, @UploadedFiles() files: any[]) {
     const user = (req as any).user;
     const user_id = user?.id;
     if (!user_id) throw new UnauthorizedException('User not found in request');
@@ -147,6 +160,23 @@ export class SoundEffectsController {
     });
   }
 
+  @Patch('transition/:soundEffectId')
+  async setTransitionSound(
+    @Req() req: Request,
+    @Param('soundEffectId') soundEffectId: string,
+    @Body() body: UpdateSoundEffectTransitionDto,
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+    if (!user_id) throw new UnauthorizedException('User not found in request');
+
+    return this.service.setTransitionSoundById({
+      user_id,
+      soundEffectId,
+      isTransitionSound: Boolean(body?.isTransitionSound),
+    });
+  }
+
   @Patch(':soundEffectId')
   async rename(
     @Req() req: Request,
@@ -178,10 +208,7 @@ export class SoundEffectsController {
   }
 
   @Post('merge')
-  async merge(
-    @Req() req: Request,
-    @Body() body: MergeSoundEffectsDto,
-  ) {
+  async merge(@Req() req: Request, @Body() body: MergeSoundEffectsDto) {
     const user = (req as any).user;
     const user_id = user?.id;
     if (!user_id) throw new UnauthorizedException('User not found in request');

@@ -47,6 +47,30 @@ class SentenceSoundEffectInput {
   volume_percent?: number;
 }
 
+class TransitionSoundEffectInput {
+  @IsUUID()
+  sound_effect_id: string;
+
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  @IsString()
+  @IsOptional()
+  url?: string;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  delay_seconds?: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(300)
+  @IsOptional()
+  volume_percent?: number;
+}
+
 class UpdateSentenceInput {
   @IsString()
   @IsNotEmpty()
@@ -109,6 +133,12 @@ class UpdateSentenceInput {
   @Type(() => SentenceSoundEffectInput)
   @IsOptional()
   sound_effects?: SentenceSoundEffectInput[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TransitionSoundEffectInput)
+  @IsOptional()
+  transition_sound_effects?: TransitionSoundEffectInput[];
 }
 
 class ScriptCharacterInput {
@@ -268,4 +298,3 @@ export class UpdateScriptDto {
   @IsOptional()
   shorts_script_ids?: string[];
 }
-

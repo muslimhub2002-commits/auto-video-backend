@@ -51,6 +51,17 @@ export class Sentence {
   @Column({ type: 'text', nullable: true })
   visual_effect: string | null;
 
+  // Optional per-cut custom transition sounds for the cut from this sentence
+  // into the next one. Stored inline so unsaved multi-sound mixes can round-trip.
+  @Column({ type: 'jsonb', nullable: true })
+  transition_sound_effects: Array<{
+    sound_effect_id: string;
+    title?: string;
+    url?: string;
+    delay_seconds?: number;
+    volume_percent?: number;
+  }> | null;
+
   @Column({ type: 'boolean', default: false })
   isSuspense: boolean;
 
@@ -99,4 +110,3 @@ export class Sentence {
   )
   sound_effects: SentenceSoundEffect[];
 }
-

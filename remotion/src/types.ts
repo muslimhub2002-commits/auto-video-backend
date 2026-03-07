@@ -9,6 +9,11 @@ export type TimelineScene = {
     // Remotion Audio volume multiplier. 1 = normal volume.
     volume?: number;
   }>;
+  transitionSoundEffects?: Array<{
+    src: string;
+    delaySeconds?: number;
+    volume?: number;
+  }>;
   transitionToNext?: 'none' | 'glitch' | 'whip' | 'flash' | 'fade' | 'chromaLeak' | null;
   visualEffect?:
     | 'none'

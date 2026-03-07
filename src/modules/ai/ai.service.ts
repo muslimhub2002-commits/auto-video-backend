@@ -135,7 +135,9 @@ export class AiService {
     return this.textService.generateTitleForScript(script);
   }
 
-  translate(dto: TranslateDto): Promise<{ script?: string; sentences?: string[] }> {
+  translate(
+    dto: TranslateDto,
+  ): Promise<{ script?: string; sentences?: string[] }> {
     return this.textService.translate(dto);
   }
 

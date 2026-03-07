@@ -111,7 +111,11 @@ export class ScriptsService implements OnModuleInit {
     const ownedSet = new Set(owned.map((s) => s.id));
 
     const joinRows: SentenceSoundEffect[] = [];
-    for (let sentenceIndex = 0; sentenceIndex < sentenceInputs.length; sentenceIndex++) {
+    for (
+      let sentenceIndex = 0;
+      sentenceIndex < sentenceInputs.length;
+      sentenceIndex++
+    ) {
       const sentenceInput = sentenceInputs[sentenceIndex];
       const sentenceEntity = sentenceByIndex.get(sentenceIndex);
       if (!sentenceEntity) continue;
@@ -157,6 +161,45 @@ export class ScriptsService implements OnModuleInit {
     }
   }
 
+  private normalizeTransitionSoundEffectsInput(items: any): Array<{
+    sound_effect_id: string;
+    title?: string;
+    url?: string;
+    delay_seconds: number;
+    volume_percent: number;
+  }> | null {
+    const list = Array.isArray(items) ? items : [];
+    const normalized = list
+      .map((item) => {
+        const sound_effect_id = String(item?.sound_effect_id ?? '').trim();
+        if (!sound_effect_id) return null;
+
+        const title = String(item?.title ?? '').trim() || undefined;
+        const url = String(item?.url ?? '').trim() || undefined;
+        const delayRaw = Number(item?.delay_seconds ?? 0);
+        const volumeRaw = Number(item?.volume_percent ?? 100);
+
+        return {
+          sound_effect_id,
+          ...(title ? { title } : {}),
+          ...(url ? { url } : {}),
+          delay_seconds: Number.isFinite(delayRaw) ? Math.max(0, delayRaw) : 0,
+          volume_percent: Number.isFinite(volumeRaw)
+            ? Math.max(0, Math.min(300, volumeRaw))
+            : 100,
+        };
+      })
+      .filter(Boolean) as Array<{
+      sound_effect_id: string;
+      title?: string;
+      url?: string;
+      delay_seconds: number;
+      volume_percent: number;
+    }>;
+
+    return normalized.length > 0 ? normalized : null;
+  }
+
   async onModuleInit() {
     // Best-effort on boot. We also call this lazily in request paths because
     // in some setups the `scripts` table may not exist yet during module init.
@@ -165,9 +208,9 @@ export class ScriptsService implements OnModuleInit {
 
   private async scriptsTableExists(): Promise<boolean> {
     try {
-      const rows = (await this.dataSource.query(
+      const rows = await this.dataSource.query(
         "SELECT to_regclass('scripts') as reg",
-      )) as Array<{ reg: string | null }>;
+      );
       return Boolean(rows?.[0]?.reg);
     } catch {
       return false;
@@ -179,7 +222,7 @@ export class ScriptsService implements OnModuleInit {
     if (!name) return false;
 
     try {
-      const rows = (await this.dataSource.query(
+      const rows = await this.dataSource.query(
         `
           SELECT 1
           FROM information_schema.columns
@@ -189,7 +232,7 @@ export class ScriptsService implements OnModuleInit {
           LIMIT 1
         `,
         [name],
-      )) as unknown[];
+      );
       return rows.length > 0;
     } catch {
       return false;
@@ -198,9 +241,9 @@ export class ScriptsService implements OnModuleInit {
 
   private async sentencesTableExists(): Promise<boolean> {
     try {
-      const rows = (await this.dataSource.query(
+      const rows = await this.dataSource.query(
         "SELECT to_regclass('sentences') as reg",
-      )) as Array<{ reg: string | null }>;
+      );
       return Boolean(rows?.[0]?.reg);
     } catch {
       return false;
@@ -212,7 +255,7 @@ export class ScriptsService implements OnModuleInit {
     if (!name) return false;
 
     try {
-      const rows = (await this.dataSource.query(
+      const rows = await this.dataSource.query(
         `
           SELECT 1
           FROM information_schema.columns
@@ -222,7 +265,7 @@ export class ScriptsService implements OnModuleInit {
           LIMIT 1
         `,
         [name],
-      )) as unknown[];
+      );
       return rows.length > 0;
     } catch {
       return false;
@@ -271,8 +314,10 @@ export class ScriptsService implements OnModuleInit {
         await this.ensureScriptsSchema();
       }
 
-      const finalHasIsShortScript = await this.scriptsColumnExists('isShortScript');
-      const finalHasShortsScripts = await this.scriptsColumnExists('shorts_scripts');
+      const finalHasIsShortScript =
+        await this.scriptsColumnExists('isShortScript');
+      const finalHasShortsScripts =
+        await this.scriptsColumnExists('shorts_scripts');
       const finalHasYoutubeUrl = await this.scriptsColumnExists('youtube_url');
       const finalHasEras = await this.scriptsColumnExists('eras');
       const finalHasLanguage = await this.scriptsColumnExists('language');
@@ -472,7 +517,9 @@ export class ScriptsService implements OnModuleInit {
   }): Promise<Script[]> {
     const { userId, shortIds } = params;
     const ids = Array.from(
-      new Set((shortIds ?? []).map((s) => String(s ?? '').trim()).filter(Boolean)),
+      new Set(
+        (shortIds ?? []).map((s) => String(s ?? '').trim()).filter(Boolean),
+      ),
     );
     if (ids.length === 0) return [];
 
@@ -518,10 +565,7 @@ export class ScriptsService implements OnModuleInit {
     return `${this.getPublicBaseUrl()}/static/${normalized}`;
   }
 
-  private inferVideoExt(params: {
-    originalName?: string;
-    mimeType?: string;
-  }) {
+  private inferVideoExt(params: { originalName?: string; mimeType?: string }) {
     const fromName = extname(String(params.originalName ?? '').trim());
     if (fromName) return fromName;
     const mt = String(params.mimeType ?? '').toLowerCase();
@@ -585,17 +629,13 @@ export class ScriptsService implements OnModuleInit {
     return s;
   }
 
-  private normalizeShortsPayload(
-    raw: any,
-  ):
-    | Array<{
-        script: string;
-        title?: string | null;
-        video_url?: string | null;
-        sentences?: any[];
-        characters?: any[];
-      }>
-    | null {
+  private normalizeShortsPayload(raw: any): Array<{
+    script: string;
+    title?: string | null;
+    video_url?: string | null;
+    sentences?: any[];
+    characters?: any[];
+  }> | null {
     if (raw === null) return [];
     if (raw === undefined) return null;
     if (!Array.isArray(raw)) return null;
@@ -604,13 +644,17 @@ export class ScriptsService implements OnModuleInit {
       .map((item) => ({
         script: String(item?.script ?? '').trim(),
         title:
-          item?.title === undefined ? undefined : String(item?.title ?? '').trim() || null,
+          item?.title === undefined
+            ? undefined
+            : String(item?.title ?? '').trim() || null,
         video_url:
           item?.video_url === undefined
             ? undefined
             : String(item?.video_url ?? '').trim() || null,
         sentences: Array.isArray(item?.sentences) ? item.sentences : undefined,
-        characters: Array.isArray(item?.characters) ? item.characters : undefined,
+        characters: Array.isArray(item?.characters)
+          ? item.characters
+          : undefined,
       }))
       .filter((v) => v.script);
   }
@@ -699,7 +743,10 @@ export class ScriptsService implements OnModuleInit {
     if (ownedIds.length === 0) return;
 
     await this.sentenceRepository.delete({ script_id: In(ownedIds) as any });
-    await this.scriptRepository.delete({ id: In(ownedIds) as any, user_id: userId } as any);
+    await this.scriptRepository.delete({
+      id: In(ownedIds) as any,
+      user_id: userId,
+    } as any);
   }
 
   private async isScriptReferencedAsShort(params: {
@@ -778,7 +825,7 @@ export class ScriptsService implements OnModuleInit {
               : parent.characters;
           (found as any).eras =
             (item as any).eras && (item as any).eras.length > 0
-              ? ((item as any).eras as any)
+              ? (item as any).eras
               : (parent as any).eras;
           if (cleanedVideoUrl !== undefined) {
             found.video_url = cleanedVideoUrl;
@@ -805,7 +852,7 @@ export class ScriptsService implements OnModuleInit {
                   : parent.characters,
               eras:
                 (item as any).eras && (item as any).eras.length > 0
-                  ? ((item as any).eras as any)
+                  ? (item as any).eras
                   : (parent as any).eras,
             }),
           );
@@ -830,7 +877,7 @@ export class ScriptsService implements OnModuleInit {
                 : parent.characters,
             eras:
               (item as any).eras && (item as any).eras.length > 0
-                ? ((item as any).eras as any)
+                ? (item as any).eras
                 : (parent as any).eras,
           }),
         );
@@ -841,39 +888,45 @@ export class ScriptsService implements OnModuleInit {
 
         if (item.sentences.length > 0) {
           let suspenseAlreadyUsed = false;
-          const sentenceEntities = item.sentences.map((s: any, index: number) => {
-            const wantsSuspense = Boolean(s.isSuspense);
-            const isSuspense = wantsSuspense && !suspenseAlreadyUsed;
-            if (isSuspense) suspenseAlreadyUsed = true;
+          const sentenceEntities = item.sentences.map(
+            (s: any, index: number) => {
+              const wantsSuspense = Boolean(s.isSuspense);
+              const isSuspense = wantsSuspense && !suspenseAlreadyUsed;
+              if (isSuspense) suspenseAlreadyUsed = true;
 
-            return this.sentenceRepository.create({
-              text: String(s.text ?? ''),
-              index,
-              script_id: shortScript.id,
-              image_id: s.image_id ?? null,
-              start_frame_image_id: s.start_frame_image_id ?? null,
-              end_frame_image_id: s.end_frame_image_id ?? null,
-              video_id: s.video_id ?? null,
-              video_prompt: String((s as any).video_prompt ?? '').trim() || null,
-              transition_to_next: (s as any).transition_to_next ?? null,
-              visual_effect: (s as any).visual_effect ?? null,
-              isSuspense,
-              forced_character_keys:
-                Array.isArray((s as any).forced_character_keys) &&
-                (s as any).forced_character_keys.length > 0
-                  ? (s as any).forced_character_keys
-                  : null,
-              character_keys:
-                Array.isArray((s as any).character_keys) &&
-                (s as any).character_keys.length > 0
-                  ? (s as any).character_keys
-                  : null,
-              era_key: String((s as any).era_key ?? '').trim() || null,
-              forced_era_key: String((s as any).forced_era_key ?? '').trim() || null,
-            });
-          });
+              return this.sentenceRepository.create({
+                text: String(s.text ?? ''),
+                index,
+                script_id: shortScript.id,
+                image_id: s.image_id ?? null,
+                start_frame_image_id: s.start_frame_image_id ?? null,
+                end_frame_image_id: s.end_frame_image_id ?? null,
+                video_id: s.video_id ?? null,
+                video_prompt: String(s.video_prompt ?? '').trim() || null,
+                transition_to_next: s.transition_to_next ?? null,
+                visual_effect: s.visual_effect ?? null,
+                transition_sound_effects:
+                  this.normalizeTransitionSoundEffectsInput(
+                    s.transition_sound_effects,
+                  ),
+                isSuspense,
+                forced_character_keys:
+                  Array.isArray(s.forced_character_keys) &&
+                  s.forced_character_keys.length > 0
+                    ? s.forced_character_keys
+                    : null,
+                character_keys:
+                  Array.isArray(s.character_keys) && s.character_keys.length > 0
+                    ? s.character_keys
+                    : null,
+                era_key: String(s.era_key ?? '').trim() || null,
+                forced_era_key: String(s.forced_era_key ?? '').trim() || null,
+              });
+            },
+          );
 
-          const savedSentences = await this.sentenceRepository.save(sentenceEntities);
+          const savedSentences =
+            await this.sentenceRepository.save(sentenceEntities);
           await this.saveSentenceSoundEffectsForSentenceInputs({
             userId,
             sentenceInputs: item.sentences as any,
@@ -1132,7 +1185,10 @@ export class ScriptsService implements OnModuleInit {
         const relPath = join('sentence-videos', fileName);
         const absDir = join(this.getStorageRoot(), 'sentence-videos');
         this.ensureDir(absDir);
-        fs.writeFileSync(join(this.getStorageRoot(), relPath), generated.buffer);
+        fs.writeFileSync(
+          join(this.getStorageRoot(), relPath),
+          generated.buffer,
+        );
         finalVideoUrl = this.toStaticUrl(relPath);
       }
     } else {
@@ -1278,9 +1334,7 @@ export class ScriptsService implements OnModuleInit {
       subject === undefined ? undefined : (subject ?? '').trim() || null;
 
     const cleanedLanguage =
-      language === undefined
-        ? undefined
-        : (language ?? '').trim() || 'en';
+      language === undefined ? undefined : (language ?? '').trim() || 'en';
     const cleanedSubjectContent =
       subject_content === undefined
         ? undefined
@@ -1403,6 +1457,9 @@ export class ScriptsService implements OnModuleInit {
             video_prompt: String((s as any).video_prompt ?? '').trim() || null,
             transition_to_next: (s as any).transition_to_next ?? null,
             visual_effect: (s as any).visual_effect ?? null,
+            transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
+              (s as any).transition_sound_effects,
+            ),
             isSuspense,
             forced_character_keys:
               Array.isArray((s as any).forced_character_keys) &&
@@ -1415,11 +1472,13 @@ export class ScriptsService implements OnModuleInit {
                 ? (s as any).character_keys
                 : null,
             era_key: String((s as any).era_key ?? '').trim() || null,
-            forced_era_key: String((s as any).forced_era_key ?? '').trim() || null,
+            forced_era_key:
+              String((s as any).forced_era_key ?? '').trim() || null,
           });
         });
 
-        const savedSentences = await this.sentenceRepository.save(sentenceEntities);
+        const savedSentences =
+          await this.sentenceRepository.save(sentenceEntities);
         await this.saveSentenceSoundEffectsForSentenceInputs({
           userId,
           sentenceInputs: sentences as any,
@@ -1428,7 +1487,8 @@ export class ScriptsService implements OnModuleInit {
       }
 
       const normalizedShorts = this.normalizeShortsPayload(shorts_scripts);
-      const normalizedShortIds = this.normalizeShortIdsPayload(shorts_script_ids);
+      const normalizedShortIds =
+        this.normalizeShortIdsPayload(shorts_script_ids);
 
       if (normalizedShortIds !== null) {
         await this.applyShortScriptIdsLinking({
@@ -1438,7 +1498,9 @@ export class ScriptsService implements OnModuleInit {
         });
       } else if (normalizedShorts !== null) {
         if (normalizedShorts.length === 0) {
-          const existingIds = Array.isArray((updatedScript as any).shorts_scripts)
+          const existingIds = Array.isArray(
+            (updatedScript as any).shorts_scripts,
+          )
             ? ((updatedScript as any).shorts_scripts as string[])
             : [];
           if (existingIds.length > 0) {
@@ -1506,6 +1568,9 @@ export class ScriptsService implements OnModuleInit {
           video_prompt: String((s as any).video_prompt ?? '').trim() || null,
           transition_to_next: (s as any).transition_to_next ?? null,
           visual_effect: (s as any).visual_effect ?? null,
+          transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
+            (s as any).transition_sound_effects,
+          ),
           isSuspense,
           forced_character_keys:
             Array.isArray((s as any).forced_character_keys) &&
@@ -1518,11 +1583,13 @@ export class ScriptsService implements OnModuleInit {
               ? (s as any).character_keys
               : null,
           era_key: String((s as any).era_key ?? '').trim() || null,
-          forced_era_key: String((s as any).forced_era_key ?? '').trim() || null,
+          forced_era_key:
+            String((s as any).forced_era_key ?? '').trim() || null,
         });
       });
 
-      const savedSentences = await this.sentenceRepository.save(sentenceEntities);
+      const savedSentences =
+        await this.sentenceRepository.save(sentenceEntities);
       await this.saveSentenceSoundEffectsForSentenceInputs({
         userId,
         sentenceInputs: sentences as any,
@@ -1606,7 +1673,9 @@ export class ScriptsService implements OnModuleInit {
         'short_ref.short_id = script.id::text',
       )
       .where('script.user_id = :userId', { userId })
-      .andWhere('(script.isShortScript IS NULL OR script.isShortScript = false)')
+      .andWhere(
+        '(script.isShortScript IS NULL OR script.isShortScript = false)',
+      )
       .andWhere('short_ref.short_id IS NULL');
 
     if (query) {
@@ -1672,16 +1741,23 @@ export class ScriptsService implements OnModuleInit {
       )
       .where('sentence.script_id IN (:...ids)', { ids })
       .groupBy('sentence.script_id')
-      .getRawMany<{ script_id: string; sentences_count: string; images_count: string }>();
+      .getRawMany<{
+        script_id: string;
+        sentences_count: string;
+        images_count: string;
+      }>();
 
     const countsByScriptId = new Map(
-      countsRaw.map((r) => [
-        r.script_id,
-        {
-          sentences_count: Number.parseInt(r.sentences_count, 10) || 0,
-          images_count: Number.parseInt(r.images_count, 10) || 0,
-        },
-      ] as const),
+      countsRaw.map(
+        (r) =>
+          [
+            r.script_id,
+            {
+              sentences_count: Number.parseInt(r.sentences_count, 10) || 0,
+              images_count: Number.parseInt(r.images_count, 10) || 0,
+            },
+          ] as const,
+      ),
     );
 
     const items = scriptsRaw.map((s) => {
@@ -1819,7 +1895,7 @@ export class ScriptsService implements OnModuleInit {
     if ((dto as any).eras !== undefined) {
       (script as any).eras =
         (dto as any).eras && (dto as any).eras.length > 0
-          ? ((dto as any).eras as any)
+          ? (dto as any).eras
           : null;
     }
 
@@ -1881,6 +1957,9 @@ export class ScriptsService implements OnModuleInit {
             video_prompt: String((s as any).video_prompt ?? '').trim() || null,
             transition_to_next: (s as any).transition_to_next ?? null,
             visual_effect: (s as any).visual_effect ?? null,
+            transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
+              (s as any).transition_sound_effects,
+            ),
             isSuspense,
             forced_character_keys:
               Array.isArray((s as any).forced_character_keys) &&
@@ -1893,10 +1972,12 @@ export class ScriptsService implements OnModuleInit {
                 ? (s as any).character_keys
                 : null,
             era_key: String((s as any).era_key ?? '').trim() || null,
-            forced_era_key: String((s as any).forced_era_key ?? '').trim() || null,
+            forced_era_key:
+              String((s as any).forced_era_key ?? '').trim() || null,
           });
         });
-        const savedSentences = await this.sentenceRepository.save(sentenceEntities);
+        const savedSentences =
+          await this.sentenceRepository.save(sentenceEntities);
         await this.saveSentenceSoundEffectsForSentenceInputs({
           userId,
           sentenceInputs: dto.sentences as any,
@@ -1908,7 +1989,9 @@ export class ScriptsService implements OnModuleInit {
     const normalizedShortIds = this.normalizeShortIdsPayload(
       (dto as any).shorts_script_ids,
     );
-    const normalizedShorts = this.normalizeShortsPayload((dto as any).shorts_scripts);
+    const normalizedShorts = this.normalizeShortsPayload(
+      (dto as any).shorts_scripts,
+    );
 
     if (normalizedShortIds !== null) {
       await this.applyShortScriptIdsLinking({
@@ -2058,6 +2141,9 @@ export class ScriptsService implements OnModuleInit {
             video_prompt: s.video_prompt ?? null,
             transition_to_next: s.transition_to_next ?? null,
             visual_effect: s.visual_effect ?? null,
+            transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
+              (s as any).transition_sound_effects,
+            ),
             isSuspense,
             forced_character_keys: s.forced_character_keys ?? null,
             character_keys: s.character_keys ?? null,
@@ -2073,7 +2159,9 @@ export class ScriptsService implements OnModuleInit {
       // Reuse an existing group if the source is already part of one.
       let group = await groupRepo
         .createQueryBuilder('g')
-        .innerJoin('g.scripts', 's', 's.id = :scriptId', { scriptId: source.id })
+        .innerJoin('g.scripts', 's', 's.id = :scriptId', {
+          scriptId: source.id,
+        })
         .where('g.user_id = :userId', { userId })
         .getOne();
 

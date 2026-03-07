@@ -167,6 +167,36 @@ export const buildTimeline = (params: {
               .filter(Boolean),
           }
         : {}),
+      ...(Array.isArray(s.transitionSoundEffects) &&
+      s.transitionSoundEffects.length > 0
+        ? {
+            transitionSoundEffects: s.transitionSoundEffects
+              .map((se) => {
+                const src = String(se?.src ?? '').trim();
+                if (!src) return null;
+
+                const delaySecondsRaw = Number(se?.delaySeconds ?? 0);
+                const delaySeconds = Number.isFinite(delaySecondsRaw)
+                  ? Math.max(0, delaySecondsRaw)
+                  : 0;
+
+                const volumePercentRaw =
+                  se?.volumePercent === null || se?.volumePercent === undefined
+                    ? 100
+                    : Number(se.volumePercent);
+                const volumePercent = Number.isFinite(volumePercentRaw)
+                  ? Math.max(0, Math.min(300, volumePercentRaw))
+                  : 100;
+
+                return {
+                  src,
+                  delaySeconds,
+                  volume: clamp03(volumePercent / 100),
+                };
+              })
+              .filter(Boolean),
+          }
+        : {}),
       ...(isImageScene && s.visualEffect != null
         ? { visualEffect: s.visualEffect }
         : {}),

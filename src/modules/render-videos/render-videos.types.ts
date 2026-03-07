@@ -10,6 +10,11 @@ export type SentenceInput = {
     // 0..300 where 100 = normal volume. Optional.
     volumePercent?: number;
   }>;
+  transitionSoundEffects?: Array<{
+    src: string;
+    delaySeconds?: number;
+    volumePercent?: number;
+  }>;
   transitionToNext?:
     | 'none'
     | 'glitch'

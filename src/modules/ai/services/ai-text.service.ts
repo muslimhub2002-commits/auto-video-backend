@@ -18,7 +18,7 @@ export class AiTextService {
   // Narration pacing assumption (words per minute) used to derive strict word-count targets.
   private readonly narrationWpm = 150;
 
-  constructor(private readonly runtime: AiRuntimeService) { }
+  constructor(private readonly runtime: AiRuntimeService) {}
 
   private get llm() {
     return this.runtime.llm;
@@ -300,8 +300,8 @@ export class AiTextService {
       }> => {
         const raw =
           parsed &&
-            typeof parsed === 'object' &&
-            Array.isArray((parsed as any).sentences)
+          typeof parsed === 'object' &&
+          Array.isArray((parsed as any).sentences)
             ? ((parsed as any).sentences as unknown[])
             : [];
 
@@ -347,8 +347,8 @@ export class AiTextService {
       const normalizeCharacters = (parsed: unknown): ScriptCharacter[] => {
         const raw =
           parsed &&
-            typeof parsed === 'object' &&
-            Array.isArray((parsed as any).characters)
+          typeof parsed === 'object' &&
+          Array.isArray((parsed as any).characters)
             ? ((parsed as any).characters as unknown[])
             : [];
 
@@ -393,8 +393,8 @@ export class AiTextService {
       const normalizeEras = (parsed: unknown): ScriptEra[] => {
         const raw =
           parsed &&
-            typeof parsed === 'object' &&
-            Array.isArray((parsed as any).eras)
+          typeof parsed === 'object' &&
+          Array.isArray((parsed as any).eras)
             ? ((parsed as any).eras as unknown[])
             : [];
 
@@ -468,9 +468,9 @@ export class AiTextService {
         '- Extract the different canonical ERAS that are relevant to the story.\n' +
         '- Use keys E1, E2, E3... (do NOT use E0).\n' +
         '- Keep era.name short (e.g. "7th century Arabia", "Ottoman era", "Modern day").\n' +
-        '- The description should include any important contextual details for that era that could impact visual depiction (environment, lighting, color tone).\n'
-        '- Don\'t add in the description any human or character details; focus only on era-specific environment/atmospheric details.\n' +
-        '- If the script implies a time progression, assign eras accordingly. If the era is ambiguous or not visually distinct, it can be null.\n' 
+        '- The description should include any important contextual details for that era that could impact visual depiction (environment, lighting, color tone).\n';
+      "- Don't add in the description any human or character details; focus only on era-specific environment/atmospheric details.\n" +
+        '- If the script implies a time progression, assign eras accordingly. If the era is ambiguous or not visually distinct, it can be null.\n';
 
       const parsedEras = await this.llm.completeJson<unknown>({
         model,
@@ -699,8 +699,8 @@ export class AiTextService {
 
       const rangesRaw =
         parsed &&
-          typeof parsed === 'object' &&
-          Array.isArray((parsed as any).ranges)
+        typeof parsed === 'object' &&
+        Array.isArray((parsed as any).ranges)
           ? ((parsed as any).ranges as any[])
           : null;
 
@@ -1028,7 +1028,9 @@ export class AiTextService {
     }
   }
 
-  async translate(dto: TranslateDto): Promise<{ script?: string; sentences?: string[] }> {
+  async translate(
+    dto: TranslateDto,
+  ): Promise<{ script?: string; sentences?: string[] }> {
     const targetLanguage = String(dto?.targetLanguage ?? '').trim();
     if (!targetLanguage) {
       throw new BadRequestException('targetLanguage is required');
@@ -1040,7 +1042,8 @@ export class AiTextService {
       const lower = trimmed.toLowerCase();
 
       // Frontend uses zh-CN; translate-google generally expects lowercase.
-      if (lower === 'zh-cn' || lower === 'zh-hans' || lower === 'zh') return 'zh-cn';
+      if (lower === 'zh-cn' || lower === 'zh-hans' || lower === 'zh')
+        return 'zh-cn';
       return lower;
     };
 
@@ -1051,14 +1054,18 @@ export class AiTextService {
     const scriptRaw = dto?.script;
     const script = typeof scriptRaw === 'string' ? scriptRaw.trim() : '';
 
-    const sentencesRaw = Array.isArray(dto?.sentences) ? dto.sentences : undefined;
+    const sentencesRaw = Array.isArray(dto?.sentences)
+      ? dto.sentences
+      : undefined;
     const sentences =
       sentencesRaw === undefined
         ? undefined
         : sentencesRaw.map((s) => String(s ?? ''));
 
     if (!script && (!sentences || sentences.length === 0)) {
-      throw new BadRequestException('Provide `script` and/or a non-empty `sentences` array');
+      throw new BadRequestException(
+        'Provide `script` and/or a non-empty `sentences` array',
+      );
     }
 
     const normalizeGoogleResult = (result: any): string => {
@@ -1074,7 +1081,9 @@ export class AiTextService {
       return normalizeGoogleResult(res);
     };
 
-    const translateManyWithGoogle = async (texts: string[]): Promise<string[]> => {
+    const translateManyWithGoogle = async (
+      texts: string[],
+    ): Promise<string[]> => {
       const out: string[] = [];
       for (const t of texts) {
         // Preserve array length exactly. Allow empty strings.
@@ -1120,7 +1129,10 @@ export class AiTextService {
         });
 
         const translations = (parsed as any)?.translations;
-        if (!Array.isArray(translations) || translations.length !== chunk.length) {
+        if (
+          !Array.isArray(translations) ||
+          translations.length !== chunk.length
+        ) {
           throw new InternalServerErrorException(
             'LLM translation returned an invalid shape/length',
           );
