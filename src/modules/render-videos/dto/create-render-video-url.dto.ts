@@ -26,6 +26,11 @@ class SentenceSoundEffectDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  durationSeconds?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   @Max(300)
   volumePercent?: number;
 }
@@ -50,6 +55,10 @@ class SentenceDto {
   @IsString()
   @IsNotEmpty()
   text: string;
+
+  @IsOptional()
+  @IsBoolean()
+  soundEffectsAlignToSceneEnd?: boolean;
 
   @IsOptional()
   @IsBoolean()

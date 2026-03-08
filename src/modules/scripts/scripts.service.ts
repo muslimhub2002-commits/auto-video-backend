@@ -349,6 +349,9 @@ export class ScriptsService implements OnModuleInit {
       const hasSentenceVideoPrompt = sentencesTableExists
         ? await this.sentencesColumnExists('video_prompt')
         : true;
+      const hasSentenceAlignSoundEffectsToSceneEnd = sentencesTableExists
+        ? await this.sentencesColumnExists('align_sound_effects_to_scene_end')
+        : true;
       const sentenceSoundEffectsTableExists =
         await this.sentenceSoundEffectsTableExists();
       const hasSentenceSoundEffectTimingMode = sentenceSoundEffectsTableExists
@@ -365,6 +368,7 @@ export class ScriptsService implements OnModuleInit {
         !hasSentenceEraKey ||
         !hasSentenceForcedEraKey ||
         !hasSentenceVideoPrompt ||
+        !hasSentenceAlignSoundEffectsToSceneEnd ||
         !hasSentenceSoundEffectTimingMode
       ) {
         await this.ensureScriptsSchema();
@@ -391,6 +395,10 @@ export class ScriptsService implements OnModuleInit {
       const finalHasSentenceVideoPrompt = finalSentencesTableExists
         ? await this.sentencesColumnExists('video_prompt')
         : true;
+      const finalHasSentenceAlignSoundEffectsToSceneEnd =
+        finalSentencesTableExists
+          ? await this.sentencesColumnExists('align_sound_effects_to_scene_end')
+          : true;
       const finalSentenceSoundEffectsTableExists =
         await this.sentenceSoundEffectsTableExists();
       const finalHasSentenceSoundEffectTimingMode =
@@ -408,6 +416,7 @@ export class ScriptsService implements OnModuleInit {
         !finalHasSentenceEraKey ||
         !finalHasSentenceForcedEraKey ||
         !finalHasSentenceVideoPrompt ||
+        !finalHasSentenceAlignSoundEffectsToSceneEnd ||
         !finalHasSentenceSoundEffectTimingMode
       ) {
         throw new InternalServerErrorException(
@@ -540,6 +549,9 @@ export class ScriptsService implements OnModuleInit {
 
       await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS video_prompt TEXT NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS align_sound_effects_to_scene_end BOOLEAN NOT NULL DEFAULT FALSE',
       );
     }
 
@@ -980,6 +992,9 @@ export class ScriptsService implements OnModuleInit {
                 text: String(s.text ?? ''),
                 index,
                 script_id: shortScript.id,
+                align_sound_effects_to_scene_end: Boolean(
+                  s.align_sound_effects_to_scene_end,
+                ),
                 image_id: s.image_id ?? null,
                 start_frame_image_id: s.start_frame_image_id ?? null,
                 end_frame_image_id: s.end_frame_image_id ?? null,
@@ -1532,6 +1547,9 @@ export class ScriptsService implements OnModuleInit {
             text: s.text,
             index,
             script_id: updatedScript.id,
+            align_sound_effects_to_scene_end: Boolean(
+              (s as any).align_sound_effects_to_scene_end,
+            ),
             image_id: s.image_id ?? null,
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
@@ -1643,6 +1661,9 @@ export class ScriptsService implements OnModuleInit {
           text: s.text,
           index,
           script_id: savedScript.id,
+          align_sound_effects_to_scene_end: Boolean(
+            (s as any).align_sound_effects_to_scene_end,
+          ),
           image_id: s.image_id ?? null,
           start_frame_image_id: s.start_frame_image_id ?? null,
           end_frame_image_id: s.end_frame_image_id ?? null,
@@ -2032,6 +2053,9 @@ export class ScriptsService implements OnModuleInit {
             text: s.text,
             index,
             script_id: script.id,
+            align_sound_effects_to_scene_end: Boolean(
+              (s as any).align_sound_effects_to_scene_end,
+            ),
             image_id: s.image_id ?? null,
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
@@ -2216,6 +2240,9 @@ export class ScriptsService implements OnModuleInit {
             script_id: saved.id,
             index: s.index ?? idx,
             text: String(translatedSentences?.[idx] ?? ''),
+            align_sound_effects_to_scene_end: Boolean(
+              (s as any).align_sound_effects_to_scene_end,
+            ),
             image_id: s.image_id ?? null,
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,

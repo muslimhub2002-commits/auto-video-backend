@@ -41,6 +41,9 @@ export class Sentence {
   @Column({ type: 'text', nullable: true })
   video_prompt: string | null;
 
+  @Column({ type: 'boolean', default: false })
+  align_sound_effects_to_scene_end: boolean;
+
   // Optional per-sentence override for the cut/transition to the next sentence.
   // Null means auto-selection by the renderer.
   @Column({ type: 'text', nullable: true })

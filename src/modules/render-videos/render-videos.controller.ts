@@ -41,11 +41,13 @@ export class RenderVideosController {
     let sentences: Array<{
       text: string;
       isSuspense?: boolean;
+      soundEffectsAlignToSceneEnd?: boolean;
       mediaType?: 'image' | 'video';
       videoUrl?: string;
       soundEffects?: Array<{
         src: string;
         delaySeconds?: number;
+        durationSeconds?: number;
         volumePercent?: number;
       }>;
       transitionSoundEffects?: Array<{
@@ -84,11 +86,13 @@ export class RenderVideosController {
     sentences: Array<{
       text: string;
       isSuspense?: boolean;
+      soundEffectsAlignToSceneEnd?: boolean;
       mediaType?: 'image' | 'video';
       videoUrl?: string;
       soundEffects?: Array<{
         src: string;
         delaySeconds?: number;
+        durationSeconds?: number;
         volumePercent?: number;
       }>;
       transitionSoundEffects?: Array<{
@@ -181,6 +185,16 @@ export class RenderVideosController {
       }
 
       const soundEffects = (s as any)?.soundEffects;
+      const soundEffectsAlignToSceneEnd = (s as any)?.soundEffectsAlignToSceneEnd;
+      if (
+        soundEffectsAlignToSceneEnd != null &&
+        typeof soundEffectsAlignToSceneEnd !== 'boolean'
+      ) {
+        throw new BadRequestException(
+          `Invalid soundEffectsAlignToSceneEnd for sentence ${idx + 1}.`,
+        );
+      }
+
       if (soundEffects != null) {
         if (!Array.isArray(soundEffects)) {
           throw new BadRequestException(
@@ -203,6 +217,16 @@ export class RenderVideosController {
             if (!Number.isFinite(v) || v < 0) {
               throw new BadRequestException(
                 `Invalid soundEffects[${sfxIdx}] delaySeconds for sentence ${idx + 1}.`,
+              );
+            }
+          }
+
+          const durationRaw = se?.durationSeconds;
+          if (durationRaw != null) {
+            const v = Number(durationRaw);
+            if (!Number.isFinite(v) || v < 0) {
+              throw new BadRequestException(
+                `Invalid soundEffects[${sfxIdx}] durationSeconds for sentence ${idx + 1}.`,
               );
             }
           }
@@ -439,6 +463,7 @@ export class RenderVideosController {
     const sentences: SentenceInput[] = urlSentences.map((s) => ({
       text: s.text,
       isSuspense: s.isSuspense,
+      soundEffectsAlignToSceneEnd: s.soundEffectsAlignToSceneEnd,
       mediaType: 'image',
       ...(Array.isArray((s as any).soundEffects)
         ? { soundEffects: (s as any).soundEffects }

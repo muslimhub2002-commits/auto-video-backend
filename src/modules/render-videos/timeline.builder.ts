@@ -51,6 +51,10 @@ export const buildTimeline = (params: {
 }) => {
   const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
   const clamp03 = (value: number) => Math.max(0, Math.min(3, value));
+  const clampNonNegative = (value: unknown) => {
+    const numeric = Number(value ?? 0);
+    return Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+  };
 
   const backgroundMusicVolume =
     typeof params.backgroundMusicVolume === 'number' &&
@@ -132,39 +136,89 @@ export const buildTimeline = (params: {
       nominalEndFrames[index] ?? startFrame + 1,
     );
     const durationFrames = endFrame - startFrame;
+    const sceneDurationSeconds = durationFrames / fps;
     cursor = endFrame;
+
+    const normalizedSoundEffects = Array.isArray(s.soundEffects)
+      ? s.soundEffects
+          .map((se) => {
+            const src = String(se?.src ?? '').trim();
+            if (!src) return null;
+
+            const delaySeconds = clampNonNegative(se?.delaySeconds);
+            const durationSeconds = clampNonNegative(se?.durationSeconds);
+            const hasKnownDuration =
+              typeof se?.durationSeconds === 'number' &&
+              Number.isFinite(se.durationSeconds) &&
+              se.durationSeconds > 0;
+            const volumePercentRaw =
+              se?.volumePercent === null || se?.volumePercent === undefined
+                ? 100
+                : Number(se.volumePercent);
+            const volumePercent = Number.isFinite(volumePercentRaw)
+              ? Math.max(0, Math.min(300, volumePercentRaw))
+              : 100;
+
+            return {
+              src,
+              delaySeconds,
+              durationSeconds,
+              hasKnownDuration,
+              volume: clamp03(volumePercent / 100),
+            };
+          })
+          .filter(Boolean) as Array<{
+          src: string;
+          delaySeconds: number;
+          durationSeconds: number;
+          hasKnownDuration: boolean;
+          volume: number;
+        }>
+      : [];
+
+    const wantsSoundEffectsAlignToSceneEnd =
+      s.soundEffectsAlignToSceneEnd === true && normalizedSoundEffects.length > 0;
+
+    const alignedSoundEffects = wantsSoundEffectsAlignToSceneEnd
+      ? (() => {
+          if (normalizedSoundEffects.some((se) => !se.hasKnownDuration)) {
+            return { enabled: false, items: normalizedSoundEffects };
+          }
+
+          const stackEndSeconds = normalizedSoundEffects.reduce(
+            (max, se) => Math.max(max, se.delaySeconds + se.durationSeconds),
+            0,
+          );
+
+          if (stackEndSeconds <= 0 || stackEndSeconds > sceneDurationSeconds) {
+            return { enabled: false, items: normalizedSoundEffects };
+          }
+
+          const shiftSeconds = sceneDurationSeconds - stackEndSeconds;
+          return {
+            enabled: true,
+            items: normalizedSoundEffects.map((se) => ({
+              ...se,
+              delaySeconds: se.delaySeconds + shiftSeconds,
+            })),
+          };
+        })()
+      : { enabled: false, items: normalizedSoundEffects };
 
     return {
       index,
       text: s.text,
       isSuspense: !!s.isSuspense,
-      ...(Array.isArray(s.soundEffects) && s.soundEffects.length > 0
+      ...(alignedSoundEffects.items.length > 0
         ? {
-            soundEffects: s.soundEffects
-              .map((se) => {
-                const src = String(se?.src ?? '').trim();
-                if (!src) return null;
-
-                const delaySecondsRaw = Number(se?.delaySeconds ?? 0);
-                const delaySeconds = Number.isFinite(delaySecondsRaw)
-                  ? Math.max(0, delaySecondsRaw)
-                  : 0;
-
-                const volumePercentRaw =
-                  se?.volumePercent === null || se?.volumePercent === undefined
-                    ? 100
-                    : Number(se.volumePercent);
-                const volumePercent = Number.isFinite(volumePercentRaw)
-                  ? Math.max(0, Math.min(300, volumePercentRaw))
-                  : 100;
-
-                return {
-                  src,
-                  delaySeconds,
-                  volume: clamp03(volumePercent / 100),
-                };
-              })
-              .filter(Boolean),
+            soundEffects: alignedSoundEffects.items.map((se) => ({
+              src: se.src,
+              delaySeconds: se.delaySeconds,
+              volume: se.volume,
+            })),
+            ...(alignedSoundEffects.enabled
+              ? { soundEffectsAlignToSceneEnd: true }
+              : {}),
           }
         : {}),
       ...(Array.isArray(s.transitionSoundEffects) &&

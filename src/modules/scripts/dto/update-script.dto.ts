@@ -81,6 +81,10 @@ class UpdateSentenceInput {
   @IsNotEmpty()
   text: string;
 
+  @IsBoolean()
+  @IsOptional()
+  align_sound_effects_to_scene_end?: boolean;
+
   @IsUUID()
   @IsOptional()
   image_id?: string;

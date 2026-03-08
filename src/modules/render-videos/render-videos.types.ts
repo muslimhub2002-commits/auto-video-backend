@@ -1,12 +1,14 @@
 export type SentenceInput = {
   text: string;
   isSuspense?: boolean;
+  soundEffectsAlignToSceneEnd?: boolean;
   mediaType?: 'image' | 'video';
   videoUrl?: string;
   soundEffects?: Array<{
     // Absolute URL (e.g. Cloudinary) or static publicDir path (job-scoped) for local renders.
     src: string;
     delaySeconds?: number;
+    durationSeconds?: number;
     // 0..300 where 100 = normal volume. Optional.
     volumePercent?: number;
   }>;
