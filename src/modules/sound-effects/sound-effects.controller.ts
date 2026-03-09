@@ -22,8 +22,9 @@ import { SoundEffectsService } from './sound-effects.service';
 import { CreateSoundEffectDto } from './dto/create-sound-effect.dto';
 import { UpdateSoundEffectVolumeDto } from './dto/update-sound-effect-volume.dto';
 import { MergeSoundEffectsDto } from './dto/merge-sound-effects.dto';
-import { UpdateSoundEffectNameDto } from './dto/update-sound-effect-name.dto';
+import { UpdateSoundEffectDto } from './dto/update-sound-effect.dto';
 import { UpdateSoundEffectTransitionDto } from './dto/update-sound-effect-transition.dto';
+import { SaveSoundEffectPresetDto } from './dto/save-sound-effect-preset.dto';
 
 @Controller('sound-effects')
 @UseGuards(JwtAuthGuard)
@@ -98,6 +99,8 @@ export class SoundEffectsController {
       filename: file.originalname,
       title: body?.title,
       name: (body as any)?.name,
+      volumePercent: body?.volumePercent,
+      audioSettings: body?.audioSettings,
     });
   }
 
@@ -178,19 +181,40 @@ export class SoundEffectsController {
   }
 
   @Patch(':soundEffectId')
-  async rename(
+  async update(
     @Req() req: Request,
     @Param('soundEffectId') soundEffectId: string,
-    @Body() body: UpdateSoundEffectNameDto,
+    @Body() body: UpdateSoundEffectDto,
   ) {
     const user = (req as any).user;
     const user_id = user?.id;
     if (!user_id) throw new UnauthorizedException('User not found in request');
 
-    return this.service.renameById({
+    return this.service.updateById({
       user_id,
       soundEffectId,
       name: body?.name,
+      volumePercent: body?.volumePercent,
+      audioSettings: body?.audioSettings,
+    });
+  }
+
+  @Post(':soundEffectId/presets')
+  async saveAsPreset(
+    @Req() req: Request,
+    @Param('soundEffectId') soundEffectId: string,
+    @Body() body: SaveSoundEffectPresetDto,
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+    if (!user_id) throw new UnauthorizedException('User not found in request');
+
+    return this.service.saveAsPreset({
+      user_id,
+      soundEffectId,
+      name: body?.name,
+      volumePercent: body?.volumePercent,
+      audioSettings: body?.audioSettings,
     });
   }
 

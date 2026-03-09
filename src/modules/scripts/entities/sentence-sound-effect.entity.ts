@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { Sentence } from './sentence.entity';
 import { SoundEffect } from '../../sound-effects/entities/sound-effect.entity';
+import type { SoundEffectAudioSettings } from '../../sound-effects/audio-settings.types';
 
 export const SENTENCE_SOUND_EFFECT_TIMING_MODES = [
   'with_previous',
@@ -41,6 +42,9 @@ export class SentenceSoundEffect {
   // Optional per-sentence override. When null, the library item's volume_percent is used.
   @Column({ type: 'int', nullable: true })
   volume_percent: number | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  audio_settings_override: SoundEffectAudioSettings | null;
 
   @ManyToOne(() => Sentence, (sentence) => (sentence as any).sound_effects, {
     onDelete: 'CASCADE',

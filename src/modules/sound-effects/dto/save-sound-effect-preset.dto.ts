@@ -1,14 +1,9 @@
 import { Type } from 'class-transformer';
 import { IsNumber, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 
-export class CreateSoundEffectDto {
-  @IsOptional()
+export class SaveSoundEffectPresetDto {
   @IsString()
-  title?: string;
-
-  @IsOptional()
-  @IsString()
-  name?: string;
+  name: string;
 
   @Type(() => Number)
   @IsNumber()

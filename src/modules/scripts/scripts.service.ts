@@ -31,6 +31,7 @@ import { uploadBufferToCloudinary } from '../render-videos/utils/cloudinary.util
 import { TranslateScriptDto } from './dto/translate-script.dto';
 import { ScriptTranslationGroup } from './entities/script-translation-group.entity';
 import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
+import { normalizeSoundEffectAudioSettings } from '../sound-effects/audio-settings.types';
 
 type UploadedImageFile = {
   buffer: Buffer;
@@ -182,6 +183,10 @@ export class ScriptsService implements OnModuleInit {
         const timingMode = this.normalizeSentenceSoundEffectTimingMode(
           item?.timing_mode,
         );
+        const audioSettingsOverride =
+          item?.audio_settings_override && typeof item.audio_settings_override === 'object'
+            ? normalizeSoundEffectAudioSettings(item.audio_settings_override)
+            : null;
 
         joinRows.push(
           this.sentenceSoundEffectRepository.create({
@@ -191,6 +196,7 @@ export class ScriptsService implements OnModuleInit {
             delay_seconds: delaySeconds,
             volume_percent: volumePercent,
             timing_mode: timingMode,
+            audio_settings_override: audioSettingsOverride,
           }),
         );
       }
@@ -382,6 +388,10 @@ export class ScriptsService implements OnModuleInit {
       const hasSentenceSoundEffectTimingMode = sentenceSoundEffectsTableExists
         ? await this.sentenceSoundEffectsColumnExists('timing_mode')
         : true;
+      const hasSentenceSoundEffectAudioSettingsOverride =
+        sentenceSoundEffectsTableExists
+          ? await this.sentenceSoundEffectsColumnExists('audio_settings_override')
+          : true;
 
       if (
         !hasIsShortScript ||
@@ -394,7 +404,8 @@ export class ScriptsService implements OnModuleInit {
         !hasSentenceForcedEraKey ||
         !hasSentenceVideoPrompt ||
         !hasSentenceAlignSoundEffectsToSceneEnd ||
-        !hasSentenceSoundEffectTimingMode
+        !hasSentenceSoundEffectTimingMode ||
+        !hasSentenceSoundEffectAudioSettingsOverride
       ) {
         await this.ensureScriptsSchema();
       }
@@ -430,6 +441,10 @@ export class ScriptsService implements OnModuleInit {
         finalSentenceSoundEffectsTableExists
           ? await this.sentenceSoundEffectsColumnExists('timing_mode')
           : true;
+      const finalHasSentenceSoundEffectAudioSettingsOverride =
+        finalSentenceSoundEffectsTableExists
+          ? await this.sentenceSoundEffectsColumnExists('audio_settings_override')
+          : true;
 
       if (
         !finalHasIsShortScript ||
@@ -442,7 +457,8 @@ export class ScriptsService implements OnModuleInit {
         !finalHasSentenceForcedEraKey ||
         !finalHasSentenceVideoPrompt ||
         !finalHasSentenceAlignSoundEffectsToSceneEnd ||
-        !finalHasSentenceSoundEffectTimingMode
+        !finalHasSentenceSoundEffectTimingMode ||
+        !finalHasSentenceSoundEffectAudioSettingsOverride
       ) {
         throw new InternalServerErrorException(
           'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, eras, language, and sentences.character_keys/era_key/forced_era_key). ' +
@@ -602,6 +618,9 @@ export class ScriptsService implements OnModuleInit {
         await this.dataSource.query(
           "ALTER TABLE sentence_sound_effects ADD COLUMN IF NOT EXISTS timing_mode VARCHAR(32) NOT NULL DEFAULT 'with_previous'",
         );
+          await this.dataSource.query(
+            'ALTER TABLE sentence_sound_effects ADD COLUMN IF NOT EXISTS audio_settings_override JSONB NULL',
+          );
       } catch (err: any) {
         const message = String(err?.message || '');
         if (

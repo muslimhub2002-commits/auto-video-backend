@@ -7,6 +7,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
+import type { SoundEffectAudioSettings } from '../audio-settings.types';
 
 @Entity('sound_effects')
 export class SoundEffect {
@@ -42,11 +43,20 @@ export class SoundEffect {
   @Column({ type: 'double precision', nullable: true })
   duration_seconds: number | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  audio_settings: SoundEffectAudioSettings | null;
+
   @Column({ type: 'boolean', default: false })
   is_transition_sound: boolean;
 
   @Column({ type: 'boolean', default: false })
   is_merged: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  is_preset: boolean;
+
+  @Column({ type: 'uuid', nullable: true })
+  source_sound_effect_id: string | null;
 
   @Column({ type: 'jsonb', nullable: true })
   merged_from: any | null;

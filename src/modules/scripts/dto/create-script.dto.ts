@@ -66,6 +66,10 @@ class SentenceSoundEffectInput {
   @IsIn(SENTENCE_SOUND_EFFECT_TIMING_MODES)
   @IsOptional()
   timing_mode?: (typeof SENTENCE_SOUND_EFFECT_TIMING_MODES)[number];
+
+  @IsObject()
+  @IsOptional()
+  audio_settings_override?: Record<string, unknown> | null;
 }
 
 class TransitionSoundEffectInput {

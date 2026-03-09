@@ -17,6 +17,10 @@ import { RenderInternals } from '@remotion/renderer';
 import { SoundEffect } from './entities/sound-effect.entity';
 import { downloadUrlToBuffer } from '../render-videos/utils/net.utils';
 import type { MergeSoundEffectItemDto } from './dto/merge-sound-effects.dto';
+import {
+  DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+  normalizeSoundEffectAudioSettings,
+} from './audio-settings.types';
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const clampPercent = (v: number) => Math.max(0, Math.min(300, v));
@@ -64,6 +68,9 @@ export class SoundEffectsService implements OnModuleInit {
     const queries = [
       'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS is_transition_sound BOOLEAN NOT NULL DEFAULT false',
       'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS duration_seconds DOUBLE PRECISION NULL',
+      'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS audio_settings JSONB NULL',
+      'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS is_preset BOOLEAN NOT NULL DEFAULT false',
+      'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS source_sound_effect_id UUID NULL',
     ];
 
     for (const query of queries) {
@@ -79,6 +86,61 @@ export class SoundEffectsService implements OnModuleInit {
         }
         throw err;
       }
+    }
+  }
+
+  private normalizeStoredSoundEffect(entity: SoundEffect): SoundEffect {
+    entity.audio_settings = normalizeSoundEffectAudioSettings(
+      entity.audio_settings ?? DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+    );
+    const name =
+      String(entity?.name ?? '').trim() ||
+      String(entity?.title ?? '').trim() ||
+      'Sound Effect';
+    entity.name = name;
+    entity.title = String(entity?.title ?? '').trim() || name;
+    return entity;
+  }
+
+  private async findOwnedSoundEffectOrThrow(params: {
+    user_id: string;
+    soundEffectId: string;
+  }): Promise<SoundEffect> {
+    const soundEffectId = String(params.soundEffectId ?? '').trim();
+    if (!soundEffectId) throw new NotFoundException('Sound effect not found');
+
+    const target = await this.repo.findOne({
+      where: { id: soundEffectId, user_id: params.user_id },
+    });
+
+    if (!target) throw new NotFoundException('Sound effect not found');
+    return target;
+  }
+
+  private async assertTitleAvailable(params: {
+    user_id: string;
+    name: string;
+    excludeId?: string | null;
+  }): Promise<void> {
+    const normalizedName = String(params.name ?? '').trim();
+    if (!normalizedName) throw new BadRequestException('Name is required');
+
+    const query = this.repo
+      .createQueryBuilder('sound_effect')
+      .where('sound_effect.user_id = :userId', { userId: params.user_id })
+      .andWhere(
+        "(LOWER(COALESCE(sound_effect.name, '')) = LOWER(:name) OR LOWER(sound_effect.title) = LOWER(:name))",
+        { name: normalizedName },
+      );
+
+    const excludeId = String(params.excludeId ?? '').trim();
+    if (excludeId) {
+      query.andWhere('sound_effect.id != :excludeId', { excludeId });
+    }
+
+    const existing = await query.getOne();
+    if (existing) {
+      throw new BadRequestException('A sound effect with this title already exists');
     }
   }
 
@@ -217,7 +279,7 @@ export class SoundEffectsService implements OnModuleInit {
         String(it?.name ?? '').trim() ||
         String(it?.title ?? '').trim() ||
         'Sound Effect';
-      return { ...it, name };
+      return this.normalizeStoredSoundEffect({ ...it, name } as SoundEffect);
     });
 
     return {
@@ -264,7 +326,7 @@ export class SoundEffectsService implements OnModuleInit {
         String(it?.name ?? '').trim() ||
         String(it?.title ?? '').trim() ||
         'Sound Effect';
-      return { ...it, name };
+      return this.normalizeStoredSoundEffect({ ...it, name } as SoundEffect);
     });
 
     return {
@@ -314,27 +376,79 @@ export class SoundEffectsService implements OnModuleInit {
     return this.repo.save(target);
   }
 
-  async renameById(params: {
+  async updateById(params: {
     user_id: string;
     soundEffectId: string;
     name: string;
+    volumePercent?: number;
+    audioSettings?: Record<string, unknown> | null;
   }): Promise<SoundEffect> {
-    const soundEffectId = String(params.soundEffectId ?? '').trim();
-    if (!soundEffectId) throw new NotFoundException('Sound effect not found');
-
     const name = String(params.name ?? '').trim();
     if (!name) throw new BadRequestException('Name is required');
 
-    const target = await this.repo.findOne({
-      where: { id: soundEffectId, user_id: params.user_id },
+    const target = await this.findOwnedSoundEffectOrThrow(params);
+    await this.assertTitleAvailable({
+      user_id: params.user_id,
+      name,
+      excludeId: target.id,
     });
 
-    if (!target) throw new NotFoundException('Sound effect not found');
+    const rawVolume = Number(params.volumePercent);
+    const volumePercent = Number.isFinite(rawVolume)
+      ? clampPercent(rawVolume)
+      : target.volume_percent ?? 100;
 
     (target as any).name = name;
-    // Keep title in sync for older clients.
     target.title = name;
-    return this.repo.save(target);
+    target.volume_percent = volumePercent;
+    target.audio_settings = normalizeSoundEffectAudioSettings(
+      params.audioSettings ?? target.audio_settings ?? DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+    );
+    return this.normalizeStoredSoundEffect(await this.repo.save(target));
+  }
+
+  async saveAsPreset(params: {
+    user_id: string;
+    soundEffectId: string;
+    name: string;
+    volumePercent?: number;
+    audioSettings?: Record<string, unknown> | null;
+  }): Promise<SoundEffect> {
+    const source = await this.findOwnedSoundEffectOrThrow(params);
+    const name = String(params.name ?? '').trim();
+    if (!name) throw new BadRequestException('Name is required');
+
+    await this.assertTitleAvailable({
+      user_id: params.user_id,
+      name,
+    });
+
+    const rawVolume = Number(params.volumePercent);
+    const volumePercent = Number.isFinite(rawVolume)
+      ? clampPercent(rawVolume)
+      : source.volume_percent ?? 100;
+
+    const clone = this.repo.create({
+      user_id: source.user_id,
+      title: name,
+      name,
+      url: source.url,
+      public_id: source.public_id,
+      hash: source.hash,
+      number_of_times_used: 0,
+      volume_percent: volumePercent,
+      duration_seconds: source.duration_seconds,
+      audio_settings: normalizeSoundEffectAudioSettings(
+        params.audioSettings ?? source.audio_settings ?? DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+      ),
+      is_transition_sound: source.is_transition_sound,
+      is_merged: false,
+      is_preset: true,
+      source_sound_effect_id: source.id,
+      merged_from: null,
+    });
+
+    return this.normalizeStoredSoundEffect(await this.repo.save(clone));
   }
 
   async deleteById(params: {
@@ -422,6 +536,8 @@ export class SoundEffectsService implements OnModuleInit {
     filename: string;
     title?: string;
     name?: string;
+    volumePercent?: number;
+    audioSettings?: Record<string, unknown> | null;
   }): Promise<SoundEffect> {
     try {
       const hash = crypto
@@ -440,8 +556,19 @@ export class SoundEffectsService implements OnModuleInit {
           .trim() || 'Sound Effect';
 
       const name = String(params.name ?? '').trim() || inferredName;
-      // Keep title in sync for older clients.
       const title = String(params.title ?? '').trim() || name;
+      await this.assertTitleAvailable({
+        user_id: params.user_id,
+        name,
+        excludeId: existing?.id ?? null,
+      });
+      const rawVolume = Number(params.volumePercent);
+      const volumePercent = Number.isFinite(rawVolume)
+        ? clampPercent(rawVolume)
+        : 100;
+      const audioSettings = normalizeSoundEffectAudioSettings(
+        params.audioSettings ?? DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+      );
       const durationSeconds = await this.getAudioDurationSecondsFromBuffer({
         buffer: params.buffer,
         ext: path.extname(String(params.filename ?? '').trim()) || '.mp3',
@@ -451,10 +578,12 @@ export class SoundEffectsService implements OnModuleInit {
         existing.number_of_times_used += 1;
         if (title) existing.title = title;
         if (name) (existing as any).name = name;
+        existing.volume_percent = volumePercent;
+        existing.audio_settings = audioSettings;
         if (durationSeconds && !existing.duration_seconds) {
           existing.duration_seconds = durationSeconds;
         }
-        return this.repo.save(existing);
+        return this.normalizeStoredSoundEffect(await this.repo.save(existing));
       }
 
       const uploaded = await this.uploadAudioToCloudinary({
@@ -469,11 +598,12 @@ export class SoundEffectsService implements OnModuleInit {
         public_id: uploaded.public_id,
         hash,
         number_of_times_used: 0,
-        volume_percent: 100,
+        volume_percent: volumePercent,
         duration_seconds: durationSeconds,
+        audio_settings: audioSettings,
       });
 
-      return this.repo.save(entity);
+      return this.normalizeStoredSoundEffect(await this.repo.save(entity));
     } catch (error: any) {
       console.error('Error in uploadAndCreate (sound effect):', error);
       throw new InternalServerErrorException(
