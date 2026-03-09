@@ -37,6 +37,11 @@ export type SoundEffectSaturationSettings = {
   mix: number;
 };
 
+export type SoundEffectTrimSettings = {
+  startSeconds: number;
+  durationSeconds: number;
+};
+
 export type SoundEffectAudioSettings = {
   version: 1;
   eq: SoundEffectEqSettings;
@@ -44,6 +49,7 @@ export type SoundEffectAudioSettings = {
   reverb: SoundEffectReverbSettings;
   echo: SoundEffectEchoSettings;
   saturation: SoundEffectSaturationSettings;
+  trim: SoundEffectTrimSettings;
 };
 
 const clamp = (value: unknown, min: number, max: number, fallback: number) => {
@@ -93,6 +99,10 @@ export const DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS: SoundEffectAudioSettings = {
     drive: 1.4,
     mix: 0.2,
   },
+  trim: {
+    startSeconds: 0,
+    durationSeconds: 0,
+  },
 };
 
 export const normalizeSoundEffectAudioSettings = (
@@ -121,6 +131,10 @@ export const normalizeSoundEffectAudioSettings = (
   const saturation =
     raw.saturation && typeof raw.saturation === 'object' && !Array.isArray(raw.saturation)
       ? (raw.saturation as Record<string, unknown>)
+      : {};
+  const trim =
+    raw.trim && typeof raw.trim === 'object' && !Array.isArray(raw.trim)
+      ? (raw.trim as Record<string, unknown>)
       : {};
 
   return {
@@ -158,6 +172,10 @@ export const normalizeSoundEffectAudioSettings = (
       enabled: clampBoolean(saturation.enabled, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.saturation.enabled),
       drive: clamp(saturation.drive, 1, 10, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.saturation.drive),
       mix: clamp(saturation.mix, 0, 1, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.saturation.mix),
+    },
+    trim: {
+      startSeconds: clamp(trim.startSeconds, 0, 600, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.trim.startSeconds),
+      durationSeconds: clamp(trim.durationSeconds, 0, 600, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.trim.durationSeconds),
     },
   };
 };
