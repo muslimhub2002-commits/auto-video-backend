@@ -6,6 +6,7 @@ import {
   IsIn,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -44,6 +45,8 @@ const ALLOWED_IMAGE_MOTION_EFFECTS = [
   'splitMotion',
   'rotationDrift',
 ] as const;
+
+const ALLOWED_IMAGE_EFFECTS_MODES = ['quick', 'detailed'] as const;
 
 class SentenceSoundEffectInput {
   @IsUUID()
@@ -136,6 +139,26 @@ class CreateSentenceInput {
   @Max(2.5)
   @IsOptional()
   image_motion_speed?: number | null;
+
+  @IsIn(ALLOWED_IMAGE_EFFECTS_MODES)
+  @IsOptional()
+  image_effects_mode?: (typeof ALLOWED_IMAGE_EFFECTS_MODES)[number] | null;
+
+  @IsUUID()
+  @IsOptional()
+  image_filter_id?: string | null;
+
+  @IsObject()
+  @IsOptional()
+  image_filter_settings?: Record<string, unknown> | null;
+
+  @IsUUID()
+  @IsOptional()
+  motion_effect_id?: string | null;
+
+  @IsObject()
+  @IsOptional()
+  image_motion_settings?: Record<string, unknown> | null;
 
   @IsBoolean()
   @IsOptional()

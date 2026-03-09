@@ -1,6 +1,11 @@
 export type TimelineScene = {
   index: number;
   text: string;
+  imageEffectsMode?: 'quick' | 'detailed' | null;
+  imageFilterId?: string | null;
+  imageFilterSettings?: Record<string, unknown> | null;
+  motionEffectId?: string | null;
+  imageMotionSettings?: Record<string, unknown> | null;
   imageSrc?: string; // static file path (publicDir) or absolute URL
   videoSrc?: string; // static file path (publicDir) or absolute URL
   soundEffects?: Array<{

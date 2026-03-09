@@ -7,6 +7,8 @@ import { AiModule } from './modules/ai/ai.module';
 import { VoiceOversModule } from './modules/voice-overs/voice-overs.module';
 import { ImagesModule } from './modules/images/images.module';
 import { VoicesModule } from './modules/voices/voices.module';
+import { ImageFiltersModule } from './modules/image-filters/image-filters.module';
+import { MotionEffectsModule } from './modules/motion-effects/motion-effects.module';
 import { BackgroundSoundtracksModule } from './modules/background-soundtracks/background-soundtracks.module';
 import { SoundEffectsModule } from './modules/sound-effects/sound-effects.module';
 import { ScriptsModule } from './modules/scripts/scripts.module';
@@ -49,6 +51,8 @@ import { YoutubeModule } from './modules/youtube/youtube.module';
     VoiceOversModule,
     ImagesModule,
     VoicesModule,
+    ImageFiltersModule,
+    MotionEffectsModule,
     BackgroundSoundtracksModule,
     SoundEffectsModule,
     ScriptsModule,

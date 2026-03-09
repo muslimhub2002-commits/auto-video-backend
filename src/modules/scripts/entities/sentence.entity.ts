@@ -62,6 +62,21 @@ export class Sentence {
   @Column({ type: 'real', nullable: true })
   image_motion_speed: number | null;
 
+  @Column({ type: 'text', nullable: true })
+  image_effects_mode: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  image_filter_id: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  image_filter_settings: Record<string, unknown> | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  motion_effect_id: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  image_motion_settings: Record<string, unknown> | null;
+
   // Optional per-cut custom transition sounds for the cut from this sentence
   // into the next one. Stored inline so unsaved multi-sound mixes can round-trip.
   @Column({ type: 'jsonb', nullable: true })

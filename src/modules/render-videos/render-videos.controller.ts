@@ -84,6 +84,11 @@ export class RenderVideosController {
         | 'rotationDrift'
         | null;
       imageMotionSpeed?: number | null;
+      imageEffectsMode?: 'quick' | 'detailed' | null;
+      imageFilterId?: string | null;
+      imageFilterSettings?: Record<string, unknown> | null;
+      motionEffectId?: string | null;
+      imageMotionSettings?: Record<string, unknown> | null;
     }>;
 
     try {
@@ -142,6 +147,11 @@ export class RenderVideosController {
         | 'rotationDrift'
         | null;
       imageMotionSpeed?: number | null;
+      imageEffectsMode?: 'quick' | 'detailed' | null;
+      imageFilterId?: string | null;
+      imageFilterSettings?: Record<string, unknown> | null;
+      motionEffectId?: string | null;
+      imageMotionSettings?: Record<string, unknown> | null;
     }>,
     minimumCount = 1,
   ) {
@@ -234,6 +244,39 @@ export class RenderVideosController {
             `Invalid imageMotionSpeed for sentence ${idx + 1}.`,
           );
         }
+      }
+
+      const imageEffectsMode = (s as any)?.imageEffectsMode;
+      if (
+        imageEffectsMode != null &&
+        imageEffectsMode !== 'quick' &&
+        imageEffectsMode !== 'detailed'
+      ) {
+        throw new BadRequestException(
+          `Invalid imageEffectsMode for sentence ${idx + 1}.`,
+        );
+      }
+
+      const imageFilterSettings = (s as any)?.imageFilterSettings;
+      if (
+        imageFilterSettings != null &&
+        (typeof imageFilterSettings !== 'object' ||
+          Array.isArray(imageFilterSettings))
+      ) {
+        throw new BadRequestException(
+          `Invalid imageFilterSettings for sentence ${idx + 1}.`,
+        );
+      }
+
+      const imageMotionSettings = (s as any)?.imageMotionSettings;
+      if (
+        imageMotionSettings != null &&
+        (typeof imageMotionSettings !== 'object' ||
+          Array.isArray(imageMotionSettings))
+      ) {
+        throw new BadRequestException(
+          `Invalid imageMotionSettings for sentence ${idx + 1}.`,
+        );
       }
 
       if (mediaType === 'video') {
@@ -545,6 +588,17 @@ export class RenderVideosController {
         : {}),
       ...(s.imageMotionSpeed != null
         ? { imageMotionSpeed: s.imageMotionSpeed }
+        : {}),
+      ...(s.imageEffectsMode != null
+        ? { imageEffectsMode: s.imageEffectsMode }
+        : {}),
+      ...(s.imageFilterId != null ? { imageFilterId: s.imageFilterId } : {}),
+      ...(s.imageFilterSettings != null
+        ? { imageFilterSettings: s.imageFilterSettings }
+        : {}),
+      ...(s.motionEffectId != null ? { motionEffectId: s.motionEffectId } : {}),
+      ...(s.imageMotionSettings != null
+        ? { imageMotionSettings: s.imageMotionSettings }
         : {}),
     }));
 

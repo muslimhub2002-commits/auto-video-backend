@@ -20,12 +20,16 @@ import { VoiceOversModule } from './modules/voice-overs/voice-overs.module';
 import { ImagesModule } from './modules/images/images.module';
 import { VoicesModule } from './modules/voices/voices.module';
 import { BackgroundSoundtracksModule } from './modules/background-soundtracks/background-soundtracks.module';
+import { ImageFiltersModule } from './modules/image-filters/image-filters.module';
+import { MotionEffectsModule } from './modules/motion-effects/motion-effects.module';
 import { ScriptsModule } from './modules/scripts/scripts.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { ChatsModule } from './modules/chats/chats.module';
 import { RenderJob } from './modules/render-videos/entities/render-job.entity';
 import { YoutubeModule } from './modules/youtube/youtube.module';
 import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/background-soundtrack.entity';
+import { ImageFilter } from './modules/image-filters/entities/image-filter.entity';
+import { MotionEffect } from './modules/motion-effects/entities/motion-effect.entity';
 import { VideosLibraryModule } from './modules/videos-library/videos-library.module';
 import { SoundEffectsModule } from './modules/sound-effects/sound-effects.module';
 import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entity';
@@ -61,6 +65,8 @@ import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entit
         User,
         Image,
         Voice,
+        ImageFilter,
+        MotionEffect,
         BackgroundSoundtrack,
         SoundEffect,
         VoiceOver,
@@ -83,6 +89,8 @@ import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entit
     VoiceOversModule,
     ImagesModule,
     VoicesModule,
+    ImageFiltersModule,
+    MotionEffectsModule,
     BackgroundSoundtracksModule,
     SoundEffectsModule,
     ScriptsModule,

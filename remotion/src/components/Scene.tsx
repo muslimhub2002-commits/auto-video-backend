@@ -47,6 +47,205 @@ import { SuspenseOverlay } from './SuspenseOverlay';
 
 // const { fontFamily: notoKufiArabicFontFamily } = loadNotoKufiArabic();
 
+type SceneVisualEffect = TimelineScene['visualEffect'];
+type SceneMotionEffect = NonNullable<TimelineScene['imageMotionEffect']>;
+
+const clampNumber = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const getNumeric = (
+  value: unknown,
+  fallback: number,
+  min?: number,
+  max?: number,
+) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  if (typeof min === 'number' && typeof max === 'number') {
+    return clampNumber(numeric, min, max);
+  }
+  if (typeof min === 'number') return Math.max(min, numeric);
+  if (typeof max === 'number') return Math.min(max, numeric);
+  return numeric;
+};
+
+const normalizeMotionSpeed = (value: unknown) =>
+  clampNumber(getNumeric(value, 1), 0.5, 2.5);
+
+const getPingPongProgress = (value: number) => {
+  const wrapped = ((value % 2) + 2) % 2;
+  return wrapped <= 1 ? wrapped : 2 - wrapped;
+};
+
+const getDefaultImageFilterSettings = (effect: SceneVisualEffect | null | undefined) => {
+  if (effect === 'colorGrading') {
+    return {
+      saturation: 1.16,
+      contrast: 1.12,
+      brightness: 0.98,
+      blurPx: 0,
+      sepia: 0,
+      grayscale: 0,
+      hueRotateDeg: 0,
+      animatedLightingIntensity: 0,
+      glassOverlayOpacity: 0,
+    };
+  }
+  if (effect === 'animatedLighting') {
+    return {
+      saturation: 1,
+      contrast: 1,
+      brightness: 1,
+      blurPx: 0,
+      sepia: 0,
+      grayscale: 0,
+      hueRotateDeg: 0,
+      animatedLightingIntensity: 0.34,
+      glassOverlayOpacity: 0,
+    };
+  }
+  if (effect === 'glassSubtle') {
+    return {
+      saturation: 1.08,
+      contrast: 1.06,
+      brightness: 1.02,
+      blurPx: 0,
+      sepia: 0,
+      grayscale: 0,
+      hueRotateDeg: 0,
+      animatedLightingIntensity: 0,
+      glassOverlayOpacity: 0,
+    };
+  }
+  if (effect === 'glassReflections') {
+    return {
+      saturation: 1.1,
+      contrast: 1.07,
+      brightness: 1.02,
+      blurPx: 0,
+      sepia: 0,
+      grayscale: 0,
+      hueRotateDeg: 0,
+      animatedLightingIntensity: 0,
+      glassOverlayOpacity: 0.16,
+    };
+  }
+  if (effect === 'glassStrong') {
+    return {
+      saturation: 1.12,
+      contrast: 1.1,
+      brightness: 1.03,
+      blurPx: 0,
+      sepia: 0,
+      grayscale: 0,
+      hueRotateDeg: 0,
+      animatedLightingIntensity: 0,
+      glassOverlayOpacity: 0.22,
+    };
+  }
+  return {
+    saturation: 1,
+    contrast: 1,
+    brightness: 1,
+    blurPx: 0,
+    sepia: 0,
+    grayscale: 0,
+    hueRotateDeg: 0,
+    animatedLightingIntensity: 0,
+    glassOverlayOpacity: 0,
+  };
+};
+
+const normalizeImageFilterSettings = (
+  settings: Record<string, unknown> | null | undefined,
+  fallbackEffect: SceneVisualEffect | null | undefined,
+) => {
+  const defaults = getDefaultImageFilterSettings(fallbackEffect);
+  return {
+    saturation: getNumeric(settings?.saturation, defaults.saturation, 0, 2.5),
+    contrast: getNumeric(settings?.contrast, defaults.contrast, 0, 2.5),
+    brightness: getNumeric(settings?.brightness, defaults.brightness, 0, 2.5),
+    blurPx: getNumeric(settings?.blurPx, defaults.blurPx, 0, 20),
+    sepia: getNumeric(settings?.sepia, defaults.sepia, 0, 1),
+    grayscale: getNumeric(settings?.grayscale, defaults.grayscale, 0, 1),
+    hueRotateDeg: getNumeric(settings?.hueRotateDeg, defaults.hueRotateDeg, -180, 180),
+    animatedLightingIntensity: getNumeric(
+      settings?.animatedLightingIntensity,
+      defaults.animatedLightingIntensity,
+      0,
+      1,
+    ),
+    glassOverlayOpacity: getNumeric(
+      settings?.glassOverlayOpacity,
+      defaults.glassOverlayOpacity,
+      0,
+      0.4,
+    ),
+  };
+};
+
+const getDefaultImageMotionSettings = (
+  effect: SceneMotionEffect | null | undefined,
+  speed: unknown,
+) => {
+  const normalizedSpeed = normalizeMotionSpeed(speed);
+  const base = {
+    speed: normalizedSpeed,
+    originX: 50,
+    originY: 50,
+  };
+
+  if (effect === 'slowZoomIn') {
+    return { ...base, startScale: 1.01, endScale: 1.085, translateXStart: 0, translateXEnd: 0, translateYStart: 0, translateYEnd: 0, rotateStart: 0, rotateEnd: 0 };
+  }
+  if (effect === 'slowZoomOut') {
+    return { ...base, startScale: 1.095, endScale: 1.01, translateXStart: 0, translateXEnd: 0, translateYStart: 0, translateYEnd: 0, rotateStart: 0, rotateEnd: 0 };
+  }
+  if (effect === 'diagonalDrift') {
+    return { ...base, startScale: 1.04, endScale: 1.09, translateXStart: -3.5, translateXEnd: 3.5, translateYStart: -2.5, translateYEnd: 2.5, rotateStart: 0, rotateEnd: 0 };
+  }
+  if (effect === 'cinematicPan') {
+    return { ...base, startScale: 1.08, endScale: 1.08, translateXStart: -4.5, translateXEnd: 4.5, translateYStart: 0, translateYEnd: 0, rotateStart: 0, rotateEnd: 0 };
+  }
+  if (effect === 'focusShift') {
+    return { ...base, originX: 38, originY: 34, startScale: 1.03, endScale: 1.1, translateXStart: 2, translateXEnd: 1, translateYStart: 1.5, translateYEnd: -2, rotateStart: 0, rotateEnd: 0 };
+  }
+  if (effect === 'parallaxMotion') {
+    return { ...base, originX: 50, originY: 42, startScale: 1.09, endScale: 1.11, translateXStart: -2, translateXEnd: 2.5, translateYStart: -1, translateYEnd: 1.5, rotateStart: -0.8, rotateEnd: 1 };
+  }
+  if (effect === 'shakeMicroMotion') {
+    return { ...base, startScale: 1.045, endScale: 1.058, translateXStart: -0.45, translateXEnd: 0.42, translateYStart: 0.2, translateYEnd: -0.24, rotateStart: -0.35, rotateEnd: 0.28 };
+  }
+  if (effect === 'splitMotion') {
+    return { ...base, startScale: 1.09, endScale: 1.11, translateXStart: -2.8, translateXEnd: -1.4, translateYStart: -1.2, translateYEnd: 2.4, rotateStart: -0.55, rotateEnd: -0.25 };
+  }
+  if (effect === 'rotationDrift') {
+    return { ...base, originX: 52, originY: 46, startScale: 1.055, endScale: 1.1, translateXStart: -1.2, translateXEnd: 0.8, translateYStart: 0.6, translateYEnd: 1.2, rotateStart: -1.2, rotateEnd: 1.35 };
+  }
+  return { ...base, startScale: 1, endScale: 1.055, translateXStart: 0, translateXEnd: 0, translateYStart: 0, translateYEnd: 0, rotateStart: 0, rotateEnd: 0 };
+};
+
+const normalizeImageMotionSettings = (
+  settings: Record<string, unknown> | null | undefined,
+  fallbackEffect: SceneMotionEffect | null | undefined,
+  fallbackSpeed: unknown,
+) => {
+  const defaults = getDefaultImageMotionSettings(fallbackEffect, fallbackSpeed);
+  return {
+    speed: normalizeMotionSpeed(settings?.speed ?? defaults.speed),
+    startScale: getNumeric(settings?.startScale, defaults.startScale, 0.5, 2),
+    endScale: getNumeric(settings?.endScale, defaults.endScale, 0.5, 2),
+    translateXStart: getNumeric(settings?.translateXStart, defaults.translateXStart, -20, 20),
+    translateXEnd: getNumeric(settings?.translateXEnd, defaults.translateXEnd, -20, 20),
+    translateYStart: getNumeric(settings?.translateYStart, defaults.translateYStart, -20, 20),
+    translateYEnd: getNumeric(settings?.translateYEnd, defaults.translateYEnd, -20, 20),
+    rotateStart: getNumeric(settings?.rotateStart, defaults.rotateStart, -10, 10),
+    rotateEnd: getNumeric(settings?.rotateEnd, defaults.rotateEnd, -10, 10),
+    originX: getNumeric(settings?.originX, defaults.originX, 0, 100),
+    originY: getNumeric(settings?.originY, defaults.originY, 0, 100),
+  };
+};
+
 export const Scene: React.FC<{
   scene: TimelineScene;
   language?: string;
@@ -101,27 +300,28 @@ export const Scene: React.FC<{
       : undefined;
 
     const visualEffect = scene.visualEffect ?? null;
+    const resolvedLook = normalizeImageFilterSettings(
+      scene.imageFilterSettings,
+      visualEffect,
+    );
 
-    const isGlassSubtle = visualEffect === 'glassSubtle';
-    const isGlassReflections = visualEffect === 'glassReflections';
-    const isGlassStrong = visualEffect === 'glassStrong';
-
-    const glassFilter = isGlassSubtle
-      ? 'contrast(1.06) saturate(1.08) brightness(1.02)'
-      : isGlassReflections
-        ? 'contrast(1.07) saturate(1.10) brightness(1.02)'
-        : isGlassStrong
-          ? 'contrast(1.10) saturate(1.12) brightness(1.03)'
-          : undefined;
-
-    const colorGradingFilter =
-      visualEffect === 'colorGrading'
-        ? 'contrast(1.12) saturate(1.16) brightness(0.98)'
-        : undefined;
-
-    const wrapperFilter = [suspenseFilter, colorGradingFilter, glassFilter]
+    const lookFilter = [
+      `saturate(${resolvedLook.saturation.toFixed(3)})`,
+      `contrast(${resolvedLook.contrast.toFixed(3)})`,
+      `brightness(${resolvedLook.brightness.toFixed(3)})`,
+      resolvedLook.blurPx > 0.001 ? `blur(${resolvedLook.blurPx.toFixed(2)}px)` : null,
+      resolvedLook.sepia > 0.001 ? `sepia(${resolvedLook.sepia.toFixed(3)})` : null,
+      resolvedLook.grayscale > 0.001
+        ? `grayscale(${resolvedLook.grayscale.toFixed(3)})`
+        : null,
+      Math.abs(resolvedLook.hueRotateDeg) > 0.001
+        ? `hue-rotate(${resolvedLook.hueRotateDeg.toFixed(2)}deg)`
+        : null,
+    ]
       .filter(Boolean)
-      .join(' ') || undefined;
+      .join(' ');
+
+    const wrapperFilter = [suspenseFilter, lookFilter].filter(Boolean).join(' ') || undefined;
 
     // Subtle film flicker for the suspense opening.
     const suspenseFlicker = isSuspenseOpening
@@ -231,186 +431,40 @@ export const Scene: React.FC<{
       : 0;
     const whipBlur = Math.min(WHIP_MAX_BLUR_PX, blurIn + blurOut);
 
-    const motionEffect = scene.imageMotionEffect ?? 'default';
-    const motionSpeed = Math.min(
-      2.5,
-      Math.max(
-        0.5,
-        typeof scene.imageMotionSpeed === 'number' &&
-          Number.isFinite(scene.imageMotionSpeed)
-          ? scene.imageMotionSpeed
-          : 1,
-      ),
+    const motionEffect = (scene.imageMotionEffect ?? 'default') as SceneMotionEffect;
+    const resolvedMotion = normalizeImageMotionSettings(
+      scene.imageMotionSettings,
+      motionEffect,
+      scene.imageMotionSpeed,
     );
+    const motionSpeed = resolvedMotion.speed;
     const motionEasing = Easing.inOut(Easing.cubic);
-    const focusShiftVariant = scene.index % 4;
-    const scaledElapsedSeconds = elapsedSeconds * motionSpeed;
-    const scaledMotionProgress = clamp01(motionProgress * motionSpeed);
-    const motionPhase = motionProgress * motionSpeed;
-
-    const focusTransformOrigin =
-      focusShiftVariant === 0
-        ? '34% 34%'
-        : focusShiftVariant === 1
-          ? '66% 34%'
-          : focusShiftVariant === 2
-            ? '38% 68%'
-            : '64% 66%';
-
-    let motionScale = 1 + IMAGE_ZOOM_PER_SECOND * scaledElapsedSeconds;
-    let motionTranslateX = 0;
-    let motionTranslateY = 0;
-    let motionRotate = 0;
-    let motionTransformOrigin = 'center center';
-
-    if (motionEffect === 'slowZoomIn') {
-      motionScale = 1 + IMAGE_SLOW_ZOOM_IN_PER_SECOND * scaledElapsedSeconds;
-    } else if (motionEffect === 'slowZoomOut') {
-      motionScale = Math.max(
-        1.005,
-        IMAGE_SLOW_ZOOM_OUT_START_SCALE -
-          IMAGE_SLOW_ZOOM_OUT_PER_SECOND * scaledElapsedSeconds,
-      );
-    } else if (motionEffect === 'diagonalDrift') {
-      motionScale = 1.035 + 0.04 * scaledMotionProgress;
-      motionTranslateX = interpolate(
-        scaledMotionProgress,
-        [0, 1],
-        [-width * IMAGE_DIAGONAL_DRIFT_X_MULTIPLIER, width * IMAGE_DIAGONAL_DRIFT_X_MULTIPLIER],
-        { easing: motionEasing },
-      );
-      motionTranslateY = interpolate(
-        scaledMotionProgress,
-        [0, 1],
-        [-height * IMAGE_DIAGONAL_DRIFT_Y_MULTIPLIER, height * IMAGE_DIAGONAL_DRIFT_Y_MULTIPLIER],
-        { easing: motionEasing },
-      );
-    } else if (motionEffect === 'cinematicPan') {
-      motionScale = 1.08;
-      motionTranslateX = interpolate(
-        scaledMotionProgress,
-        [0, 1],
-        [-width * IMAGE_CINEMATIC_PAN_X_MULTIPLIER, width * IMAGE_CINEMATIC_PAN_X_MULTIPLIER],
-        { easing: motionEasing },
-      );
-      motionTranslateY = Math.sin(scaledMotionProgress * Math.PI) * height * 0.008;
-    } else if (motionEffect === 'focusShift') {
-      motionScale = 1.03 + 0.07 * scaledMotionProgress;
-      motionTransformOrigin = focusTransformOrigin;
-      motionTranslateX = interpolate(
-        scaledMotionProgress,
-        [0, 1],
-        [
-          focusShiftVariant === 1 || focusShiftVariant === 3
-            ? width * IMAGE_FOCUS_SHIFT_X_MULTIPLIER
-            : -width * IMAGE_FOCUS_SHIFT_X_MULTIPLIER,
-          focusShiftVariant === 1 || focusShiftVariant === 3
-            ? -width * IMAGE_FOCUS_SHIFT_X_MULTIPLIER
-            : width * IMAGE_FOCUS_SHIFT_X_MULTIPLIER,
-        ],
-        { easing: motionEasing },
-      );
-      motionTranslateY = interpolate(
-        scaledMotionProgress,
-        [0, 1],
-        [
-          focusShiftVariant >= 2
-            ? height * IMAGE_FOCUS_SHIFT_Y_MULTIPLIER
-            : -height * IMAGE_FOCUS_SHIFT_Y_MULTIPLIER,
-          focusShiftVariant >= 2
-            ? -height * IMAGE_FOCUS_SHIFT_Y_MULTIPLIER
-            : height * IMAGE_FOCUS_SHIFT_Y_MULTIPLIER,
-        ],
-        { easing: motionEasing },
-      );
-    } else if (motionEffect === 'parallaxMotion') {
-      motionScale = 1.09 + 0.045 * scaledMotionProgress;
-      motionTranslateX = interpolate(
-        scaledMotionProgress,
-        [0, 1],
-        [-width * IMAGE_PARALLAX_X_MULTIPLIER, width * IMAGE_PARALLAX_X_MULTIPLIER],
-        { easing: motionEasing },
-      );
-      motionTranslateY = Math.sin(scaledMotionProgress * Math.PI * 1.2) * height * IMAGE_PARALLAX_Y_MULTIPLIER;
-      motionRotate = interpolate(scaledMotionProgress, [0, 1], [-0.8, 0.9], {
-        easing: motionEasing,
-      });
-      motionTransformOrigin = '50% 42%';
-    } else if (motionEffect === 'shakeMicroMotion') {
-      motionScale = 1.045 + 0.015 * scaledMotionProgress;
-      motionTranslateX =
-        Math.sin(motionPhase * Math.PI * 9) *
-        width *
-        IMAGE_SHAKE_MICRO_X_MULTIPLIER;
-      motionTranslateY =
-        Math.cos(motionPhase * Math.PI * 10) *
-        height *
-        IMAGE_SHAKE_MICRO_Y_MULTIPLIER;
-      motionRotate = Math.sin(motionPhase * Math.PI * 8) * 0.35;
-    } else if (motionEffect === 'splitMotion') {
-      motionScale = 1.09 + 0.03 * Math.sin(scaledMotionProgress * Math.PI);
-      if (scaledMotionProgress < 0.5) {
-        motionTranslateX = interpolate(
-          scaledMotionProgress,
-          [0, 0.5],
-          [
-            -width * IMAGE_SPLIT_MOTION_X_MULTIPLIER,
-            width * IMAGE_SPLIT_MOTION_X_MULTIPLIER,
-          ],
-          { easing: motionEasing },
-        );
-        motionTranslateY = interpolate(
-          scaledMotionProgress,
-          [0, 0.5],
-          [
-            -height * IMAGE_SPLIT_MOTION_Y_MULTIPLIER,
-            height * IMAGE_SPLIT_MOTION_Y_MULTIPLIER * 0.4,
-          ],
-          { easing: motionEasing },
-        );
-        motionRotate = interpolate(scaledMotionProgress, [0, 0.5], [-0.55, 0.45], {
-          easing: motionEasing,
-        });
-      } else {
-        motionTranslateX = interpolate(
-          scaledMotionProgress,
-          [0.5, 1],
-          [
-            width * IMAGE_SPLIT_MOTION_X_MULTIPLIER,
-            -width * IMAGE_SPLIT_MOTION_X_MULTIPLIER * 0.5,
-          ],
-          { easing: motionEasing },
-        );
-        motionTranslateY = interpolate(
-          scaledMotionProgress,
-          [0.5, 1],
-          [
-            height * IMAGE_SPLIT_MOTION_Y_MULTIPLIER * 0.4,
-            height * IMAGE_SPLIT_MOTION_Y_MULTIPLIER * 1.25,
-          ],
-          { easing: motionEasing },
-        );
-        motionRotate = interpolate(scaledMotionProgress, [0.5, 1], [0.45, -0.25], {
-          easing: motionEasing,
-        });
-      }
-    } else if (motionEffect === 'rotationDrift') {
-      motionScale = 1.055 + 0.045 * scaledMotionProgress;
-      motionTranslateX = interpolate(
-        scaledMotionProgress,
-        [0, 1],
-        [
-          -width * IMAGE_ROTATION_DRIFT_X_MULTIPLIER,
-          width * IMAGE_ROTATION_DRIFT_X_MULTIPLIER,
-        ],
-        { easing: motionEasing },
-      );
-      motionTranslateY = Math.sin(scaledMotionProgress * Math.PI * 1.4) * height * IMAGE_ROTATION_DRIFT_Y_MULTIPLIER;
-      motionRotate = interpolate(scaledMotionProgress, [0, 1], [-1.2, 1.35], {
-        easing: motionEasing,
-      });
-      motionTransformOrigin = '52% 46%';
-    }
+    const scaledMotionProgress = getPingPongProgress(motionProgress * motionSpeed);
+    const motionScale = interpolate(
+      scaledMotionProgress,
+      [0, 1],
+      [resolvedMotion.startScale, resolvedMotion.endScale],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: motionEasing },
+    );
+    const motionTranslateX = interpolate(
+      scaledMotionProgress,
+      [0, 1],
+      [width * (resolvedMotion.translateXStart / 100), width * (resolvedMotion.translateXEnd / 100)],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: motionEasing },
+    );
+    const motionTranslateY = interpolate(
+      scaledMotionProgress,
+      [0, 1],
+      [height * (resolvedMotion.translateYStart / 100), height * (resolvedMotion.translateYEnd / 100)],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: motionEasing },
+    );
+    const motionRotate = interpolate(
+      scaledMotionProgress,
+      [0, 1],
+      [resolvedMotion.rotateStart, resolvedMotion.rotateEnd],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: motionEasing },
+    );
+    const motionTransformOrigin = `${resolvedMotion.originX.toFixed(2)}% ${resolvedMotion.originY.toFixed(2)}%`;
 
     const whipSkew = (whipBlur / WHIP_MAX_BLUR_PX) * 6 * (whipX >= 0 ? 1 : -1);
 
@@ -681,15 +735,16 @@ export const Scene: React.FC<{
       </>
     ) : null;
 
-    const animatedLightingOn = visualEffect === 'animatedLighting';
+    const animatedLightingOn = resolvedLook.animatedLightingIntensity > 0.001;
     const lightingSeed = mulberry32((scene.index + 1) * 4409)();
     // Disable animation: keep the initial (frame=0) lighting look.
     const lightingX = ((lightingSeed * 320) % 100 + 100) % 100;
     const lightingY = (35 + 25 * Math.sin(lightingSeed * 8) + 100) % 100;
-    const lightingAlpha = 0.22 + 0.1 * Math.sin(lightingSeed * 12);
+    const lightingAlpha =
+      (0.22 + 0.1 * Math.sin(lightingSeed * 12)) * resolvedLook.animatedLightingIntensity;
 
-    const glassOverlayOn = isGlassReflections || isGlassStrong;
-    const glassOverlayOpacity = isGlassStrong ? 0.22 : 0.16;
+    const glassOverlayOpacity = clampNumber(resolvedLook.glassOverlayOpacity, 0, 0.4);
+    const glassOverlayOn = glassOverlayOpacity > 0.001;
 
     const mediaLayer = mediaContent ? (
       <AbsoluteFill style={{ ...backgroundStyle, filter: wrapperFilter }}>

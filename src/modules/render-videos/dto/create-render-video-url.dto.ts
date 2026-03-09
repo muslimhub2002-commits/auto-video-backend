@@ -5,6 +5,7 @@ import {
   IsIn,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
@@ -125,6 +126,26 @@ class SentenceDto {
   @Min(0.5)
   @Max(2.5)
   imageMotionSpeed?: number | null;
+
+  @IsOptional()
+  @IsIn(['quick', 'detailed'])
+  imageEffectsMode?: 'quick' | 'detailed' | null;
+
+  @IsOptional()
+  @IsString()
+  imageFilterId?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  imageFilterSettings?: Record<string, unknown> | null;
+
+  @IsOptional()
+  @IsString()
+  motionEffectId?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  imageMotionSettings?: Record<string, unknown> | null;
 
   @IsOptional()
   @IsArray()

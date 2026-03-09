@@ -51,6 +51,25 @@ export class ScriptsService implements OnModuleInit {
   private scriptsSchemaEnsuring: Promise<void> | null = null;
   private scriptsSchemaEnsured = false;
 
+  private normalizeImageEffectsMode(value: unknown): 'quick' | 'detailed' {
+    return value === 'detailed' ? 'detailed' : 'quick';
+  }
+
+  private normalizeOptionalId(value: unknown): string | null {
+    const normalized = String(value ?? '').trim();
+    return normalized || null;
+  }
+
+  private normalizeSettingsObject(
+    value: unknown,
+  ): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    return value as Record<string, unknown>;
+  }
+
   private normalizeImageMotionSpeed(value: unknown): number {
     const numeric = Number(value ?? 1);
     if (!Number.isFinite(numeric)) return 1;
@@ -559,6 +578,21 @@ export class ScriptsService implements OnModuleInit {
       await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS align_sound_effects_to_scene_end BOOLEAN NOT NULL DEFAULT FALSE',
       );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS image_effects_mode TEXT NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS image_filter_id UUID NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS image_filter_settings JSONB NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS motion_effect_id UUID NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS image_motion_settings JSONB NULL',
+      );
     }
 
     const sentenceSoundEffectsExists =
@@ -1011,6 +1045,21 @@ export class ScriptsService implements OnModuleInit {
                 image_motion_effect: s.image_motion_effect ?? 'default',
                 image_motion_speed: this.normalizeImageMotionSpeed(
                   s.image_motion_speed,
+                ),
+                image_effects_mode: this.normalizeImageEffectsMode(
+                  (s as any).image_effects_mode,
+                ),
+                image_filter_id: this.normalizeOptionalId(
+                  (s as any).image_filter_id,
+                ),
+                image_filter_settings: this.normalizeSettingsObject(
+                  (s as any).image_filter_settings,
+                ),
+                motion_effect_id: this.normalizeOptionalId(
+                  (s as any).motion_effect_id,
+                ),
+                image_motion_settings: this.normalizeSettingsObject(
+                  (s as any).image_motion_settings,
                 ),
                 transition_sound_effects:
                   this.normalizeTransitionSoundEffectsInput(
@@ -1571,6 +1620,21 @@ export class ScriptsService implements OnModuleInit {
             image_motion_speed: this.normalizeImageMotionSpeed(
               (s as any).image_motion_speed,
             ),
+            image_effects_mode: this.normalizeImageEffectsMode(
+              (s as any).image_effects_mode,
+            ),
+            image_filter_id: this.normalizeOptionalId(
+              (s as any).image_filter_id,
+            ),
+            image_filter_settings: this.normalizeSettingsObject(
+              (s as any).image_filter_settings,
+            ),
+            motion_effect_id: this.normalizeOptionalId(
+              (s as any).motion_effect_id,
+            ),
+            image_motion_settings: this.normalizeSettingsObject(
+              (s as any).image_motion_settings,
+            ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,
             ),
@@ -1688,6 +1752,19 @@ export class ScriptsService implements OnModuleInit {
           image_motion_effect: (s as any).image_motion_effect ?? 'default',
           image_motion_speed: this.normalizeImageMotionSpeed(
             (s as any).image_motion_speed,
+          ),
+          image_effects_mode: this.normalizeImageEffectsMode(
+            (s as any).image_effects_mode,
+          ),
+          image_filter_id: this.normalizeOptionalId((s as any).image_filter_id),
+          image_filter_settings: this.normalizeSettingsObject(
+            (s as any).image_filter_settings,
+          ),
+          motion_effect_id: this.normalizeOptionalId(
+            (s as any).motion_effect_id,
+          ),
+          image_motion_settings: this.normalizeSettingsObject(
+            (s as any).image_motion_settings,
           ),
           transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
             (s as any).transition_sound_effects,
@@ -2085,6 +2162,21 @@ export class ScriptsService implements OnModuleInit {
             image_motion_speed: this.normalizeImageMotionSpeed(
               (s as any).image_motion_speed,
             ),
+            image_effects_mode: this.normalizeImageEffectsMode(
+              (s as any).image_effects_mode,
+            ),
+            image_filter_id: this.normalizeOptionalId(
+              (s as any).image_filter_id,
+            ),
+            image_filter_settings: this.normalizeSettingsObject(
+              (s as any).image_filter_settings,
+            ),
+            motion_effect_id: this.normalizeOptionalId(
+              (s as any).motion_effect_id,
+            ),
+            image_motion_settings: this.normalizeSettingsObject(
+              (s as any).image_motion_settings,
+            ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,
             ),
@@ -2275,6 +2367,19 @@ export class ScriptsService implements OnModuleInit {
             image_motion_effect: s.image_motion_effect ?? 'default',
             image_motion_speed: this.normalizeImageMotionSpeed(
               s.image_motion_speed,
+            ),
+            image_effects_mode: this.normalizeImageEffectsMode(
+              (s as any).image_effects_mode,
+            ),
+            image_filter_id: this.normalizeOptionalId((s as any).image_filter_id),
+            image_filter_settings: this.normalizeSettingsObject(
+              (s as any).image_filter_settings,
+            ),
+            motion_effect_id: this.normalizeOptionalId(
+              (s as any).motion_effect_id,
+            ),
+            image_motion_settings: this.normalizeSettingsObject(
+              (s as any).image_motion_settings,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,

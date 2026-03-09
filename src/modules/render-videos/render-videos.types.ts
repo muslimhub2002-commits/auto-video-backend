@@ -1,6 +1,11 @@
 export type SentenceInput = {
   text: string;
   isSuspense?: boolean;
+  imageEffectsMode?: 'quick' | 'detailed' | null;
+  imageFilterId?: string | null;
+  imageFilterSettings?: Record<string, unknown> | null;
+  motionEffectId?: string | null;
+  imageMotionSettings?: Record<string, unknown> | null;
   soundEffectsAlignToSceneEnd?: boolean;
   mediaType?: 'image' | 'video';
   videoUrl?: string;

@@ -209,6 +209,17 @@ export const buildTimeline = (params: {
       index,
       text: s.text,
       isSuspense: !!s.isSuspense,
+      ...(s.imageEffectsMode != null
+        ? { imageEffectsMode: s.imageEffectsMode }
+        : {}),
+      ...(s.imageFilterId != null ? { imageFilterId: s.imageFilterId } : {}),
+      ...(s.imageFilterSettings != null
+        ? { imageFilterSettings: s.imageFilterSettings }
+        : {}),
+      ...(s.motionEffectId != null ? { motionEffectId: s.motionEffectId } : {}),
+      ...(s.imageMotionSettings != null
+        ? { imageMotionSettings: s.imageMotionSettings }
+        : {}),
       ...(alignedSoundEffects.items.length > 0
         ? {
             soundEffects: alignedSoundEffects.items.map((se) => ({

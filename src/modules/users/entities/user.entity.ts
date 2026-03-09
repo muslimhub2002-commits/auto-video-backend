@@ -13,6 +13,8 @@ import { Chat } from '../../chats/entities/chat.entity';
 import { Script } from '../../scripts/entities/script.entity';
 import { ScriptTemplate } from '../../scripts/entities/script-template.entity';
 import { BackgroundSoundtrack } from '../../background-soundtracks/entities/background-soundtrack.entity';
+import { ImageFilter } from '../../image-filters/entities/image-filter.entity';
+import { MotionEffect } from '../../motion-effects/entities/motion-effect.entity';
 
 @Entity('users')
 export class User {
@@ -75,4 +77,10 @@ export class User {
 
   @OneToMany(() => BackgroundSoundtrack, (soundtrack) => soundtrack.user)
   background_soundtracks: BackgroundSoundtrack[];
+
+  @OneToMany(() => ImageFilter, (imageFilter) => imageFilter.user)
+  image_filters: ImageFilter[];
+
+  @OneToMany(() => MotionEffect, (motionEffect) => motionEffect.user)
+  motion_effects: MotionEffect[];
 }
