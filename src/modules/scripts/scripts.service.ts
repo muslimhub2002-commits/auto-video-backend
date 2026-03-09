@@ -51,6 +51,12 @@ export class ScriptsService implements OnModuleInit {
   private scriptsSchemaEnsuring: Promise<void> | null = null;
   private scriptsSchemaEnsured = false;
 
+  private normalizeImageMotionSpeed(value: unknown): number {
+    const numeric = Number(value ?? 1);
+    if (!Number.isFinite(numeric)) return 1;
+    return Math.min(2.5, Math.max(0.5, numeric));
+  }
+
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
@@ -1002,6 +1008,10 @@ export class ScriptsService implements OnModuleInit {
                 video_prompt: String(s.video_prompt ?? '').trim() || null,
                 transition_to_next: s.transition_to_next ?? null,
                 visual_effect: s.visual_effect ?? null,
+                image_motion_effect: s.image_motion_effect ?? 'default',
+                image_motion_speed: this.normalizeImageMotionSpeed(
+                  s.image_motion_speed,
+                ),
                 transition_sound_effects:
                   this.normalizeTransitionSoundEffectsInput(
                     s.transition_sound_effects,
@@ -1557,6 +1567,10 @@ export class ScriptsService implements OnModuleInit {
             video_prompt: String((s as any).video_prompt ?? '').trim() || null,
             transition_to_next: (s as any).transition_to_next ?? null,
             visual_effect: (s as any).visual_effect ?? null,
+            image_motion_effect: (s as any).image_motion_effect ?? 'default',
+            image_motion_speed: this.normalizeImageMotionSpeed(
+              (s as any).image_motion_speed,
+            ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,
             ),
@@ -1671,6 +1685,10 @@ export class ScriptsService implements OnModuleInit {
           video_prompt: String((s as any).video_prompt ?? '').trim() || null,
           transition_to_next: (s as any).transition_to_next ?? null,
           visual_effect: (s as any).visual_effect ?? null,
+          image_motion_effect: (s as any).image_motion_effect ?? 'default',
+          image_motion_speed: this.normalizeImageMotionSpeed(
+            (s as any).image_motion_speed,
+          ),
           transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
             (s as any).transition_sound_effects,
           ),
@@ -2063,6 +2081,10 @@ export class ScriptsService implements OnModuleInit {
             video_prompt: String((s as any).video_prompt ?? '').trim() || null,
             transition_to_next: (s as any).transition_to_next ?? null,
             visual_effect: (s as any).visual_effect ?? null,
+            image_motion_effect: (s as any).image_motion_effect ?? 'default',
+            image_motion_speed: this.normalizeImageMotionSpeed(
+              (s as any).image_motion_speed,
+            ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,
             ),
@@ -2250,6 +2272,10 @@ export class ScriptsService implements OnModuleInit {
             video_prompt: s.video_prompt ?? null,
             transition_to_next: s.transition_to_next ?? null,
             visual_effect: s.visual_effect ?? null,
+            image_motion_effect: s.image_motion_effect ?? 'default',
+            image_motion_speed: this.normalizeImageMotionSpeed(
+              s.image_motion_speed,
+            ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,
             ),

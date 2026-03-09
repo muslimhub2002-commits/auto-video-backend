@@ -3,6 +3,22 @@
 // Linear zoom rate. Example: 0.04 means +4% scale per second.
 // Set to 0 to avoid any constant “camera motion”.
 export const IMAGE_ZOOM_PER_SECOND = 0.009;
+export const IMAGE_SLOW_ZOOM_IN_PER_SECOND = 0.014;
+export const IMAGE_SLOW_ZOOM_OUT_PER_SECOND = 0.014;
+export const IMAGE_SLOW_ZOOM_OUT_START_SCALE = 1.085;
+export const IMAGE_DIAGONAL_DRIFT_X_MULTIPLIER = 0.032;
+export const IMAGE_DIAGONAL_DRIFT_Y_MULTIPLIER = 0.022;
+export const IMAGE_CINEMATIC_PAN_X_MULTIPLIER = 0.055;
+export const IMAGE_FOCUS_SHIFT_X_MULTIPLIER = 0.026;
+export const IMAGE_FOCUS_SHIFT_Y_MULTIPLIER = 0.02;
+export const IMAGE_PARALLAX_X_MULTIPLIER = 0.024;
+export const IMAGE_PARALLAX_Y_MULTIPLIER = 0.015;
+export const IMAGE_SHAKE_MICRO_X_MULTIPLIER = 0.0045;
+export const IMAGE_SHAKE_MICRO_Y_MULTIPLIER = 0.0035;
+export const IMAGE_SPLIT_MOTION_X_MULTIPLIER = 0.028;
+export const IMAGE_SPLIT_MOTION_Y_MULTIPLIER = 0.018;
+export const IMAGE_ROTATION_DRIFT_X_MULTIPLIER = 0.014;
+export const IMAGE_ROTATION_DRIFT_Y_MULTIPLIER = 0.012;
 
 // Transition window: last N frames of outgoing + first N frames of incoming.
 export const GLITCH_EDGE_FRAMES = 4;

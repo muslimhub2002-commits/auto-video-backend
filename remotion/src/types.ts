@@ -23,6 +23,19 @@ export type TimelineScene = {
     | 'glassReflections'
     | 'glassStrong'
     | null;
+  imageMotionEffect?:
+    | 'default'
+    | 'slowZoomIn'
+    | 'slowZoomOut'
+    | 'diagonalDrift'
+    | 'cinematicPan'
+    | 'focusShift'
+    | 'parallaxMotion'
+    | 'shakeMicroMotion'
+    | 'splitMotion'
+    | 'rotationDrift'
+    | null;
+  imageMotionSpeed?: number | null;
   startFrame: number;
   durationFrames: number;
   useGlitch?: boolean; // Apply glitch transition effect

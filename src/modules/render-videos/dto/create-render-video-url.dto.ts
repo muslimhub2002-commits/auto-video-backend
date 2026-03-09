@@ -94,6 +94,39 @@ class SentenceDto {
     | null;
 
   @IsOptional()
+  @IsIn([
+    'default',
+    'slowZoomIn',
+    'slowZoomOut',
+    'diagonalDrift',
+    'cinematicPan',
+    'focusShift',
+    'parallaxMotion',
+    'shakeMicroMotion',
+    'splitMotion',
+    'rotationDrift',
+  ])
+  imageMotionEffect?:
+    | 'default'
+    | 'slowZoomIn'
+    | 'slowZoomOut'
+    | 'diagonalDrift'
+    | 'cinematicPan'
+    | 'focusShift'
+    | 'parallaxMotion'
+    | 'shakeMicroMotion'
+    | 'splitMotion'
+    | 'rotationDrift'
+    | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.5)
+  @Max(2.5)
+  imageMotionSpeed?: number | null;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SentenceSoundEffectDto)

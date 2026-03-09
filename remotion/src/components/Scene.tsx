@@ -16,6 +16,22 @@ import {
   FADE_EDGE_FRAMES,
   FLASH_EDGE_FRAMES,
   GLITCH_EDGE_FRAMES,
+  IMAGE_CINEMATIC_PAN_X_MULTIPLIER,
+  IMAGE_DIAGONAL_DRIFT_X_MULTIPLIER,
+  IMAGE_DIAGONAL_DRIFT_Y_MULTIPLIER,
+  IMAGE_FOCUS_SHIFT_X_MULTIPLIER,
+  IMAGE_FOCUS_SHIFT_Y_MULTIPLIER,
+  IMAGE_PARALLAX_X_MULTIPLIER,
+  IMAGE_PARALLAX_Y_MULTIPLIER,
+  IMAGE_ROTATION_DRIFT_X_MULTIPLIER,
+  IMAGE_ROTATION_DRIFT_Y_MULTIPLIER,
+  IMAGE_SHAKE_MICRO_X_MULTIPLIER,
+  IMAGE_SHAKE_MICRO_Y_MULTIPLIER,
+  IMAGE_SLOW_ZOOM_IN_PER_SECOND,
+  IMAGE_SLOW_ZOOM_OUT_PER_SECOND,
+  IMAGE_SLOW_ZOOM_OUT_START_SCALE,
+  IMAGE_SPLIT_MOTION_X_MULTIPLIER,
+  IMAGE_SPLIT_MOTION_Y_MULTIPLIER,
   IMAGE_ZOOM_PER_SECOND,
   WHIP_DISTANCE_MULTIPLIER,
   WHIP_EDGE_FRAMES,
@@ -74,6 +90,10 @@ export const Scene: React.FC<{
     // Inside a <Sequence>, useCurrentFrame() is already relative to the Sequence start.
     // Clamp to 0 to ensure each scene starts at default scale.
     const elapsedSeconds = Math.max(0, frame) / fps;
+    const motionProgress =
+      scene.durationFrames <= 1
+        ? 1
+        : clamp01(frame / Math.max(1, scene.durationFrames - 1));
 
     const isSuspenseOpening = scene.index === 0 && Boolean(scene.isSuspense);
     const suspenseFilter = isSuspenseOpening
@@ -211,7 +231,187 @@ export const Scene: React.FC<{
       : 0;
     const whipBlur = Math.min(WHIP_MAX_BLUR_PX, blurIn + blurOut);
 
-    const baseScale = 1 + IMAGE_ZOOM_PER_SECOND * elapsedSeconds;
+    const motionEffect = scene.imageMotionEffect ?? 'default';
+    const motionSpeed = Math.min(
+      2.5,
+      Math.max(
+        0.5,
+        typeof scene.imageMotionSpeed === 'number' &&
+          Number.isFinite(scene.imageMotionSpeed)
+          ? scene.imageMotionSpeed
+          : 1,
+      ),
+    );
+    const motionEasing = Easing.inOut(Easing.cubic);
+    const focusShiftVariant = scene.index % 4;
+    const scaledElapsedSeconds = elapsedSeconds * motionSpeed;
+    const scaledMotionProgress = clamp01(motionProgress * motionSpeed);
+    const motionPhase = motionProgress * motionSpeed;
+
+    const focusTransformOrigin =
+      focusShiftVariant === 0
+        ? '34% 34%'
+        : focusShiftVariant === 1
+          ? '66% 34%'
+          : focusShiftVariant === 2
+            ? '38% 68%'
+            : '64% 66%';
+
+    let motionScale = 1 + IMAGE_ZOOM_PER_SECOND * scaledElapsedSeconds;
+    let motionTranslateX = 0;
+    let motionTranslateY = 0;
+    let motionRotate = 0;
+    let motionTransformOrigin = 'center center';
+
+    if (motionEffect === 'slowZoomIn') {
+      motionScale = 1 + IMAGE_SLOW_ZOOM_IN_PER_SECOND * scaledElapsedSeconds;
+    } else if (motionEffect === 'slowZoomOut') {
+      motionScale = Math.max(
+        1.005,
+        IMAGE_SLOW_ZOOM_OUT_START_SCALE -
+          IMAGE_SLOW_ZOOM_OUT_PER_SECOND * scaledElapsedSeconds,
+      );
+    } else if (motionEffect === 'diagonalDrift') {
+      motionScale = 1.035 + 0.04 * scaledMotionProgress;
+      motionTranslateX = interpolate(
+        scaledMotionProgress,
+        [0, 1],
+        [-width * IMAGE_DIAGONAL_DRIFT_X_MULTIPLIER, width * IMAGE_DIAGONAL_DRIFT_X_MULTIPLIER],
+        { easing: motionEasing },
+      );
+      motionTranslateY = interpolate(
+        scaledMotionProgress,
+        [0, 1],
+        [-height * IMAGE_DIAGONAL_DRIFT_Y_MULTIPLIER, height * IMAGE_DIAGONAL_DRIFT_Y_MULTIPLIER],
+        { easing: motionEasing },
+      );
+    } else if (motionEffect === 'cinematicPan') {
+      motionScale = 1.08;
+      motionTranslateX = interpolate(
+        scaledMotionProgress,
+        [0, 1],
+        [-width * IMAGE_CINEMATIC_PAN_X_MULTIPLIER, width * IMAGE_CINEMATIC_PAN_X_MULTIPLIER],
+        { easing: motionEasing },
+      );
+      motionTranslateY = Math.sin(scaledMotionProgress * Math.PI) * height * 0.008;
+    } else if (motionEffect === 'focusShift') {
+      motionScale = 1.03 + 0.07 * scaledMotionProgress;
+      motionTransformOrigin = focusTransformOrigin;
+      motionTranslateX = interpolate(
+        scaledMotionProgress,
+        [0, 1],
+        [
+          focusShiftVariant === 1 || focusShiftVariant === 3
+            ? width * IMAGE_FOCUS_SHIFT_X_MULTIPLIER
+            : -width * IMAGE_FOCUS_SHIFT_X_MULTIPLIER,
+          focusShiftVariant === 1 || focusShiftVariant === 3
+            ? -width * IMAGE_FOCUS_SHIFT_X_MULTIPLIER
+            : width * IMAGE_FOCUS_SHIFT_X_MULTIPLIER,
+        ],
+        { easing: motionEasing },
+      );
+      motionTranslateY = interpolate(
+        scaledMotionProgress,
+        [0, 1],
+        [
+          focusShiftVariant >= 2
+            ? height * IMAGE_FOCUS_SHIFT_Y_MULTIPLIER
+            : -height * IMAGE_FOCUS_SHIFT_Y_MULTIPLIER,
+          focusShiftVariant >= 2
+            ? -height * IMAGE_FOCUS_SHIFT_Y_MULTIPLIER
+            : height * IMAGE_FOCUS_SHIFT_Y_MULTIPLIER,
+        ],
+        { easing: motionEasing },
+      );
+    } else if (motionEffect === 'parallaxMotion') {
+      motionScale = 1.09 + 0.045 * scaledMotionProgress;
+      motionTranslateX = interpolate(
+        scaledMotionProgress,
+        [0, 1],
+        [-width * IMAGE_PARALLAX_X_MULTIPLIER, width * IMAGE_PARALLAX_X_MULTIPLIER],
+        { easing: motionEasing },
+      );
+      motionTranslateY = Math.sin(scaledMotionProgress * Math.PI * 1.2) * height * IMAGE_PARALLAX_Y_MULTIPLIER;
+      motionRotate = interpolate(scaledMotionProgress, [0, 1], [-0.8, 0.9], {
+        easing: motionEasing,
+      });
+      motionTransformOrigin = '50% 42%';
+    } else if (motionEffect === 'shakeMicroMotion') {
+      motionScale = 1.045 + 0.015 * scaledMotionProgress;
+      motionTranslateX =
+        Math.sin(motionPhase * Math.PI * 9) *
+        width *
+        IMAGE_SHAKE_MICRO_X_MULTIPLIER;
+      motionTranslateY =
+        Math.cos(motionPhase * Math.PI * 10) *
+        height *
+        IMAGE_SHAKE_MICRO_Y_MULTIPLIER;
+      motionRotate = Math.sin(motionPhase * Math.PI * 8) * 0.35;
+    } else if (motionEffect === 'splitMotion') {
+      motionScale = 1.09 + 0.03 * Math.sin(scaledMotionProgress * Math.PI);
+      if (scaledMotionProgress < 0.5) {
+        motionTranslateX = interpolate(
+          scaledMotionProgress,
+          [0, 0.5],
+          [
+            -width * IMAGE_SPLIT_MOTION_X_MULTIPLIER,
+            width * IMAGE_SPLIT_MOTION_X_MULTIPLIER,
+          ],
+          { easing: motionEasing },
+        );
+        motionTranslateY = interpolate(
+          scaledMotionProgress,
+          [0, 0.5],
+          [
+            -height * IMAGE_SPLIT_MOTION_Y_MULTIPLIER,
+            height * IMAGE_SPLIT_MOTION_Y_MULTIPLIER * 0.4,
+          ],
+          { easing: motionEasing },
+        );
+        motionRotate = interpolate(scaledMotionProgress, [0, 0.5], [-0.55, 0.45], {
+          easing: motionEasing,
+        });
+      } else {
+        motionTranslateX = interpolate(
+          scaledMotionProgress,
+          [0.5, 1],
+          [
+            width * IMAGE_SPLIT_MOTION_X_MULTIPLIER,
+            -width * IMAGE_SPLIT_MOTION_X_MULTIPLIER * 0.5,
+          ],
+          { easing: motionEasing },
+        );
+        motionTranslateY = interpolate(
+          scaledMotionProgress,
+          [0.5, 1],
+          [
+            height * IMAGE_SPLIT_MOTION_Y_MULTIPLIER * 0.4,
+            height * IMAGE_SPLIT_MOTION_Y_MULTIPLIER * 1.25,
+          ],
+          { easing: motionEasing },
+        );
+        motionRotate = interpolate(scaledMotionProgress, [0.5, 1], [0.45, -0.25], {
+          easing: motionEasing,
+        });
+      }
+    } else if (motionEffect === 'rotationDrift') {
+      motionScale = 1.055 + 0.045 * scaledMotionProgress;
+      motionTranslateX = interpolate(
+        scaledMotionProgress,
+        [0, 1],
+        [
+          -width * IMAGE_ROTATION_DRIFT_X_MULTIPLIER,
+          width * IMAGE_ROTATION_DRIFT_X_MULTIPLIER,
+        ],
+        { easing: motionEasing },
+      );
+      motionTranslateY = Math.sin(scaledMotionProgress * Math.PI * 1.4) * height * IMAGE_ROTATION_DRIFT_Y_MULTIPLIER;
+      motionRotate = interpolate(scaledMotionProgress, [0, 1], [-1.2, 1.35], {
+        easing: motionEasing,
+      });
+      motionTransformOrigin = '52% 46%';
+    }
+
     const whipSkew = (whipBlur / WHIP_MAX_BLUR_PX) * 6 * (whipX >= 0 ? 1 : -1);
 
     // Glitch (generic overlay so it works for both images and videos).
@@ -259,10 +459,8 @@ export const Scene: React.FC<{
     const mediaTransformStyle: React.CSSProperties = {
       width: '100%',
       height: '100%',
-      transformOrigin: 'center center',
-      transform: `translate(${(whipX + glitchJitterX).toFixed(2)}px, ${glitchJitterY.toFixed(
-        2,
-      )}px) skewX(${whipSkew.toFixed(2)}deg) scale(${baseScale.toFixed(6)})`,
+      transformOrigin: motionTransformOrigin,
+      transform: `translate(${(motionTranslateX + whipX + glitchJitterX).toFixed(2)}px, ${(motionTranslateY + glitchJitterY).toFixed(2)}px) rotate(${motionRotate.toFixed(2)}deg) skewX(${whipSkew.toFixed(2)}deg) scale(${motionScale.toFixed(6)})`,
       willChange: 'transform, filter',
       filter:
         whipBlur > 0.01

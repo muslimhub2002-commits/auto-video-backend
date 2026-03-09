@@ -71,6 +71,19 @@ export class RenderVideosController {
         | 'glassReflections'
         | 'glassStrong'
         | null;
+      imageMotionEffect?:
+        | 'default'
+        | 'slowZoomIn'
+        | 'slowZoomOut'
+        | 'diagonalDrift'
+        | 'cinematicPan'
+        | 'focusShift'
+        | 'parallaxMotion'
+        | 'shakeMicroMotion'
+        | 'splitMotion'
+        | 'rotationDrift'
+        | null;
+      imageMotionSpeed?: number | null;
     }>;
 
     try {
@@ -116,6 +129,19 @@ export class RenderVideosController {
         | 'glassReflections'
         | 'glassStrong'
         | null;
+      imageMotionEffect?:
+        | 'default'
+        | 'slowZoomIn'
+        | 'slowZoomOut'
+        | 'diagonalDrift'
+        | 'cinematicPan'
+        | 'focusShift'
+        | 'parallaxMotion'
+        | 'shakeMicroMotion'
+        | 'splitMotion'
+        | 'rotationDrift'
+        | null;
+      imageMotionSpeed?: number | null;
     }>,
     minimumCount = 1,
   ) {
@@ -145,6 +171,19 @@ export class RenderVideosController {
       'glassStrong',
     ] as const);
 
+    const allowedImageMotionEffects = new Set([
+      'default',
+      'slowZoomIn',
+      'slowZoomOut',
+      'diagonalDrift',
+      'cinematicPan',
+      'focusShift',
+      'parallaxMotion',
+      'shakeMicroMotion',
+      'splitMotion',
+      'rotationDrift',
+    ] as const);
+
     for (const [idx, s] of sentences.entries()) {
       const mediaType = s?.mediaType;
       if (mediaType && mediaType !== 'image' && mediaType !== 'video') {
@@ -167,6 +206,32 @@ export class RenderVideosController {
         if (typeof ve !== 'string' || !allowedVisualEffects.has(ve as any)) {
           throw new BadRequestException(
             `Invalid visualEffect for sentence ${idx + 1}.`,
+          );
+        }
+      }
+
+      const ime = (s as any)?.imageMotionEffect;
+      if (ime != null) {
+        if (
+          typeof ime !== 'string' ||
+          !allowedImageMotionEffects.has(ime as any)
+        ) {
+          throw new BadRequestException(
+            `Invalid imageMotionEffect for sentence ${idx + 1}.`,
+          );
+        }
+      }
+
+      const ims = (s as any)?.imageMotionSpeed;
+      if (ims != null) {
+        const numericSpeed = Number(ims);
+        if (
+          !Number.isFinite(numericSpeed) ||
+          numericSpeed < 0.5 ||
+          numericSpeed > 2.5
+        ) {
+          throw new BadRequestException(
+            `Invalid imageMotionSpeed for sentence ${idx + 1}.`,
           );
         }
       }
@@ -473,6 +538,13 @@ export class RenderVideosController {
         : {}),
       ...(s.transitionToNext != null
         ? { transitionToNext: s.transitionToNext }
+        : {}),
+      ...(s.visualEffect != null ? { visualEffect: s.visualEffect } : {}),
+      ...(s.imageMotionEffect != null
+        ? { imageMotionEffect: s.imageMotionEffect }
+        : {}),
+      ...(s.imageMotionSpeed != null
+        ? { imageMotionSpeed: s.imageMotionSpeed }
         : {}),
     }));
 

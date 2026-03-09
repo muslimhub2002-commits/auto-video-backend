@@ -33,6 +33,19 @@ export type SentenceInput = {
     | 'glassReflections'
     | 'glassStrong'
     | null;
+  imageMotionEffect?:
+    | 'default'
+    | 'slowZoomIn'
+    | 'slowZoomOut'
+    | 'diagonalDrift'
+    | 'cinematicPan'
+    | 'focusShift'
+    | 'parallaxMotion'
+    | 'shakeMicroMotion'
+    | 'splitMotion'
+    | 'rotationDrift'
+    | null;
+  imageMotionSpeed?: number | null;
 };
 
 export type UploadedAsset = {

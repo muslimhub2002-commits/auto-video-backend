@@ -254,6 +254,12 @@ export const buildTimeline = (params: {
       ...(isImageScene && s.visualEffect != null
         ? { visualEffect: s.visualEffect }
         : {}),
+      ...(isImageScene
+        ? { imageMotionEffect: s.imageMotionEffect ?? 'default' }
+        : {}),
+      ...(isImageScene
+        ? { imageMotionSpeed: s.imageMotionSpeed ?? 1 }
+        : {}),
       imageSrc:
         isSubscribeLike || wantsSentenceVideo
           ? undefined

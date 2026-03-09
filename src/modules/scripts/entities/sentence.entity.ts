@@ -54,6 +54,14 @@ export class Sentence {
   @Column({ type: 'text', nullable: true })
   visual_effect: string | null;
 
+  // Optional per-sentence image motion preset.
+  // Null means legacy/default behavior.
+  @Column({ type: 'text', nullable: true })
+  image_motion_effect: string | null;
+
+  @Column({ type: 'real', nullable: true })
+  image_motion_speed: number | null;
+
   // Optional per-cut custom transition sounds for the cut from this sentence
   // into the next one. Stored inline so unsaved multi-sound mixes can round-trip.
   @Column({ type: 'jsonb', nullable: true })

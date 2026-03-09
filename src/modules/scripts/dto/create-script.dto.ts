@@ -32,6 +32,19 @@ const ALLOWED_VISUAL_EFFECTS = [
   'glassStrong',
 ] as const;
 
+const ALLOWED_IMAGE_MOTION_EFFECTS = [
+  'default',
+  'slowZoomIn',
+  'slowZoomOut',
+  'diagonalDrift',
+  'cinematicPan',
+  'focusShift',
+  'parallaxMotion',
+  'shakeMicroMotion',
+  'splitMotion',
+  'rotationDrift',
+] as const;
+
 class SentenceSoundEffectInput {
   @IsUUID()
   sound_effect_id: string;
@@ -112,6 +125,17 @@ class CreateSentenceInput {
   @IsIn(ALLOWED_VISUAL_EFFECTS)
   @IsOptional()
   visual_effect?: (typeof ALLOWED_VISUAL_EFFECTS)[number] | null;
+
+  @IsIn(ALLOWED_IMAGE_MOTION_EFFECTS)
+  @IsOptional()
+  image_motion_effect?: (typeof ALLOWED_IMAGE_MOTION_EFFECTS)[number] | null;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.5)
+  @Max(2.5)
+  @IsOptional()
+  image_motion_speed?: number | null;
 
   @IsBoolean()
   @IsOptional()
