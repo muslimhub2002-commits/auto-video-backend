@@ -7,6 +7,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
+import type { SoundEffectAudioSettings } from '../../sound-effects/audio-settings.types';
 
 @Entity('background_soundtracks')
 export class BackgroundSoundtrack {
@@ -36,6 +37,15 @@ export class BackgroundSoundtrack {
 
   @Column({ type: 'float', default: 100 })
   volume_percent: number;
+
+  @Column({ type: 'jsonb', nullable: true })
+  audio_settings: SoundEffectAudioSettings | null;
+
+  @Column({ type: 'boolean', default: false })
+  is_preset: boolean;
+
+  @Column({ type: 'uuid', nullable: true })
+  source_soundtrack_id: string | null;
 
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;

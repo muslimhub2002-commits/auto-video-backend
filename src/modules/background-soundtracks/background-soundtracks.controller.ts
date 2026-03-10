@@ -20,6 +20,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BackgroundSoundtracksService } from './background-soundtracks.service';
 import { CreateBackgroundSoundtrackDto } from './dto/create-background-soundtrack.dto';
 import { UpdateBackgroundSoundtrackVolumeDto } from './dto/update-background-soundtrack-volume.dto';
+import { UpdateBackgroundSoundtrackDto } from './dto/update-background-soundtrack.dto';
+import { SaveBackgroundSoundtrackPresetDto } from './dto/save-background-soundtrack-preset.dto';
 
 @Controller('background-soundtracks')
 export class BackgroundSoundtracksController {
@@ -118,6 +120,8 @@ export class BackgroundSoundtracksController {
       filename: file.originalname,
       title,
       user_id,
+      volumePercent: body?.volumePercent,
+      audioSettings: body?.audioSettings,
     });
   }
 
@@ -155,6 +159,52 @@ export class BackgroundSoundtracksController {
       user_id,
       soundtrackId,
       volumePercent: body?.volumePercent,
+    });
+  }
+
+  @Patch(':soundtrackId')
+  @UseGuards(JwtAuthGuard)
+  async update(
+    @Req() req: Request,
+    @Param('soundtrackId') soundtrackId: string,
+    @Body() body: UpdateBackgroundSoundtrackDto,
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    return this.service.updateById({
+      user_id,
+      soundtrackId,
+      title: body?.title,
+      volumePercent: body?.volumePercent,
+      audioSettings: body?.audioSettings,
+    });
+  }
+
+  @Post(':soundtrackId/presets')
+  @UseGuards(JwtAuthGuard)
+  async saveAsPreset(
+    @Req() req: Request,
+    @Param('soundtrackId') soundtrackId: string,
+    @Body() body: SaveBackgroundSoundtrackPresetDto,
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    return this.service.saveAsPreset({
+      user_id,
+      soundtrackId,
+      title: body?.title,
+      volumePercent: body?.volumePercent,
+      audioSettings: body?.audioSettings,
     });
   }
 
