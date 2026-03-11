@@ -3,7 +3,15 @@ import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import type OpenAI from 'openai';
-import type { SentenceInput, SentenceTiming } from '../render-videos.types';
+import type {
+  SentenceInput,
+  SentenceTiming,
+  WordTiming,
+} from '../render-videos.types';
+import {
+  alignWithAssemblyAi,
+  isAssemblyAiEnabled,
+} from './assemblyai-alignment';
 
 const readHeaderBytes = (filePath: string, length: number): Buffer => {
   const fd = fs.openSync(filePath, 'r');
@@ -262,6 +270,236 @@ export type WithTimeout = <T>(
   label: string,
 ) => Promise<T>;
 
+const normalizeWord = (raw: string) =>
+  raw
+    .toString()
+    .toLowerCase()
+    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+
+type IndexedWordTiming = WordTiming & {
+  token: string;
+};
+
+const splitSubtitleWords = (text: string) =>
+  String(text ?? '')
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean);
+
+const buildSyntheticWordTimings = (
+  text: string,
+  startSeconds: number,
+  endSeconds: number,
+): WordTiming[] => {
+  const words = splitSubtitleWords(text);
+  if (!words.length) return [];
+
+  const safeStart = Number.isFinite(startSeconds) ? startSeconds : 0;
+  const safeEnd =
+    Number.isFinite(endSeconds) && endSeconds > safeStart
+      ? endSeconds
+      : safeStart + 0.1;
+  const span = Math.max(0.1, safeEnd - safeStart);
+
+  return words.map((word, index) => {
+    const wordStart = safeStart + (span * index) / words.length;
+    const wordEnd = safeStart + (span * (index + 1)) / words.length;
+    return {
+      text: word,
+      startSeconds: wordStart,
+      endSeconds: Math.max(wordStart + 0.01, wordEnd),
+    };
+  });
+};
+
+const withSyntheticWords = (timings: SentenceTiming[]) =>
+  timings.map((timing) => ({
+    ...timing,
+    words:
+      Array.isArray(timing.words) && timing.words.length > 0
+        ? timing.words
+        : buildSyntheticWordTimings(
+            timing.text,
+            timing.startSeconds,
+            timing.endSeconds,
+          ),
+  }));
+
+const toIndexedWordsTimeline = (words: WordTiming[]) =>
+  words
+    .map((word) => {
+      const token = normalizeWord(word.text);
+      if (!token) return null;
+      if (
+        !Number.isFinite(word.startSeconds) ||
+        !Number.isFinite(word.endSeconds) ||
+        word.endSeconds <= word.startSeconds
+      ) {
+        return null;
+      }
+
+      return {
+        ...word,
+        token,
+      } satisfies IndexedWordTiming;
+    })
+    .filter((word): word is IndexedWordTiming => word !== null);
+
+const buildSentenceTimingsFromWordTimeline = (params: {
+  sentences: SentenceInput[];
+  wordsTimeline: IndexedWordTiming[];
+  audioDurationSeconds: number;
+}): SentenceTiming[] => {
+  const timings: SentenceTiming[] = [];
+  let wordIndex = 0;
+
+  const lastWordEnd =
+    (params.wordsTimeline[params.wordsTimeline.length - 1]?.endSeconds ??
+      params.audioDurationSeconds) || 1;
+  const totalDuration = Math.max(1, lastWordEnd);
+  const cleaned = params.sentences.map((sentence) => String(sentence.text ?? '').trim());
+  const transcriptTokens = params.wordsTimeline.map((word) => word.token);
+
+  const findBestMatch = (
+    startFrom: number,
+    sentenceTokens: string[],
+  ): { start: number; end: number } | null => {
+    if (!sentenceTokens.length) return null;
+
+    const maxStart = transcriptTokens.length - sentenceTokens.length;
+    if (maxStart < startFrom) return null;
+
+    let bestScore = 0;
+    let best: { start: number; end: number } | null = null;
+
+    for (let index = startFrom; index <= maxStart; index += 1) {
+      let matches = 0;
+      for (let offset = 0; offset < sentenceTokens.length; offset += 1) {
+        if (transcriptTokens[index + offset] === sentenceTokens[offset]) {
+          matches += 1;
+        }
+      }
+
+      const score = matches / sentenceTokens.length;
+      if (score > bestScore && score >= 0.5) {
+        bestScore = score;
+        best = { start: index, end: index + sentenceTokens.length - 1 };
+      }
+    }
+
+    return best;
+  };
+
+  for (let index = 0; index < cleaned.length; index += 1) {
+    const text = cleaned[index];
+
+    if (!text) {
+      const prevEnd = index > 0 ? timings[index - 1].endSeconds : 0;
+      const endSeconds = Math.min(totalDuration, prevEnd + 0.1);
+      timings.push({
+        index,
+        text,
+        startSeconds: prevEnd,
+        endSeconds,
+        words: [],
+      });
+      continue;
+    }
+
+    const rawWords = splitSubtitleWords(text);
+    const normalizedWords = rawWords
+      .map((rawWord) => ({ text: rawWord, token: normalizeWord(rawWord) }))
+      .filter((word) => !!word.token);
+    const sentenceTokens = normalizedWords.map((word) => word.token);
+
+    if (!sentenceTokens.length) {
+      const prevEnd = index > 0 ? timings[index - 1].endSeconds : 0;
+      const endSeconds = Math.min(totalDuration, prevEnd + 0.1);
+      timings.push({
+        index,
+        text,
+        startSeconds: prevEnd,
+        endSeconds,
+        words: buildSyntheticWordTimings(text, prevEnd, endSeconds),
+      });
+      continue;
+    }
+
+    const match = findBestMatch(wordIndex, sentenceTokens);
+
+    if (!match) {
+      const prevEnd = timings.length ? timings[timings.length - 1].endSeconds : 0;
+      const remainingDuration = Math.max(0.1, totalDuration - prevEnd);
+      const remaining = alignByWordCount(
+        params.sentences.slice(index),
+        remainingDuration,
+      );
+
+      for (const timing of remaining) {
+        timings.push({
+          index: index + timing.index,
+          text: timing.text,
+          startSeconds: prevEnd + timing.startSeconds,
+          endSeconds: prevEnd + timing.endSeconds,
+          words: (timing.words ?? []).map((word) => ({
+            ...word,
+            startSeconds: prevEnd + word.startSeconds,
+            endSeconds: prevEnd + word.endSeconds,
+          })),
+        });
+      }
+
+      break;
+    }
+
+    const firstWord = params.wordsTimeline[match.start];
+    const lastWord = params.wordsTimeline[match.end];
+    let startSeconds = firstWord.startSeconds;
+    let endSeconds = lastWord.endSeconds;
+
+    if (!Number.isFinite(startSeconds)) startSeconds = 0;
+    if (!Number.isFinite(endSeconds) || endSeconds <= startSeconds) {
+      endSeconds = startSeconds + 0.1;
+    }
+
+    startSeconds = Math.max(0, Math.min(startSeconds, totalDuration));
+    endSeconds = Math.max(startSeconds + 0.05, Math.min(endSeconds, totalDuration));
+
+    const words = normalizedWords.map((word, offset) => {
+      const matchedWord = params.wordsTimeline[match.start + offset];
+      return {
+        text: word.text,
+        startSeconds: matchedWord.startSeconds,
+        endSeconds: Math.max(
+          matchedWord.startSeconds + 0.01,
+          matchedWord.endSeconds,
+        ),
+        ...(typeof matchedWord.confidence === 'number'
+          ? { confidence: matchedWord.confidence }
+          : {}),
+      } satisfies WordTiming;
+    });
+
+    timings.push({
+      index,
+      text,
+      startSeconds,
+      endSeconds,
+      words,
+    });
+    wordIndex = match.end + 1;
+  }
+
+  if (timings.length) {
+    const last = timings[timings.length - 1];
+    if (last.endSeconds < totalDuration) {
+      last.endSeconds = totalDuration;
+    }
+  }
+
+  return withSyntheticWords(timings);
+};
+
 export const alignByWordCount = (
   sentences: SentenceInput[],
   audioDurationSeconds: number,
@@ -295,10 +533,11 @@ export const alignByWordCount = (
       text: cleaned[index],
       startSeconds,
       endSeconds,
+      words: buildSyntheticWordTimings(cleaned[index], startSeconds, endSeconds),
     };
   });
 
-  return timings;
+  return withSyntheticWords(timings);
 };
 
 export const alignByVoiceActivity = async (
@@ -401,6 +640,14 @@ export const alignByVoiceActivity = async (
         text: t.text,
         startSeconds: realStart,
         endSeconds: realEnd,
+        words: (t.words ?? []).map((word) => ({
+          ...word,
+          startSeconds: mapTime(word.startSeconds),
+          endSeconds: Math.max(
+            mapTime(word.startSeconds) + 0.01,
+            mapTime(word.endSeconds),
+          ),
+        })),
       };
     });
 
@@ -426,7 +673,7 @@ export const alignByVoiceActivity = async (
       }
     }
 
-    return mappedTimings;
+    return withSyntheticWords(mappedTimings);
   } catch {
     return alignByWordCount(sentences, audioDurationSeconds);
   }
@@ -459,9 +706,41 @@ export const alignAudioToSentences = async (params: {
     audioPath: params.audioPath,
     audioDurationSeconds: params.audioDurationSeconds,
     sentenceCount: params.sentences.length,
+    hasAssemblyAi: isAssemblyAiEnabled(),
     hasOpenAI: !!params.openai,
     disableRenderer: !!params.disableRenderer,
   });
+
+  if (isAssemblyAiEnabled()) {
+    try {
+      const assemblyWords = await params.withTimeout(
+        alignWithAssemblyAi(params.audioPath),
+        Number(process.env.ASSEMBLYAI_TIMEOUT_MS ?? '180000'),
+        'AssemblyAI transcription',
+      );
+
+      const indexedAssemblyWords = toIndexedWordsTimeline(assemblyWords);
+      if (indexedAssemblyWords.length > 0) {
+        console.log('[RenderVideosService] Using AssemblyAI alignment', {
+          alignedWords: indexedAssemblyWords.length,
+        });
+
+        return buildSentenceTimingsFromWordTimeline({
+          sentences: params.sentences,
+          wordsTimeline: indexedAssemblyWords,
+          audioDurationSeconds: params.audioDurationSeconds,
+        });
+      }
+
+      console.warn(
+        '[RenderVideosService] AssemblyAI returned no usable words, falling back',
+      );
+    } catch (error: any) {
+      console.warn('[RenderVideosService] AssemblyAI alignment failed, falling back', {
+        message: error?.message,
+      });
+    }
+  }
 
   if (!params.openai) {
     console.log(
@@ -627,19 +906,7 @@ export const alignAudioToSentences = async (params: {
       }
     }
 
-    const normalizeWord = (raw: string) =>
-      raw
-        .toString()
-        .toLowerCase()
-        .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
-
-    type WordTiming = {
-      token: string;
-      startSeconds: number;
-      endSeconds: number;
-    };
-
-    const wordsTimeline: WordTiming[] = [];
+    const wordsTimeline: IndexedWordTiming[] = [];
 
     for (const seg of segments) {
       const segStartRaw = seg.start;
@@ -665,7 +932,12 @@ export const alignAudioToSentences = async (params: {
         const wEnd = segStart + (span * (i + 1)) / count;
         const token = normalizeWord(tokens[i] ?? '');
         if (!token) continue;
-        wordsTimeline.push({ token, startSeconds: wStart, endSeconds: wEnd });
+        wordsTimeline.push({
+          text: tokens[i] ?? '',
+          token,
+          startSeconds: wStart,
+          endSeconds: wEnd,
+        });
       }
     }
 
@@ -676,119 +948,11 @@ export const alignAudioToSentences = async (params: {
       return fallback();
     }
 
-    const timings: SentenceTiming[] = [];
-    let wordIndex = 0;
-
-    const lastWordEnd =
-      (wordsTimeline[wordsTimeline.length - 1]?.endSeconds ??
-        params.audioDurationSeconds) ||
-      1;
-    const T = Math.max(1, lastWordEnd);
-
-    const cleaned = params.sentences.map((s) => (s.text || '').trim());
-    const transcriptTokens = wordsTimeline.map((w) => w.token);
-
-    const findBestMatch = (
-      startFrom: number,
-      sentenceTokens: string[],
-    ): { start: number; end: number } | null => {
-      if (!sentenceTokens.length) return null;
-
-      const maxStart = transcriptTokens.length - sentenceTokens.length;
-      if (maxStart < startFrom) return null;
-
-      let bestScore = 0;
-      let best: { start: number; end: number } | null = null;
-
-      for (let i = startFrom; i <= maxStart; i += 1) {
-        let matches = 0;
-        for (let j = 0; j < sentenceTokens.length; j += 1) {
-          if (transcriptTokens[i + j] === sentenceTokens[j]) {
-            matches += 1;
-          }
-        }
-
-        const score = matches / sentenceTokens.length;
-        if (score > bestScore && score >= 0.5) {
-          bestScore = score;
-          best = { start: i, end: i + sentenceTokens.length - 1 };
-        }
-      }
-
-      return best;
-    };
-
-    for (let i = 0; i < cleaned.length; i += 1) {
-      const text = cleaned[i];
-
-      if (!text) {
-        const prevEnd = i > 0 ? timings[i - 1].endSeconds : 0;
-        const endSeconds = Math.min(T, prevEnd + 0.1);
-        timings.push({ index: i, text, startSeconds: prevEnd, endSeconds });
-        continue;
-      }
-
-      const sentenceTokens = text
-        .split(/\s+/u)
-        .filter(Boolean)
-        .map((t) => normalizeWord(t))
-        .filter(Boolean);
-
-      if (!sentenceTokens.length) {
-        const prevEnd = i > 0 ? timings[i - 1].endSeconds : 0;
-        const endSeconds = Math.min(T, prevEnd + 0.1);
-        timings.push({ index: i, text, startSeconds: prevEnd, endSeconds });
-        continue;
-      }
-
-      const match = findBestMatch(wordIndex, sentenceTokens);
-
-      if (!match) {
-        const prevEnd = timings.length
-          ? timings[timings.length - 1].endSeconds
-          : 0;
-        const remainingDuration = Math.max(0.1, T - prevEnd);
-        const remaining = alignByWordCount(
-          params.sentences.slice(i),
-          remainingDuration,
-        );
-
-        for (const r of remaining) {
-          timings.push({
-            index: i + r.index,
-            text: r.text,
-            startSeconds: prevEnd + r.startSeconds,
-            endSeconds: prevEnd + r.endSeconds,
-          });
-        }
-
-        break;
-      }
-
-      const firstWord = wordsTimeline[match.start];
-      const lastWord = wordsTimeline[match.end];
-
-      let startSeconds = firstWord.startSeconds;
-      let endSeconds = lastWord.endSeconds;
-
-      if (!Number.isFinite(startSeconds)) startSeconds = 0;
-      if (!Number.isFinite(endSeconds) || endSeconds <= startSeconds) {
-        endSeconds = startSeconds + 0.1;
-      }
-
-      startSeconds = Math.max(0, Math.min(startSeconds, T));
-      endSeconds = Math.max(startSeconds + 0.05, Math.min(endSeconds, T));
-
-      timings.push({ index: i, text, startSeconds, endSeconds });
-      wordIndex = match.end + 1;
-    }
-
-    if (timings.length) {
-      const last = timings[timings.length - 1];
-      if (last.endSeconds < T) {
-        last.endSeconds = T;
-      }
-    }
+    const timings = buildSentenceTimingsFromWordTimeline({
+      sentences: params.sentences,
+      wordsTimeline,
+      audioDurationSeconds: params.audioDurationSeconds,
+    });
 
     console.log(
       '[RenderVideosService] OpenAI-based alignment produced timings',

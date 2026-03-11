@@ -9,6 +9,9 @@ import {
 
 const DEFAULT_IMAGE_MOTION_SPEED = 1.2;
 
+const clampFrame = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
 export const isShortScript = (scriptLength: string) => {
   const s = String(scriptLength ?? '')
     .trim()
@@ -140,6 +143,36 @@ export const buildTimeline = (params: {
     const durationFrames = endFrame - startFrame;
     const sceneDurationSeconds = durationFrames / fps;
     cursor = endFrame;
+    const sceneTiming = params.sentenceTimings?.[index];
+    const subtitleWords = Array.isArray(sceneTiming?.words)
+      ? sceneTiming.words
+          .map((word) => {
+            if (!word || !String(word.text ?? '').trim()) return null;
+
+            const absoluteStartFrame = Math.floor(word.startSeconds * fps);
+            const absoluteEndFrame = Math.ceil(word.endSeconds * fps);
+            const startFrameRelative = clampFrame(
+              absoluteStartFrame - startFrame,
+              0,
+              Math.max(0, durationFrames - 1),
+            );
+            const endFrameRelative = clampFrame(
+              Math.max(startFrameRelative + 1, absoluteEndFrame - startFrame),
+              1,
+              durationFrames,
+            );
+
+            return {
+              text: String(word.text),
+              startFrame: startFrameRelative,
+              endFrame: endFrameRelative,
+              ...(typeof word.confidence === 'number'
+                ? { confidence: word.confidence }
+                : {}),
+            };
+          })
+          .filter(Boolean)
+      : [];
 
     const normalizedSoundEffects = Array.isArray(s.soundEffects)
       ? s.soundEffects
@@ -225,6 +258,7 @@ export const buildTimeline = (params: {
       ...(s.imageMotionSettings != null
         ? { imageMotionSettings: s.imageMotionSettings }
         : {}),
+      ...(subtitleWords.length > 0 ? { subtitleWords } : {}),
       ...(alignedSoundEffects.items.length > 0
         ? {
             soundEffects: alignedSoundEffects.items.map((se) => ({

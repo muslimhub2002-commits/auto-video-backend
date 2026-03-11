@@ -42,6 +42,7 @@ import { clamp01, mulberry32 } from '../utils/random';
 import type { TransitionType } from '../utils/transitions';
 import { getChromaParams } from '../utils/transitions';
 import { GlitchImage } from './GlitchImage';
+import { ProgressiveSubtitles } from './ProgressiveSubtitles';
 import { SuspenseOverlay } from './SuspenseOverlay';
 // import { loadFont as loadNotoKufiArabic } from '@remotion/google-fonts/NotoKufiArabic';
 
@@ -867,33 +868,14 @@ export const Scene: React.FC<{
         ) : null}
 
         {showSubtitles ? (
-          <AbsoluteFill
-            style={{
-              justifyContent: 'flex-end',
-              padding: 48,
-              pointerEvents: 'none',
-            }}
-          >
-            <div
-              style={{
-                maxWidth: 980,
-                alignSelf: 'center',
-                color: 'white',
-                padding: '18px 22px',
-                borderRadius: 18,
-                fontSize: 60 * fontScale,
-                fontWeight: 700,
-                fontFamily: subtitleFontFamily,
-                lineHeight: 1.15,
-                marginBottom: isShort ? '400px' : '10px',
-                textAlign: 'center',
-                textShadow: '0 2px 10px rgba(0,0,0,0.55)',
-                opacity: 1,
-              }}
-            >
-              {scene.text}
-            </div>
-          </AbsoluteFill>
+          <ProgressiveSubtitles
+            text={scene.text}
+            subtitleWords={scene.subtitleWords}
+            frame={frame}
+            fontScale={fontScale}
+            isShort={isShort}
+            fontFamily={subtitleFontFamily}
+          />
         ) : null}
 
         {/* Fade overlay below flash so flash isn't darkened if both ever overlap */}

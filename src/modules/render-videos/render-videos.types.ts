@@ -64,9 +64,17 @@ export type UrlAsset = {
   url: string;
 };
 
+export type WordTiming = {
+  text: string;
+  startSeconds: number;
+  endSeconds: number;
+  confidence?: number;
+};
+
 export type SentenceTiming = {
   index: number;
   text: string;
   startSeconds: number;
   endSeconds: number;
+  words?: WordTiming[];
 };

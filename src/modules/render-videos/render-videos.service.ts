@@ -989,6 +989,29 @@ export class RenderVideosService implements OnModuleInit {
     sentences: SentenceInput[],
     audioDurationSeconds: number,
   ): SentenceTiming[] {
+    const buildSyntheticWords = (
+      text: string,
+      startSeconds: number,
+      endSeconds: number,
+    ) => {
+      const words = String(text ?? '')
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean);
+
+      if (words.length === 0) return [];
+
+      const span = Math.max(0.1, endSeconds - startSeconds);
+      return words.map((word, index) => ({
+        text: word,
+        startSeconds: startSeconds + (span * index) / words.length,
+        endSeconds: Math.max(
+          startSeconds + (span * index) / words.length + 0.01,
+          startSeconds + (span * (index + 1)) / words.length,
+        ),
+      }));
+    };
+
     const totalDuration = Math.max(1, audioDurationSeconds || 1);
     const weights = sentences.map((sentence) => {
       const words = String(sentence?.text ?? '')
@@ -1014,6 +1037,11 @@ export class RenderVideosService implements OnModuleInit {
         text: String(sentence?.text ?? ''),
         startSeconds,
         endSeconds: Math.max(startSeconds + 0.2, endSeconds),
+        words: buildSyntheticWords(
+          String(sentence?.text ?? ''),
+          startSeconds,
+          Math.max(startSeconds + 0.2, endSeconds),
+        ),
       };
     });
   }

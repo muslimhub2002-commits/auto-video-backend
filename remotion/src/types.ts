@@ -1,6 +1,12 @@
 export type TimelineScene = {
   index: number;
   text: string;
+  subtitleWords?: Array<{
+    text: string;
+    startFrame: number;
+    endFrame: number;
+    confidence?: number;
+  }>;
   imageEffectsMode?: 'quick' | 'detailed' | null;
   imageFilterId?: string | null;
   imageFilterSettings?: Record<string, unknown> | null;
