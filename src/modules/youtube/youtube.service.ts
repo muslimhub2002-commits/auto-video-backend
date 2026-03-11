@@ -298,13 +298,15 @@ export class YoutubeService {
         : (dto.privacyStatus ?? 'public');
       const categoryId = (dto.categoryId ?? '24').trim();
       const selfDeclaredMadeForKids = !!dto.selfDeclaredMadeForKids;
+      const publicStatsViewable = dto.publicStatsViewable ?? true;
+      const description = String(dto.description ?? '').trim();
 
       const response = await youtube.videos.insert({
         part: ['snippet', 'status'],
         requestBody: {
           snippet: {
             title: `${dto.title}`,
-            description: `${dto.title}` || '',
+            description,
             tags,
             categoryId,
             // English metadata + audio language
@@ -314,6 +316,7 @@ export class YoutubeService {
           status: {
             privacyStatus,
             selfDeclaredMadeForKids,
+            publicStatsViewable,
             ...(publishAt ? { publishAt } : {}),
             // “Altered content” disclosure: No
             containsSyntheticMedia: false,

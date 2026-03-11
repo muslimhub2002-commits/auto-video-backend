@@ -89,6 +89,10 @@ export class YoutubeUploadDto {
   @IsBoolean()
   selfDeclaredMadeForKids?: boolean;
 
+  @IsOptional()
+  @IsBoolean()
+  publicStatsViewable?: boolean;
+
   // RFC3339 timestamp, e.g. 2026-01-13T18:00:00+03:00
   // YouTube requires privacyStatus=private when publishAt is set.
   @IsOptional()

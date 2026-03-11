@@ -9,6 +9,44 @@ import { AiRuntimeService } from './ai-runtime.service';
 export class AiYoutubeService {
   constructor(private readonly runtime: AiRuntimeService) {}
 
+  private describeLanguage(languageCode: string): string {
+    switch (languageCode.toLowerCase()) {
+      case 'en':
+        return 'English (en)';
+      case 'ar':
+        return 'Arabic (ar)';
+      case 'fr':
+        return 'French (fr)';
+      case 'es':
+        return 'Spanish (es)';
+      case 'de':
+        return 'German (de)';
+      case 'it':
+        return 'Italian (it)';
+      case 'pt':
+        return 'Portuguese (pt)';
+      case 'ru':
+        return 'Russian (ru)';
+      case 'tr':
+        return 'Turkish (tr)';
+      case 'hi':
+        return 'Hindi (hi)';
+      case 'ur':
+        return 'Urdu (ur)';
+      case 'id':
+        return 'Indonesian (id)';
+      case 'ja':
+        return 'Japanese (ja)';
+      case 'ko':
+        return 'Korean (ko)';
+      case 'zh-cn':
+      case 'zh':
+        return 'Chinese (Simplified) (zh-CN)';
+      default:
+        return `${languageCode} (target language code)`;
+    }
+  }
+
   private get llm() {
     return this.runtime.llm;
   }
@@ -130,12 +168,15 @@ export class AiYoutubeService {
 
   async generateYoutubeSeo(
     script: string,
-    options?: { useWebSearch?: boolean; isShort?: boolean },
+    options?: { language?: string; useWebSearch?: boolean; isShort?: boolean },
   ): Promise<{ title: string; description: string; tags: string[] }> {
     const trimmed = script?.trim();
     if (!trimmed) {
       throw new BadRequestException('Script is required');
     }
+
+    const languageCode = String(options?.language ?? '').trim() || 'en';
+    const languageDesc = this.describeLanguage(languageCode);
 
     const isShort =
       options?.isShort !== undefined ? Boolean(options.isShort) : true;
@@ -159,8 +200,9 @@ export class AiYoutubeService {
               'You are an expert YouTube SEO copywriter. ' +
               'Given a video narration script, you produce metadata optimized for search and click-through. ' +
               'Return ONLY valid JSON as: {"title": string, "description": string, "tags": string[]}. ' +
-              'CRITICAL language rule: Detect the primary language of the SCRIPT and write the title, description, and tags in that SAME language. ' +
-              'Do NOT translate into English unless the script is English. Preserve the script’s writing system (e.g., Arabic/Cyrillic). ' +
+              `CRITICAL language rule: Write the title, description, and tags in ${languageDesc}. ` +
+              `Use language code "${languageCode}" exactly as the required output language. ` +
+              'Do NOT switch languages. Preserve the requested writing system (e.g., Arabic/Cyrillic). ' +
               'Rules: title <= 100 chars, description <= 5000 chars, tags: 3-5 items, each tag <= 30 chars, no emojis. ' +
               (isShort
                 ? 'This video is a SHORT. Return a strong base title (no hashtags) and a one-sentence description idea (no hashtags). '
@@ -174,7 +216,7 @@ export class AiYoutubeService {
               (isShort
                 ? 'This is a SHORT. Provide a base title (no hashtags) and a one-sentence description idea (no hashtags). '
                 : 'This is a regular long-form video. Provide a base title (no hashtags) and a long SEO description (2-4 short paragraphs) that is NOT the same as the title. ') +
-              'Language rule: Title/description/tags MUST be in the same language as the script. ' +
+              `Language rule: Title/description/tags MUST be in ${languageDesc} (code: ${languageCode}). ` +
               'Tags should be relevant and specific (mix broad + long-tail). Return 3-5 tags max.\n\n' +
               trimmed,
           },
@@ -231,11 +273,12 @@ export class AiYoutubeService {
       : [];
 
     const webTags = useWebSearch
-      ? await this.tryGetViralTagsViaClaudeWebSearch(trimmed)
+      ? await this.tryGetViralTagsViaClaudeWebSearch(trimmed, languageCode)
       : [];
 
     const tags = await this.buildFinalYoutubeTags({
       script: trimmed,
+      languageCode,
       primary: webTags,
       fallback: llmFallbackTags,
       min: 3,
@@ -308,6 +351,7 @@ export class AiYoutubeService {
 
   private async tryGetViralTagsViaClaudeWebSearch(
     script: string,
+    languageCode: string,
   ): Promise<string[]> {
     const anthropic = this.runtime.anthropic;
     if (!anthropic) return [];
@@ -315,12 +359,13 @@ export class AiYoutubeService {
     // If Anthropic's web_search tool is not enabled for the account/model, this will throw.
     // Always use Anthropic here (ignore the UI-selected model).
     const model = this.getAnthropicWebSearchModel();
+    const languageDesc = this.describeLanguage(languageCode);
 
     const baseSystem =
       'You are an expert YouTube growth strategist and SEO tag researcher.\n' +
       'You have access to a web search tool. Use it to find currently viral / trending tags and keywords relevant to the provided script topic.\n' +
       'Return ONLY valid JSON with this exact shape: {"tags": string[]}.\n' +
-      'CRITICAL language rule: Detect the primary language of the SCRIPT and output tags in that SAME language. Do NOT translate into English unless the script is English.\n' +
+      `CRITICAL language rule: Output tags in ${languageDesc} using language code "${languageCode}". Do NOT switch languages.\n` +
       'Constraints for tags:\n' +
       '- 3 to 5 tags total\n' +
       '- No leading #\n' +
@@ -330,6 +375,7 @@ export class AiYoutubeService {
 
     const userMsg =
       'Find the most viral and relevant YouTube tags for this script.\n' +
+      `Required output language: ${languageDesc} (code: ${languageCode}).\n` +
       'Do web search first, then decide the best tags.\n\n' +
       'SCRIPT:\n' +
       script;
@@ -405,7 +451,7 @@ export class AiYoutubeService {
                 role: 'user',
                 content:
                   'Using the web search results above, return ONLY valid JSON as {"tags": string[]}. ' +
-                  'Language rule: tags MUST be in the same language as the script. ' +
+                  `Language rule: tags MUST be in ${languageDesc} (code: ${languageCode}). ` +
                   'Constraints: 3-5 tags, no leading #, each <= 30 chars, only relevant to the script topic.',
               },
             ],
@@ -434,6 +480,7 @@ export class AiYoutubeService {
 
   private async buildFinalYoutubeTags(options: {
     script: string;
+    languageCode: string;
     primary: string[] | null;
     fallback: string[];
     min: number;
@@ -464,6 +511,7 @@ export class AiYoutubeService {
       const needed = options.min - out.length;
       const extracted = await this.tryExtractScriptKeywordTags(
         options.script,
+        options.languageCode,
         Math.max(needed, 3),
       );
       for (const t of extracted) {
@@ -481,6 +529,7 @@ export class AiYoutubeService {
     if (out.length < options.min) {
       const pad = await this.tryExtractScriptKeywordTags(
         options.script,
+        options.languageCode,
         options.min,
       );
       for (const t of pad) {
@@ -499,9 +548,11 @@ export class AiYoutubeService {
 
   private async tryExtractScriptKeywordTags(
     script: string,
+    languageCode: string,
     count: number,
   ): Promise<string[]> {
     const safeCount = Math.max(3, Math.min(10, Number(count) || 5));
+    const languageDesc = this.describeLanguage(languageCode);
 
     try {
       const parsed = await this.llm.completeJson<{ tags: string[] }>({
@@ -516,10 +567,15 @@ export class AiYoutubeService {
               'You extract YouTube tags from a narration script. ' +
               'Return ONLY valid JSON: {"tags": string[]}. ' +
               `Return ${safeCount} tags. ` +
-              'CRITICAL language rule: Detect the primary language of the script and return tags in that SAME language. Do NOT translate into English unless the script is English. ' +
+              `CRITICAL language rule: Return tags in ${languageDesc} using language code "${languageCode}". Do NOT switch languages. ` +
               'Constraints: no leading #, each tag <= 30 chars, highly relevant to the script.',
           },
-          { role: 'user', content: script },
+          {
+            role: 'user',
+            content:
+              `Required output language: ${languageDesc} (code: ${languageCode}).\n\n` +
+              script,
+          },
         ],
       });
 

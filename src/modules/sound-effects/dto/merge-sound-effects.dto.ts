@@ -2,7 +2,9 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -20,6 +22,14 @@ export class MergeSoundEffectItemDto {
   @IsOptional()
   @IsNumber()
   volume_percent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  trim_start_seconds?: number;
+
+  @IsOptional()
+  @IsNumber()
+  duration_seconds?: number;
 }
 
 export class MergeSoundEffectsDto {
@@ -32,4 +42,20 @@ export class MergeSoundEffectsDto {
   @IsOptional()
   @IsString()
   title?: string;
+  
+  @IsOptional()
+  @IsNumber()
+  volumePercent?: number;
+  
+  @IsOptional()
+  @IsObject()
+  audioSettings?: Record<string, unknown> | null;
+  
+  @IsOptional()
+  @IsBoolean()
+  isPreset?: boolean;
+  
+  @IsOptional()
+  @IsBoolean()
+  requireUniqueTitle?: boolean;
 }

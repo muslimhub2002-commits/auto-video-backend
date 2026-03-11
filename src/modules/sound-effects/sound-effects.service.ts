@@ -421,6 +421,7 @@ export class SoundEffectsService implements OnModuleInit {
     await this.assertTitleAvailable({
       user_id: params.user_id,
       name,
+      excludeId: source.id,
     });
 
     const rawVolume = Number(params.volumePercent);
@@ -643,7 +644,12 @@ export class SoundEffectsService implements OnModuleInit {
 
   private buildFilterGraph(params: {
     inputCount: number;
-    items: Array<{ delayMs: number; volume: number }>;
+    items: Array<{
+      delayMs: number;
+      volume: number;
+      trimStartSeconds: number;
+      trimDurationSeconds: number | null;
+    }>;
   }): { filterComplex: string; outLabel: string } {
     const parts: string[] = [];
     const outLabels: string[] = [];
@@ -651,10 +657,35 @@ export class SoundEffectsService implements OnModuleInit {
     for (let i = 0; i < params.inputCount; i += 1) {
       const delayMs = Math.max(0, Math.round(params.items[i]?.delayMs ?? 0));
       const volume = clamp01(params.items[i]?.volume ?? 1);
+      const trimStartSeconds = Math.max(0, Number(params.items[i]?.trimStartSeconds ?? 0) || 0);
+      const rawTrimDurationSeconds = params.items[i]?.trimDurationSeconds;
+      const trimDurationSeconds =
+        typeof rawTrimDurationSeconds === 'number' && Number.isFinite(rawTrimDurationSeconds)
+          ? Math.max(0, rawTrimDurationSeconds)
+          : null;
       const out = `a${i}`;
+      const filters: string[] = [];
+
+      if (trimStartSeconds > 0 || (trimDurationSeconds !== null && trimDurationSeconds > 0)) {
+        const trimArgs: string[] = [];
+        if (trimStartSeconds > 0) {
+          trimArgs.push(`start=${trimStartSeconds.toFixed(6)}`);
+        }
+        if (trimDurationSeconds !== null && trimDurationSeconds > 0) {
+          trimArgs.push(`duration=${trimDurationSeconds.toFixed(6)}`);
+        }
+        if (trimArgs.length > 0) {
+          filters.push(`atrim=${trimArgs.join(':')}`);
+          filters.push('asetpts=PTS-STARTPTS');
+        }
+      }
+
       // aresample makes amix happier when inputs differ.
+      filters.push(`adelay=${delayMs}:all=1`);
+      filters.push(`volume=${volume.toFixed(6)}`);
+      filters.push('aresample=async=1');
       parts.push(
-        `[${i}:a]adelay=${delayMs}:all=1,volume=${volume.toFixed(6)},aresample=async=1[${out}]`,
+        `[${i}:a]${filters.join(',')}[${out}]`,
       );
       outLabels.push(`[${out}]`);
     }
@@ -667,11 +698,23 @@ export class SoundEffectsService implements OnModuleInit {
     return { filterComplex: parts.join(';'), outLabel: mixLabel };
   }
 
-  async mergeAndCreate(params: {
+  private async renderMergedAudio(params: {
     user_id: string;
-    title?: string;
     items: MergeSoundEffectItemDto[];
-  }): Promise<SoundEffect> {
+  }): Promise<{
+    mergedBuffer: Buffer;
+    mergedDurationSeconds: number | null;
+    mergedFrom: {
+      items: Array<{
+        sound_effect_id: string;
+        delay_seconds: number;
+        volume_percent: number;
+        trim_start_seconds: number;
+        duration_seconds: number | null;
+      }>;
+      created_at: string;
+    };
+  }> {
     const items = Array.isArray(params.items) ? params.items : [];
     if (items.length < 2) {
       throw new BadRequestException(
@@ -680,7 +723,7 @@ export class SoundEffectsService implements OnModuleInit {
     }
 
     const ids = items
-      .map((i) => String(i.sound_effect_id ?? '').trim())
+      .map((item) => String(item.sound_effect_id ?? '').trim())
       .filter(Boolean);
     if (ids.length < 2) {
       throw new BadRequestException('Invalid sound effect ids');
@@ -694,9 +737,8 @@ export class SoundEffectsService implements OnModuleInit {
       throw new NotFoundException('One or more sound effects were not found');
     }
 
-    // Maintain order as provided.
     const ordered = ids
-      .map((id) => effects.find((e) => e.id === id)!)
+      .map((id) => effects.find((effect) => effect.id === id)!)
       .filter(Boolean);
 
     const tmpDir = path.join(
@@ -730,9 +772,11 @@ export class SoundEffectsService implements OnModuleInit {
         inputPaths.push(inputPath);
       }
 
-      const mapped = items.map((it) => {
-        const delaySeconds = Number(it.delay_seconds ?? 0);
-        const volumePercent = Number(it.volume_percent ?? 100);
+      const mapped = items.map((item) => {
+        const delaySeconds = Number(item.delay_seconds ?? 0);
+        const volumePercent = Number(item.volume_percent ?? 100);
+        const trimStartSeconds = Number(item.trim_start_seconds ?? 0);
+        const rawDurationSeconds = Number(item.duration_seconds);
         return {
           delayMs: Number.isFinite(delaySeconds)
             ? Math.max(0, Math.round(delaySeconds * 1000))
@@ -740,6 +784,12 @@ export class SoundEffectsService implements OnModuleInit {
           volume: Number.isFinite(volumePercent)
             ? clamp01(clampPercent(volumePercent) / 100)
             : 1,
+          trimStartSeconds: Number.isFinite(trimStartSeconds)
+            ? Math.max(0, trimStartSeconds)
+            : 0,
+          trimDurationSeconds: Number.isFinite(rawDurationSeconds)
+            ? Math.max(0, rawDurationSeconds)
+            : null,
         };
       });
 
@@ -753,7 +803,7 @@ export class SoundEffectsService implements OnModuleInit {
 
       const baseArgs = [
         '-y',
-        ...inputPaths.flatMap((p) => ['-i', p]),
+        ...inputPaths.flatMap((inputPath) => ['-i', inputPath]),
         '-filter_complex',
         filterComplex,
         '-map',
@@ -794,46 +844,113 @@ export class SoundEffectsService implements OnModuleInit {
         outPath,
       );
 
-      const uploaded = await this.uploadAudioToCloudinary({
-        buffer: mergedBuffer,
-      });
-
-      const title = String(params.title ?? '').trim() || 'Merged sound';
-      const name = title;
-
-      const mergedEntity = this.repo.create({
-        user_id: params.user_id,
-        title,
-        name,
-        url: uploaded.url,
-        public_id: uploaded.public_id,
-        hash: crypto.createHash('sha256').update(mergedBuffer).digest('hex'),
-        number_of_times_used: 0,
-        volume_percent: 100,
-        duration_seconds: mergedDurationSeconds,
-        is_merged: true,
-        merged_from: {
-          items: items.map((i) => ({
-            sound_effect_id: i.sound_effect_id,
-            delay_seconds: i.delay_seconds ?? 0,
-            volume_percent: i.volume_percent ?? 100,
+      return {
+        mergedBuffer,
+        mergedDurationSeconds,
+        mergedFrom: {
+          items: items.map((item) => ({
+            sound_effect_id: item.sound_effect_id,
+            delay_seconds: item.delay_seconds ?? 0,
+            volume_percent: item.volume_percent ?? 100,
+            trim_start_seconds: item.trim_start_seconds ?? 0,
+            duration_seconds:
+              typeof item.duration_seconds === 'number' &&
+              Number.isFinite(item.duration_seconds)
+                ? Math.max(0, item.duration_seconds)
+                : null,
           })),
           created_at: new Date().toISOString(),
         },
-      });
-
-      return await this.repo.save(mergedEntity);
+      };
     } finally {
-      // Best-effort cleanup.
-      for (const p of cleanupPaths) {
+      for (const cleanupPath of cleanupPaths) {
         try {
-          if (fs.existsSync(p)) {
-            fs.rmSync(p, { recursive: true, force: true });
+          if (fs.existsSync(cleanupPath)) {
+            fs.rmSync(cleanupPath, { recursive: true, force: true });
           }
         } catch {
           // ignore
         }
       }
     }
+  }
+
+  async mergePreview(params: {
+    user_id: string;
+    title?: string;
+    items: MergeSoundEffectItemDto[];
+  }): Promise<{
+    title: string;
+    url: string;
+    volume_percent: number;
+    duration_seconds: number | null;
+    audio_settings: Record<string, unknown>;
+  }> {
+    const rendered = await this.renderMergedAudio({
+      user_id: params.user_id,
+      items: params.items,
+    });
+    const uploaded = await this.uploadAudioToCloudinary({
+      buffer: rendered.mergedBuffer,
+    });
+
+    return {
+      title: String(params.title ?? '').trim() || 'Merged sound preview',
+      url: uploaded.url,
+      volume_percent: 100,
+      duration_seconds: rendered.mergedDurationSeconds,
+      audio_settings: DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+    };
+  }
+
+  async mergeAndCreate(params: {
+    user_id: string;
+    title?: string;
+    volumePercent?: number;
+    audioSettings?: Record<string, unknown> | null;
+    isPreset?: boolean;
+    requireUniqueTitle?: boolean;
+    items: MergeSoundEffectItemDto[];
+  }): Promise<SoundEffect> {
+    const title = String(params.title ?? '').trim() || 'Merged sound';
+    if (params.requireUniqueTitle === true) {
+      await this.assertTitleAvailable({
+        user_id: params.user_id,
+        name: title,
+      });
+    }
+
+    const rendered = await this.renderMergedAudio({
+      user_id: params.user_id,
+      items: params.items,
+    });
+    const uploaded = await this.uploadAudioToCloudinary({
+      buffer: rendered.mergedBuffer,
+    });
+
+    const rawVolume = Number(params.volumePercent);
+    const volumePercent = Number.isFinite(rawVolume)
+      ? clampPercent(rawVolume)
+      : 100;
+
+    const mergedEntity = this.repo.create({
+      user_id: params.user_id,
+      title,
+      name: title,
+      url: uploaded.url,
+      public_id: uploaded.public_id,
+      hash: crypto.createHash('sha256').update(rendered.mergedBuffer).digest('hex'),
+      number_of_times_used: 0,
+      volume_percent: volumePercent,
+      duration_seconds: rendered.mergedDurationSeconds,
+      audio_settings: normalizeSoundEffectAudioSettings(
+        params.audioSettings ?? DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+      ),
+      is_merged: true,
+      is_preset: params.isPreset === true,
+      merged_from: rendered.mergedFrom,
+    });
+
+    return this.normalizeStoredSoundEffect(await this.repo.save(mergedEntity));
   }
 }

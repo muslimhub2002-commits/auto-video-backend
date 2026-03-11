@@ -74,11 +74,11 @@ export class AiRuntimeService {
 
     // Used for small classification tasks (cheaper/faster than the main model).
     const defaultCheapModel = ((): string => {
-      if ((openaiKey ?? '').trim()) return 'gpt-4o-mini';
+      if ((openaiKey ?? '').trim()) return 'gpt-4.1-mini';
       if ((grokKey ?? '').trim()) return 'grok-3-mini-latest';
       if ((anthropicKey ?? '').trim()) return 'claude-3-haiku-20240307';
       if ((geminiKey ?? '').trim()) return 'gemini-1.5-flash';
-      return 'gpt-4o-mini';
+      return 'gpt-4.1-mini';
     })();
 
     this.cheapModel =

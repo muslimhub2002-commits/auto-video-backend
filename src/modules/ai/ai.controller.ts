@@ -363,6 +363,7 @@ export class AiController {
   @HttpCode(HttpStatus.OK)
   async youtubeSeo(@Body() body: YoutubeSeoDto) {
     const result = await this.aiService.generateYoutubeSeo(body.script, {
+      language: body.language,
       useWebSearch: body.useWebSearch,
       isShort: body.isShort,
     });

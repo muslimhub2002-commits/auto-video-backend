@@ -147,7 +147,7 @@ export class AiService {
 
   generateYoutubeSeo(
     script: string,
-    options?: { useWebSearch?: boolean; isShort?: boolean },
+    options?: { language?: string; useWebSearch?: boolean; isShort?: boolean },
   ): Promise<{ title: string; description: string; tags: string[] }> {
     return this.youtubeService.generateYoutubeSeo(script, options);
   }

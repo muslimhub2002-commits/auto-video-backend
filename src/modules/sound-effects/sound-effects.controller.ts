@@ -240,6 +240,23 @@ export class SoundEffectsController {
     return this.service.mergeAndCreate({
       user_id,
       title: body?.title,
+      volumePercent: body?.volumePercent,
+      audioSettings: body?.audioSettings,
+      isPreset: body?.isPreset,
+      requireUniqueTitle: body?.requireUniqueTitle,
+      items: body?.items,
+    });
+  }
+
+  @Post('merge-preview')
+  async mergePreview(@Req() req: Request, @Body() body: MergeSoundEffectsDto) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+    if (!user_id) throw new UnauthorizedException('User not found in request');
+
+    return this.service.mergePreview({
+      user_id,
+      title: body?.title,
       items: body?.items,
     });
   }
