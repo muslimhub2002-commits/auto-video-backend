@@ -192,6 +192,25 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             scene.startFrame + Math.round(delaySeconds * (timeline.fps || 30));
           if (from >= timeline.durationInFrames) return null;
 
+          const trimStartSecondsRaw = Number(se?.trimStartSeconds ?? 0);
+          const trimStartSeconds = Number.isFinite(trimStartSecondsRaw)
+            ? Math.max(0, trimStartSecondsRaw)
+            : 0;
+          const trimStartFrames = Math.max(
+            0,
+            Math.round(trimStartSeconds * (timeline.fps || 30)),
+          );
+
+          const durationSecondsRaw = Number(se?.durationSeconds ?? 0);
+          const durationFrames =
+            Number.isFinite(durationSecondsRaw) && durationSecondsRaw > 0
+              ? Math.max(1, Math.round(durationSecondsRaw * (timeline.fps || 30)))
+              : undefined;
+          const remainingFrames = Math.max(1, timeline.durationInFrames - from);
+          const sequenceDurationFrames = durationFrames
+            ? Math.min(durationFrames, remainingFrames)
+            : undefined;
+
           const volumeRaw = Number(se?.volume ?? 1);
           const volume = Number.isFinite(volumeRaw)
             ? Math.max(0, Math.min(3, volumeRaw))
@@ -201,8 +220,9 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             <Sequence
               key={`sentence-sfx-${scene.index}-${sfxIdx}`}
               from={Math.max(0, from)}
+              durationInFrames={sequenceDurationFrames}
             >
-              <Audio src={resolveMediaSrc(src)} volume={volume} />
+              <Audio src={resolveMediaSrc(src)} volume={volume} startFrom={trimStartFrames} />
             </Sequence>
           );
         });

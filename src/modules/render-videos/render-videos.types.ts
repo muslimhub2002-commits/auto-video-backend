@@ -13,6 +13,7 @@ export type SentenceInput = {
     // Absolute URL (e.g. Cloudinary) or static publicDir path (job-scoped) for local renders.
     src: string;
     delaySeconds?: number;
+    trimStartSeconds?: number;
     durationSeconds?: number;
     // 0..300 where 100 = normal volume. Optional.
     volumePercent?: number;

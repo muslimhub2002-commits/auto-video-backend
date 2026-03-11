@@ -7,6 +7,8 @@ import {
   isSubscribeLikeSentence,
 } from './render-videos.constants';
 
+const DEFAULT_IMAGE_MOTION_SPEED = 1.2;
+
 export const isShortScript = (scriptLength: string) => {
   const s = String(scriptLength ?? '')
     .trim()
@@ -146,6 +148,7 @@ export const buildTimeline = (params: {
             if (!src) return null;
 
             const delaySeconds = clampNonNegative(se?.delaySeconds);
+            const trimStartSeconds = clampNonNegative(se?.trimStartSeconds);
             const durationSeconds = clampNonNegative(se?.durationSeconds);
             const hasKnownDuration =
               typeof se?.durationSeconds === 'number' &&
@@ -162,6 +165,7 @@ export const buildTimeline = (params: {
             return {
               src,
               delaySeconds,
+              trimStartSeconds,
               durationSeconds,
               hasKnownDuration,
               volume: clamp03(volumePercent / 100),
@@ -170,6 +174,7 @@ export const buildTimeline = (params: {
           .filter(Boolean) as Array<{
           src: string;
           delaySeconds: number;
+          trimStartSeconds: number;
           durationSeconds: number;
           hasKnownDuration: boolean;
           volume: number;
@@ -225,6 +230,8 @@ export const buildTimeline = (params: {
             soundEffects: alignedSoundEffects.items.map((se) => ({
               src: se.src,
               delaySeconds: se.delaySeconds,
+              trimStartSeconds: se.trimStartSeconds,
+              durationSeconds: se.durationSeconds,
               volume: se.volume,
             })),
             ...(alignedSoundEffects.enabled
@@ -269,7 +276,7 @@ export const buildTimeline = (params: {
         ? { imageMotionEffect: s.imageMotionEffect ?? 'default' }
         : {}),
       ...(isImageScene
-        ? { imageMotionSpeed: s.imageMotionSpeed ?? 1 }
+        ? { imageMotionSpeed: s.imageMotionSpeed ?? DEFAULT_IMAGE_MOTION_SPEED }
         : {}),
       imageSrc:
         isSubscribeLike || wantsSentenceVideo

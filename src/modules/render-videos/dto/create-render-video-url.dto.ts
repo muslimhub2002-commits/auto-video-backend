@@ -27,6 +27,11 @@ class SentenceSoundEffectDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  trimStartSeconds?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
   durationSeconds?: number;
 
   @IsOptional()

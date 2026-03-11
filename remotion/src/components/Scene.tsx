@@ -69,13 +69,22 @@ const getNumeric = (
   return numeric;
 };
 
+const getBoolean = (value: unknown, fallback = false) => {
+  if (typeof value === 'boolean') return value;
+  return fallback;
+};
+
+const DEFAULT_IMAGE_MOTION_SPEED = 1.2;
+
 const normalizeMotionSpeed = (value: unknown) =>
-  clampNumber(getNumeric(value, 1), 0.5, 2.5);
+  clampNumber(getNumeric(value, DEFAULT_IMAGE_MOTION_SPEED), 0.5, 2.5);
 
 const getPingPongProgress = (value: number) => {
   const wrapped = ((value % 2) + 2) % 2;
   return wrapped <= 1 ? wrapped : 2 - wrapped;
 };
+
+const MOTION_CYCLE_DURATION_SECONDS = 6.2;
 
 const getDefaultImageFilterSettings = (effect: SceneVisualEffect | null | undefined) => {
   if (effect === 'colorGrading') {
@@ -193,6 +202,10 @@ const getDefaultImageMotionSettings = (
     speed: normalizedSpeed,
     originX: 50,
     originY: 50,
+    scaleEndNoLimit: true,
+    translateXEndNoLimit: true,
+    translateYEndNoLimit: true,
+    rotateEndNoLimit: true,
   };
 
   if (effect === 'slowZoomIn') {
@@ -235,15 +248,57 @@ const normalizeImageMotionSettings = (
     speed: normalizeMotionSpeed(settings?.speed ?? defaults.speed),
     startScale: getNumeric(settings?.startScale, defaults.startScale, 0.5, 2),
     endScale: getNumeric(settings?.endScale, defaults.endScale, 0.5, 2),
+    scaleEndNoLimit: getBoolean(settings?.scaleEndNoLimit, defaults.scaleEndNoLimit),
     translateXStart: getNumeric(settings?.translateXStart, defaults.translateXStart, -20, 20),
     translateXEnd: getNumeric(settings?.translateXEnd, defaults.translateXEnd, -20, 20),
+    translateXEndNoLimit: getBoolean(
+      settings?.translateXEndNoLimit,
+      defaults.translateXEndNoLimit,
+    ),
     translateYStart: getNumeric(settings?.translateYStart, defaults.translateYStart, -20, 20),
     translateYEnd: getNumeric(settings?.translateYEnd, defaults.translateYEnd, -20, 20),
+    translateYEndNoLimit: getBoolean(
+      settings?.translateYEndNoLimit,
+      defaults.translateYEndNoLimit,
+    ),
     rotateStart: getNumeric(settings?.rotateStart, defaults.rotateStart, -10, 10),
     rotateEnd: getNumeric(settings?.rotateEnd, defaults.rotateEnd, -10, 10),
+    rotateEndNoLimit: getBoolean(settings?.rotateEndNoLimit, defaults.rotateEndNoLimit),
     originX: getNumeric(settings?.originX, defaults.originX, 0, 100),
     originY: getNumeric(settings?.originY, defaults.originY, 0, 100),
   };
+};
+
+const interpolateMotionValue = (params: {
+  start: number;
+  end: number;
+  boundedProgress: number;
+  extendedProgress: number;
+  noLimit: boolean;
+  easing: (input: number) => number;
+}) => {
+  if (params.noLimit) {
+    return interpolate(
+      params.extendedProgress,
+      [0, 1],
+      [params.start, params.end],
+      {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'extend',
+      },
+    );
+  }
+
+  return interpolate(
+    params.boundedProgress,
+    [0, 1],
+    [params.start, params.end],
+    {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+      easing: params.easing,
+    },
+  );
 };
 
 export const Scene: React.FC<{
@@ -289,11 +344,6 @@ export const Scene: React.FC<{
     // Inside a <Sequence>, useCurrentFrame() is already relative to the Sequence start.
     // Clamp to 0 to ensure each scene starts at default scale.
     const elapsedSeconds = Math.max(0, frame) / fps;
-    const motionProgress =
-      scene.durationFrames <= 1
-        ? 1
-        : clamp01(frame / Math.max(1, scene.durationFrames - 1));
-
     const isSuspenseOpening = scene.index === 0 && Boolean(scene.isSuspense);
     const suspenseFilter = isSuspenseOpening
       ? 'grayscale(1) contrast(1.38) brightness(0.88)'
@@ -439,31 +489,44 @@ export const Scene: React.FC<{
     );
     const motionSpeed = resolvedMotion.speed;
     const motionEasing = Easing.inOut(Easing.cubic);
-    const scaledMotionProgress = getPingPongProgress(motionProgress * motionSpeed);
-    const motionScale = interpolate(
-      scaledMotionProgress,
-      [0, 1],
-      [resolvedMotion.startScale, resolvedMotion.endScale],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: motionEasing },
-    );
-    const motionTranslateX = interpolate(
-      scaledMotionProgress,
-      [0, 1],
-      [width * (resolvedMotion.translateXStart / 100), width * (resolvedMotion.translateXEnd / 100)],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: motionEasing },
-    );
-    const motionTranslateY = interpolate(
-      scaledMotionProgress,
-      [0, 1],
-      [height * (resolvedMotion.translateYStart / 100), height * (resolvedMotion.translateYEnd / 100)],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: motionEasing },
-    );
-    const motionRotate = interpolate(
-      scaledMotionProgress,
-      [0, 1],
-      [resolvedMotion.rotateStart, resolvedMotion.rotateEnd],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: motionEasing },
-    );
+    const forwardMotionProgress =
+      Math.max(0, elapsedSeconds / MOTION_CYCLE_DURATION_SECONDS) * motionSpeed;
+    const scaledMotionProgress = getPingPongProgress(forwardMotionProgress);
+    const usesAutomaticDefaultScale = motionEffect === 'default';
+    const motionScale = usesAutomaticDefaultScale
+      ? clampNumber(1 + elapsedSeconds * IMAGE_ZOOM_PER_SECOND * motionSpeed, 0.5, 2)
+      : interpolateMotionValue({
+          start: resolvedMotion.startScale,
+          end: resolvedMotion.endScale,
+          boundedProgress: scaledMotionProgress,
+          extendedProgress: forwardMotionProgress,
+          noLimit: resolvedMotion.scaleEndNoLimit === true,
+          easing: motionEasing,
+        });
+    const motionTranslateX = interpolateMotionValue({
+      start: width * (resolvedMotion.translateXStart / 100),
+      end: width * (resolvedMotion.translateXEnd / 100),
+      boundedProgress: scaledMotionProgress,
+      extendedProgress: forwardMotionProgress,
+      noLimit: resolvedMotion.translateXEndNoLimit === true,
+      easing: motionEasing,
+    });
+    const motionTranslateY = interpolateMotionValue({
+      start: height * (resolvedMotion.translateYStart / 100),
+      end: height * (resolvedMotion.translateYEnd / 100),
+      boundedProgress: scaledMotionProgress,
+      extendedProgress: forwardMotionProgress,
+      noLimit: resolvedMotion.translateYEndNoLimit === true,
+      easing: motionEasing,
+    });
+    const motionRotate = interpolateMotionValue({
+      start: resolvedMotion.rotateStart,
+      end: resolvedMotion.rotateEnd,
+      boundedProgress: scaledMotionProgress,
+      extendedProgress: forwardMotionProgress,
+      noLimit: resolvedMotion.rotateEndNoLimit === true,
+      easing: motionEasing,
+    });
     const motionTransformOrigin = `${resolvedMotion.originX.toFixed(2)}% ${resolvedMotion.originY.toFixed(2)}%`;
 
     const whipSkew = (whipBlur / WHIP_MAX_BLUR_PX) * 6 * (whipX >= 0 ? 1 : -1);

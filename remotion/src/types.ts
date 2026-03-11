@@ -11,6 +11,8 @@ export type TimelineScene = {
   soundEffects?: Array<{
     src: string; // static file path (publicDir) or absolute URL
     delaySeconds?: number;
+    trimStartSeconds?: number;
+    durationSeconds?: number;
     // Remotion Audio volume multiplier. 1 = normal volume.
     volume?: number;
   }>;

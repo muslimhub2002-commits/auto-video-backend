@@ -339,6 +339,16 @@ export class RenderVideosController {
             }
           }
 
+          const trimStartRaw = se?.trimStartSeconds;
+          if (trimStartRaw != null) {
+            const v = Number(trimStartRaw);
+            if (!Number.isFinite(v) || v < 0) {
+              throw new BadRequestException(
+                `Invalid soundEffects[${sfxIdx}] trimStartSeconds for sentence ${idx + 1}.`,
+              );
+            }
+          }
+
           const volRaw = se?.volumePercent;
           if (volRaw != null) {
             const v = Number(volRaw);

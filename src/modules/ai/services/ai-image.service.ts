@@ -1015,7 +1015,7 @@ export class AiImageService {
                   content:
                     'You are a visual prompt engineer for image generation models. ' +
                     'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
-                    'Make the result composition-rich, varied, imaginative, and cinematic (avoid generic defaults unless the sentence truly calls for it). ' +
+                    'You need to approach this from a very creative/weird color prespective' +
                     'ABSOLUTE RULE: Do not add any textual elements in the image. ' +
                     AiImageService.NO_TEXT_PROMPT_SUFFIX +
                     (frameBlock ? frameBlock + '\n' : '') +
