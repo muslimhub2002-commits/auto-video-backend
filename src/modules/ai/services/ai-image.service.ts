@@ -53,7 +53,7 @@ export class AiImageService {
   constructor(
     private readonly runtime: AiRuntimeService,
     private readonly imagesService: ImagesService,
-  ) {}
+  ) { }
 
   private static readonly NO_TEXT_PROMPT_SUFFIX =
     'No text, no letters, no words, no captions, no subtitles, no watermark, no logo, no signature, no symbols, no numbers.';
@@ -137,81 +137,6 @@ export class AiImageService {
     return capped;
   }
 
-  private async getOrCreateEra(
-    scriptRaw?: string | null,
-  ): Promise<string | null> {
-    const script = (scriptRaw ?? '').trim();
-    if (!script) return null;
-
-    const key = this.hashScriptForCache(script);
-    const now = Date.now();
-    const cached = this.scriptEraCache.get(key);
-    if (cached && cached.expiresAt > now) return cached.era;
-
-    const messages: LlmMessage[] = [
-      {
-        role: 'system',
-        content:
-          'You infer the ERA / time period of a narration script for visual setting consistency.\n' +
-          'Return ONLY valid JSON with exactly this shape: {"era": string}.\n\n' +
-          'Rules:\n' +
-          '- The value must be a short label suitable to prepend as "Era:" (e.g. "7th century Arabia", "Ottoman era", "Modern day", "Medieval era", "Ancient Egypt").\n' +
-          '- If the script does not imply a clear time period, return {"era": ""}.\n' +
-          '- Do NOT include explanations, quotes, or extra keys.',
-      },
-      {
-        role: 'user',
-        content: 'SCRIPT (infer era from this):\n' + script.slice(0, 8000),
-      },
-    ];
-
-    const tryModel = async (model: string): Promise<string | null> => {
-      const parsed = await this.llm.completeJson<unknown>({
-        model,
-        temperature: 0,
-        maxTokens: 120,
-        retries: 1,
-        messages,
-      });
-      return this.normalizeEra(parsed);
-    };
-
-    try {
-      const era = await tryModel(this.cheapModel);
-      const ttlMs = 30 * 60 * 1000;
-      this.scriptEraCache.set(key, { era, expiresAt: now + ttlMs });
-      return era;
-    } catch (error: any) {
-      console.error('Era extraction failed (cheap model). Falling back.', {
-        message: error?.message,
-        status: error?.status,
-        code: error?.code,
-        type: error?.type,
-      });
-
-      try {
-        const era = await tryModel(this.model);
-        const ttlMs = 30 * 60 * 1000;
-        this.scriptEraCache.set(key, { era, expiresAt: now + ttlMs });
-        return era;
-      } catch (fallbackErr: any) {
-        console.error(
-          'Era extraction failed (fallback model). Disabling for this script temporarily.',
-          {
-            message: fallbackErr?.message,
-            status: fallbackErr?.status,
-            code: fallbackErr?.code,
-            type: fallbackErr?.type,
-          },
-        );
-
-        const ttlMs = 5 * 60 * 1000;
-        this.scriptEraCache.set(key, { era: null, expiresAt: now + ttlMs });
-        return null;
-      }
-    }
-  }
-
   private async getOrCreateEraForSentence(params: {
     scriptRaw?: string | null;
     sentenceRaw?: string | null;
@@ -244,7 +169,7 @@ export class AiImageService {
         role: 'user',
         content:
           (script
-            ? `SCRIPT CONTEXT (for reference resolution):\n${script.slice(0, 8000)}\n\n`
+            ? `SCRIPT CONTEXT (for reference resolution):\n${script}\n\n`
             : '') + `TARGET SENTENCE (infer era for this ONLY):\n${sentence}`,
       },
     ];
@@ -526,31 +451,6 @@ export class AiImageService {
     return Array.from(new Set<string>(normalizedKeys)).slice(0, 3);
   }
 
-  private extractBooleanFromModelText(
-    raw: string | null | undefined,
-  ): boolean | null {
-    const text = (raw ?? '').trim().toLowerCase();
-    if (!text) return null;
-
-    if (text === 'true' || text === 'yes' || text === 'y') return true;
-    if (text === 'false' || text === 'no' || text === 'n') return false;
-
-    try {
-      const parsed = JSON.parse(text);
-      if (typeof parsed === 'boolean') return parsed;
-      if (parsed && typeof parsed === 'object') {
-        const v = parsed.mentions ?? parsed.result ?? parsed.value;
-        if (typeof v === 'boolean') return v;
-      }
-    } catch {
-      // ignore
-    }
-
-    if (/\btrue\b/.test(text) || /\byes\b/.test(text)) return true;
-    if (/\bfalse\b/.test(text) || /\bno\b/.test(text)) return false;
-    return null;
-  }
-
   private async sentenceMentionsAllahProphetOrSahaba(params: {
     script?: string | null;
     sentence: string;
@@ -566,11 +466,17 @@ export class AiImageService {
   }): Promise<{
     blockHumans: boolean;
     forceBackView: boolean;
+    forceLightAroundBody: boolean;
     characterKeys: string[];
   }> {
     const sentence = (params.sentence ?? '').trim();
     if (!sentence) {
-      return { blockHumans: false, forceBackView: false, characterKeys: [] };
+      return {
+        blockHumans: false,
+        forceBackView: false,
+        forceLightAroundBody: false,
+        characterKeys: [],
+      };
     }
 
     const script = (params.script ?? '').trim();
@@ -631,38 +537,49 @@ export class AiImageService {
           const c = charactersByKey.get(k);
           return Boolean(c && (c.isSahaba || c.isProphet));
         });
+        const mentionsProphet = characterKeys.some((k) => {
+          const c = charactersByKey.get(k);
+          return Boolean(c && c.isProphet);
+        });
         const mentionsWoman = characterKeys.some((k) => {
           const c = charactersByKey.get(k);
           return Boolean(c && c.isWoman);
         });
 
         const forceBackView = mentionsProphetOrSahaba;
+        const forceLightAroundBody = mentionsProphet;
         const blockHumans = Boolean(
           mentionsWoman || (mentionsAllah && !forceBackView),
         );
 
-        return { blockHumans, forceBackView, characterKeys };
+        return {
+          blockHumans,
+          forceBackView,
+          forceLightAroundBody,
+          characterKeys,
+        };
       }
 
-      // Fallback path: boolean-only classifier.
-      const raw = await this.llm.completeText({
+      // Fallback path: classify the safety-sensitive mention type directly.
+      const parsed = await this.llm.completeJson<unknown>({
         model: this.cheapModel,
         temperature: 0,
-        maxTokens: 16,
+        maxTokens: 80,
+        retries: 1,
         messages: [
           {
             role: 'system',
             content:
-              'You are a strict boolean classifier. ' +
-              'Return ONLY "true" or "false" (no punctuation, no extra text).\n\n' +
-              'Task: Determine whether the TARGET SENTENCE mentions OR refers to any of the following (directly or via pronouns resolved using the provided SCRIPT CONTEXT):\n' +
-              '1) Allah (or God when clearly used in Islamic context)\n' +
-              '2) Any Prophet\n' +
-              '3) Any Sahaba / Companion of the Prophet\n' +
-              '4) Any Woman\n\n' +
+              'You classify whether the TARGET SENTENCE refers to specific protected entities.\n' +
+              'Return ONLY valid JSON with this exact shape: {"mentionsAllah": boolean, "mentionsProphet": boolean, "mentionsProphetOrSahaba": boolean, "mentionsWoman": boolean}.\n\n' +
               'Rules:\n' +
               '- Use SCRIPT CONTEXT only to resolve pronouns / references for the TARGET SENTENCE.\n' +
-              '- If unclear/ambiguous, return false.',
+              '- mentionsAllah: true only if the sentence refers to Allah / God in Islamic context.\n' +
+              '- mentionsProphet: true only if the sentence refers to any Prophet.\n' +
+              '- mentionsProphetOrSahaba: true if the sentence refers to any Prophet OR any Sahaba / Companion.\n' +
+              '- mentionsWoman: true only if the sentence refers to a woman/female person.\n' +
+              '- If unclear/ambiguous, use false for that field.\n' +
+              '- Do not include explanations or extra keys.',
           },
           {
             role: 'user',
@@ -674,10 +591,26 @@ export class AiImageService {
         ],
       });
 
-      const parsed = this.extractBooleanFromModelText(raw);
-      const mentions = parsed ?? false;
-      if (mentions) {
-        return { blockHumans: true, forceBackView: false, characterKeys: [] };
+      const mentionsAllah = Boolean((parsed as any)?.mentionsAllah);
+      const mentionsProphet = Boolean((parsed as any)?.mentionsProphet);
+      const mentionsProphetOrSahaba = Boolean(
+        (parsed as any)?.mentionsProphetOrSahaba,
+      );
+      const mentionsWoman = Boolean((parsed as any)?.mentionsWoman);
+
+      const forceBackView = mentionsProphetOrSahaba;
+      const forceLightAroundBody = mentionsProphet;
+      const blockHumans = Boolean(
+        mentionsWoman || (mentionsAllah && !forceBackView),
+      );
+
+      if (blockHumans || forceBackView || forceLightAroundBody) {
+        return {
+          blockHumans,
+          forceBackView,
+          forceLightAroundBody,
+          characterKeys: [],
+        };
       }
 
       if (params.characterBible && params.characterBible.characters.length) {
@@ -686,13 +619,28 @@ export class AiImageService {
           script: params.script,
           bible: params.characterBible,
         });
-        return { blockHumans: false, forceBackView: false, characterKeys };
+        return {
+          blockHumans: false,
+          forceBackView: false,
+          forceLightAroundBody: false,
+          characterKeys,
+        };
       }
 
-      return { blockHumans: false, forceBackView: false, characterKeys: [] };
+      return {
+        blockHumans: false,
+        forceBackView: false,
+        forceLightAroundBody: false,
+        characterKeys: [],
+      };
     } catch (error) {
       console.error('Error classifying Allah/Prophet/Sahaba reference:', error);
-      return { blockHumans: false, forceBackView: false, characterKeys: [] };
+      return {
+        blockHumans: false,
+        forceBackView: false,
+        forceLightAroundBody: false,
+        characterKeys: [],
+      };
     }
   }
 
@@ -869,12 +817,12 @@ export class AiImageService {
 
     const canonicalEras = Array.isArray(dto.eras)
       ? dto.eras
-          .map((e) => ({
-            key: String((e as any)?.key ?? '').trim(),
-            name: String((e as any)?.name ?? '').trim(),
-            description: String((e as any)?.description ?? '').trim(),
-          }))
-          .filter((e) => e.key && e.name)
+        .map((e) => ({
+          key: String((e as any)?.key ?? '').trim(),
+          name: String((e as any)?.name ?? '').trim(),
+          description: String((e as any)?.description ?? '').trim(),
+        }))
+        .filter((e) => e.key && e.name)
       : [];
 
     const forcedEraKeyProvided = dto.forcedEraKey !== undefined;
@@ -892,13 +840,13 @@ export class AiImageService {
     const forcedCharactersProvided = forcedCharacterKeysInput !== null;
     const forcedKeysRaw = forcedCharactersProvided
       ? forcedCharacterKeysInput
-          .map((k) => String(k ?? '').trim())
-          .filter(Boolean)
+        .map((k) => String(k ?? '').trim())
+        .filter(Boolean)
       : [];
     const forcedKeys = canonicalCharacters?.length
       ? forcedKeysRaw.filter((k) =>
-          canonicalCharacters.some((c) => c.key === k),
-        )
+        canonicalCharacters.some((c) => c.key === k),
+      )
       : [];
     const useForcedCharactersOverride = forcedCharactersProvided;
 
@@ -909,35 +857,61 @@ export class AiImageService {
     const inferredEra =
       !requestedEra && !forcedEraKeyProvided
         ? await this.getOrCreateEraForSentence({
-            scriptRaw: fullScriptContext,
-            sentenceRaw: sentenceText,
-          })
+          scriptRaw: fullScriptContext,
+          sentenceRaw: sentenceText,
+        })
         : null;
 
     const effectiveEraLine = requestedEra
-      ? `Era:${requestedEra.name}${requestedEra.description ? ` - ${requestedEra.description}` : ''}`
+      ? `Era: ${requestedEra.description}`
       : inferredEra
         ? `Era:${inferredEra}`
         : '';
 
-    const mentionResult = await this.sentenceMentionsAllahProphetOrSahaba({
-      script: fullScriptContext,
-      sentence: dto.sentence,
-      characters: canonicalCharacters,
-      characterBible,
-    });
+    const mentionResult = useForcedCharactersOverride
+      ? (() => {
+        const forcedReferencedCharacters = (canonicalCharacters ?? []).filter(
+          (character) => forcedKeys.includes(character.key),
+        );
 
-    const blockHumans = mentionResult.blockHumans;
+        return {
+          blockHumans: forcedReferencedCharacters.some(
+            (character) => character.isWoman,
+          ),
+          forceBackView: forcedReferencedCharacters.some(
+            (character) => character.isSahaba || character.isProphet,
+          ),
+          forceLightAroundBody: forcedReferencedCharacters.some(
+            (character) => character.isProphet,
+          ),
+          characterKeys: forcedKeys,
+        };
+      })()
+      : await this.sentenceMentionsAllahProphetOrSahaba({
+        script: fullScriptContext,
+        sentence: dto.sentence,
+        characters: canonicalCharacters,
+        characterBible,
+      });
+
+    // const blockHumans = mentionResult.blockHumans;
     const forceBackView = mentionResult.forceBackView;
-    const referencedCharacterKeys = useForcedCharactersOverride
-      ? forcedKeys
-      : blockHumans
-        ? []
-        : mentionResult.characterKeys;
-    const focusMaleCharacter =
-      !blockHumans &&
-      (this.sentenceContainsMaleCharacter(sentenceText) ||
-        referencedCharacterKeys.length > 0);
+    const forceLightAroundBody = mentionResult.forceLightAroundBody;
+    const referencedCharacterKeys = mentionResult.characterKeys;
+    const referencedCanonicalCharacters = (canonicalCharacters ?? []).filter(
+      (character) => referencedCharacterKeys.includes(character.key),
+    );
+    const hasMultipleReferencedCharacters = referencedCharacterKeys.length > 1;
+    const backViewCharacters = referencedCanonicalCharacters.filter(
+      (character) => character.isSahaba || character.isProphet,
+    );
+    const lightAroundBodyCharacters = referencedCanonicalCharacters.filter(
+      (character) => character.isProphet,
+    );
+    // const focusMaleCharacter =
+    //   !blockHumans &&
+    //   (this.sentenceContainsMaleCharacter(sentenceText) ||
+    //     referencedCharacterKeys.length > 0);
 
     const noHumanFiguresRule =
       'ABSOLUTE RULE: Do NOT depict any humans or human-like figures. ' +
@@ -946,6 +920,28 @@ export class AiImageService {
     const backViewOnlyRule =
       'show the person ONLY from behind (back view) & relatable to the sentence scene. ' +
       'He can be lying down, sitting, fallen on the ground, walking away, etc., but you MUST NOT show any face or facial details. ';
+    const lightAroundBodyRule =
+      'Surround the full body with a strong, radiant light aura/glow from all sides, clearly wrapping around the body outline.';
+    const targetedBackViewRule = hasMultipleReferencedCharacters
+      ? backViewCharacters
+        .map(
+          (character) =>
+            `${character.name} must be shown ONLY from behind (back view) and you MUST NOT show ${character.name}'s face or facial details.`,
+        )
+        .join(' ')
+      : forceBackView
+        ? backViewOnlyRule.trim()
+        : '';
+    const targetedLightAroundBodyRule = hasMultipleReferencedCharacters
+      ? lightAroundBodyCharacters
+        .map(
+          (character) =>
+            `Apply the strong radiant light aura wrapping all around the full body ONLY to ${character.name}.`,
+        )
+        .join(' ')
+      : forceLightAroundBody
+        ? lightAroundBodyRule
+        : '';
     try {
       let prompt = (dto.prompt ?? '').trim();
       if (!prompt) {
@@ -956,44 +952,40 @@ export class AiImageService {
           frameType === 'single'
             ? ''
             : (frameType === 'start'
-                ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
-                : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
-              (continuityPrompt
-                ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
-                : '');
+              ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
+              : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
+            (continuityPrompt
+              ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
+              : '');
 
         const characterRefsBlock = referencedCharacterKeys.length
           ? (() => {
-              const resolveDescription = (key: string): string | null => {
-                if (canonicalCharacters?.length) {
-                  const c = canonicalCharacters.find((cc) => cc.key === key);
-                  return c ? `${c.key}: ${c.description}` : null;
-                }
-                if (characterBible) {
-                  const c = characterBible.byKey[key];
-                  return c ? `${c.key}: ${c.description}` : null;
-                }
-                return null;
-              };
+            const resolveDescription = (key: string): string | null => {
+              if (canonicalCharacters?.length) {
+                const c = canonicalCharacters.find((cc) => cc.key === key);
+                return c ? `${c.name}: ${c.description}` : null;
+              }
+              if (characterBible) {
+                const c = characterBible.byKey[key];
+                return c ? `${c.name}: ${c.description}` : null;
+              }
+              return null;
+            };
 
-              const lines = referencedCharacterKeys
-                .map(resolveDescription)
-                .filter(Boolean)
-                .join('\n');
 
-              return lines
-                ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
-                    lines +
-                    '\n\n'
-                : '';
-            })()
+            const lines = referencedCharacterKeys
+              .map(resolveDescription)
+              .filter(Boolean)
+              .join('\n');
+
+            return lines
+              ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
+              lines +
+              '\n\n'
+              : '';
+          })()
           : '';
-
         if (!useForcedCharactersOverride) {
-          console.log(
-            { blockHumans, forceBackView },
-            'mentionsAllah/Prophet/Sahaba flags',
-          );
           console.log(referencedCharacterKeys, 'referencedCharacterKeys');
           console.log(effectiveEraLine, 'effectiveEraLine');
         } else {
@@ -1003,55 +995,84 @@ export class AiImageService {
           );
         }
 
-        prompt =
-          (
-            await this.llm.completeText({
-              model: promptModel,
-              maxTokens: 250,
-              temperature: 0.8,
-              messages: [
-                {
-                  role: 'system',
-                  content:
-                    'You are a visual prompt engineer for image generation models. ' +
-                    'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
-                    'You need to approach this from a very creative/weird color prespective' +
-                    'ABSOLUTE RULE: Do not add any textual elements in the image. ' +
-                    AiImageService.NO_TEXT_PROMPT_SUFFIX +
-                    (frameBlock ? frameBlock + '\n' : '') +
-                    (blockHumans
-                      ? noHumanFiguresRule
-                      : forceBackView
-                        ? backViewOnlyRule +
-                          (referencedCharacterKeys.length
-                            ? ' You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s).'
-                            : '')
-                        : referencedCharacterKeys.length
-                          ? 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
-                          : ''),
-                },
-                {
-                  role: 'user',
-                  content:
-                    (effectiveEraLine
-                      ? `SCRIPT ERA (use ONLY for era/time):\n${effectiveEraLine}\n\n`
-                      : '') +
-                    characterRefsBlock +
-                    (frameBlock ? `${frameBlock}\n\n` : '') +
-                    `Sentence: "${dto.sentence}"\n` +
-                    `Desired style: ${style}.\n\n` +
-                    'Important constraints:\n' +
-                    '- Do not depict women/females.\n' +
-                    (focusMaleCharacter
-                      ? '- Include the male character(s) implied by the sentence and focus on their action; do not add extra characters beyond what the sentence implies.\n'
-                      : '') +
-                    'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.' +
-                    'The prompt should be on point and concise to best capture the scene for image generation. ',
-                },
-              ],
-            })
-          )?.trim() || dto.sentence;
+        try {
+          prompt =
+            (
+              await this.llm.completeText({
+                model: promptModel,
+                maxTokens: 250,
+                temperature: 0.8,
+                retries: 2,
+                messages: [
+                  {
+                    role: 'system',
+                    content:
+                      (() => {
+                        const humanDepictionRule = [
+                          targetedBackViewRule,
+                          targetedLightAroundBodyRule,
+                          referencedCharacterKeys.length
+                            ? forceBackView
+                              ? 'You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s).'
+                              : 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
+                            : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ');
+
+                        return (
+                          'You are a visual prompt engineer for image generation models. ' +
+                          'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
+                          'You need to approach this from a very creative/weird color prespective' +
+                          'ABSOLUTE RULE: Do not add any textual elements in the image. ' +
+                          AiImageService.NO_TEXT_PROMPT_SUFFIX +
+                          (frameBlock ? frameBlock + '\n' : '') +
+                          humanDepictionRule
+                        );
+                      })(),
+                  },
+                  {
+                    role: 'user',
+                    content:
+                      (effectiveEraLine
+                        ? `SCRIPT ERA (use ONLY for era/time):\n${effectiveEraLine}\n\n`
+                        : '') +
+                      characterRefsBlock +
+                      (frameBlock ? `${frameBlock}\n\n` : '') +
+                      `Sentence: "${dto.sentence}"\n` +
+                      `Desired style: ${style}.\n\n` +
+                      'Important constraints:\n' +
+                      '- Do not depict women/females.\n' +
+                      (targetedBackViewRule
+                        ? `- ${targetedBackViewRule}\n`
+                        : '') +
+                      (targetedLightAroundBodyRule
+                        ? `- ${targetedLightAroundBodyRule}\n`
+                        : '') +
+                      // (focusMaleCharacter
+                      //   ? '- Include the male character(s) implied by the sentence and focus on their action; do not add extra characters beyond what the sentence implies.\n'
+                      //   : '') +
+                      'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.' +
+                      'The prompt should be on point and concise to best capture the scene for image generation. ',
+                  },
+                ],
+              })
+            )?.trim() || dto.sentence;
+        } catch (error: any) {
+          console.error(
+            'Prompt generation failed after retries; falling back to sentence.',
+            {
+              message: error?.message,
+              status: error?.status,
+              code: error?.code,
+              type: error?.type,
+            },
+          );
+          prompt = dto.sentence;
+        }
+        console.log('Generated prompt from LLM:', prompt);
       } else {
+        console.log('Using provided prompt without LLM processing.');
         prompt = String(prompt ?? '').trim();
         const styleText = (style ?? '').trim();
         if (styleText) {
@@ -1092,26 +1113,49 @@ export class AiImageService {
           }
         }
 
-        if (blockHumans) {
-          const hasNoHumans =
-            /\bno\s+(people|humans|human\s+figures?)\b|\bno\s+faces\b|\bno\s+hands\b|\bno\s+silhouettes\b|\bnon[-\s]?figurative\b/i.test(
-              prompt,
-            );
-          if (!hasNoHumans) {
-            prompt = `${prompt}, no people, no humans, no faces, no hands, no silhouettes`;
-          }
-        } else {
+        // if (blockHumans) {
+        //   const hasNoHumans =
+        //     /\bno\s+(people|humans|human\s+figures?)\b|\bno\s+faces\b|\bno\s+hands\b|\bno\s+silhouettes\b|\bnon[-\s]?figurative\b/i.test(
+        //       prompt,
+        //     );
+        //   if (!hasNoHumans) {
+        //     prompt = `${prompt}, no people, no humans, no faces, no hands, no silhouettes`;
+        //   }
+        // } else 
+        {
           if (forceBackView) {
-            const hasBackView =
-              /\b(back\s*view|from\s+behind|rear\s*view|seen\s+from\s+behind)\b/i.test(
-                prompt,
-              );
-            const hasNoFace =
-              /\bno\s+face\b|\bface\s+not\s+visible\b|\bwithout\s+(a\s+)?face\b/i.test(
-                prompt,
-              );
-            if (!hasBackView || !hasNoFace) {
-              prompt = `${prompt}, back view only, seen from behind, face not visible`;
+            if (targetedBackViewRule) {
+              if (!prompt.includes(targetedBackViewRule)) {
+                prompt = `${prompt}, ${targetedBackViewRule}`;
+              }
+            } else {
+              const hasBackView =
+                /\b(back\s*view|from\s+behind|rear\s*view|seen\s+from\s+behind)\b/i.test(
+                  prompt,
+                );
+              const hasNoFace =
+                /\bno\s+face\b|\bface\s+not\s+visible\b|\bwithout\s+(a\s+)?face\b/i.test(
+                  prompt,
+                );
+              if (!hasBackView || !hasNoFace) {
+                prompt = `${prompt}, back view only, seen from behind, face not visible`;
+              }
+            }
+          }
+
+          if (forceLightAroundBody) {
+            if (targetedLightAroundBodyRule) {
+              if (!prompt.includes(targetedLightAroundBodyRule)) {
+                prompt = `${prompt}, ${targetedLightAroundBodyRule}`;
+              }
+            } else {
+              const hasLightAroundBody =
+                /\b(light\s+(all\s+around|around)\s+the\s+body|light\s+aura|radiant\s+light|glow\s+around\s+the\s+body|surrounded\s+by\s+light)\b/i.test(
+                  prompt,
+                );
+              if (!hasLightAroundBody) {
+                prompt = `${prompt}, radiant light aura surrounding the full body from all sides`;
+              }
             }
           }
 

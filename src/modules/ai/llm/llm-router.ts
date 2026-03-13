@@ -293,119 +293,144 @@ export class LlmRouter {
     const maxTokens = Number.isFinite(params.maxTokens)
       ? Number(params.maxTokens)
       : 2048;
+    const retries = Number.isFinite(params.retries)
+      ? Math.max(0, Number(params.retries))
+      : 0;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-    if (isGeminiModel(model)) {
-      if (!this.gemini) {
-        throw new Error(
-          'GEMINI_API_KEY is not set, but a Gemini model was requested.',
-        );
-      }
+    const completeOnce = async (): Promise<string> => {
 
-      const { systemText, contents } = toGeminiContents(params.messages);
-      const generativeModel = this.gemini.getGenerativeModel({
-        model,
-        ...(systemText
-          ? {
-              systemInstruction: {
-                role: 'system',
-                parts: [{ text: systemText }],
-              },
-            }
-          : {}),
-      } as any);
-
-      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      const maxAttempts = 3;
-
-      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        try {
-          const result = await generativeModel.generateContent({
-            contents,
-            generationConfig: {
-              temperature: params.temperature,
-              maxOutputTokens: maxTokens,
-            },
-          } as any);
-
-          return String(result?.response?.text?.() ?? '');
-        } catch (err: any) {
-          const status = Number(err?.status ?? err?.response?.status ?? NaN);
-          const message = String(err?.message ?? 'Gemini request failed');
-
-          if (status === 404) {
-            throw new Error(
-              `Gemini model "${model}" is not available for this API key or does not support generateContent. ` +
-                'Pick a different Gemini model (e.g. gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash).',
-            );
-          }
-
-          if (status === 429 && attempt < maxAttempts) {
-            const backoffMs = 500 * Math.pow(2, attempt - 1);
-            await sleep(backoffMs);
-            continue;
-          }
-
-          throw new Error(message);
+      if (isGeminiModel(model)) {
+        if (!this.gemini) {
+          throw new Error(
+            'GEMINI_API_KEY is not set, but a Gemini model was requested.',
+          );
         }
+
+        const { systemText, contents } = toGeminiContents(params.messages);
+        const generativeModel = this.gemini.getGenerativeModel({
+          model,
+          ...(systemText
+            ? {
+                systemInstruction: {
+                  role: 'system',
+                  parts: [{ text: systemText }],
+                },
+              }
+            : {}),
+        } as any);
+
+        const maxAttempts = 3;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          try {
+            const result = await generativeModel.generateContent({
+              contents,
+              generationConfig: {
+                temperature: params.temperature,
+                maxOutputTokens: maxTokens,
+              },
+            } as any);
+
+            return String(result?.response?.text?.() ?? '');
+          } catch (err: any) {
+            const status = Number(err?.status ?? err?.response?.status ?? NaN);
+            const message = String(err?.message ?? 'Gemini request failed');
+
+            if (status === 404) {
+              throw new Error(
+                `Gemini model "${model}" is not available for this API key or does not support generateContent. ` +
+                  'Pick a different Gemini model (e.g. gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash).',
+              );
+            }
+
+            if (status === 429 && attempt < maxAttempts) {
+              const backoffMs = 500 * Math.pow(2, attempt - 1);
+              await sleep(backoffMs);
+              continue;
+            }
+
+            throw new Error(message);
+          }
+        }
+
+        return '';
       }
 
-      return '';
-    }
+      if (isAnthropicModel(model)) {
+        if (!this.deps.anthropic) {
+          throw new Error(
+            'ANTHROPIC_API_KEY is not set, but an Anthropic model was requested.',
+          );
+        }
 
-    if (isAnthropicModel(model)) {
-      if (!this.deps.anthropic) {
+        const { system, messages } = splitSystemMessages(params.messages);
+        const msg = await this.deps.anthropic.messages.create({
+          model,
+          max_tokens: maxTokens,
+          temperature: params.temperature,
+          system,
+          messages,
+        });
+
+        return extractAnthropicText(msg);
+      }
+
+      if (isGrokModel(model)) {
+        if (!this.deps.grok) {
+          throw new Error(
+            'GROK_API_KEY is not set, but a Grok (xAI) model was requested.',
+          );
+        }
+
+        const completion = await this.deps.grok.chat.completions.create({
+          model,
+          messages: params.messages as any,
+          temperature: params.temperature,
+          max_tokens: maxTokens,
+        });
+
+        return String(completion.choices?.[0]?.message?.content ?? '');
+      }
+
+      if (!this.deps.openai) {
         throw new Error(
-          'ANTHROPIC_API_KEY is not set, but an Anthropic model was requested.',
+          'OPENAI_API_KEY is not set, but an OpenAI model was requested.',
         );
       }
 
-      const { system, messages } = splitSystemMessages(params.messages);
-      const msg = await this.deps.anthropic.messages.create({
-        model,
-        max_tokens: maxTokens,
-        temperature: params.temperature,
-        system,
-        messages,
-      });
+      const openAiTokenParam = prefersMaxCompletionTokens(model)
+        ? { max_completion_tokens: maxTokens }
+        : { max_tokens: maxTokens };
 
-      return extractAnthropicText(msg);
-    }
-
-    if (isGrokModel(model)) {
-      if (!this.deps.grok) {
-        throw new Error(
-          'GROK_API_KEY is not set, but a Grok (xAI) model was requested.',
-        );
-      }
-
-      const completion = await this.deps.grok.chat.completions.create({
+      const completion = await this.deps.openai.chat.completions.create({
         model,
         messages: params.messages as any,
         temperature: params.temperature,
-        max_tokens: maxTokens,
+        ...(openAiTokenParam as any),
       });
 
       return String(completion.choices?.[0]?.message?.content ?? '');
+    };
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        const text = String((await completeOnce()) ?? '');
+        if (text.trim() || attempt >= retries) {
+          return text;
+        }
+      } catch (error) {
+        lastError = error;
+        if (attempt >= retries) throw error;
+      }
+
+      const backoffMs = 250 * Math.pow(2, attempt);
+      await sleep(backoffMs);
     }
 
-    if (!this.deps.openai) {
-      throw new Error(
-        'OPENAI_API_KEY is not set, but an OpenAI model was requested.',
-      );
-    }
-
-    const openAiTokenParam = prefersMaxCompletionTokens(model)
-      ? { max_completion_tokens: maxTokens }
-      : { max_tokens: maxTokens };
-
-    const completion = await this.deps.openai.chat.completions.create({
-      model,
-      messages: params.messages as any,
-      temperature: params.temperature,
-      ...(openAiTokenParam as any),
-    });
-
-    return String(completion.choices?.[0]?.message?.content ?? '');
+    if (lastError) throw lastError;
+    return '';
   }
 
   async completeJson<T = any>(params: LlmCompleteJsonParams): Promise<T> {

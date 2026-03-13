@@ -17,6 +17,7 @@ export type LlmCompleteParams = {
   messages: LlmMessage[];
   temperature?: number;
   maxTokens?: number;
+  retries?: number;
 };
 
 export type LlmCompleteJsonParams = {
