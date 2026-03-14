@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { GenerateScriptDto } from './dto/generate-script.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
+import { GenerateMediaSearchTermDto } from './dto/generate-media-search-term.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
 import { YoutubeWallpaperDto } from './dto/youtube-wallpaper.dto';
 import { GenerateVideoFromFramesDto } from './dto/generate-video-from-frames.dto';
@@ -125,6 +126,10 @@ export class AiService {
 
   createEnhanceSentenceStream(dto: EnhanceSentenceDto) {
     return this.textService.createEnhanceSentenceStream(dto);
+  }
+
+  generateMediaSearchTerm(dto: GenerateMediaSearchTermDto) {
+    return this.textService.generateMediaSearchTerm(dto);
   }
 
   createVoiceStyleInstructionsStream(dto: { script: string; model?: string }) {

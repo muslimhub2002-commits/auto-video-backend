@@ -20,6 +20,7 @@ import { SplitIntoShortsDto } from './dto/split-into-shorts.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
 import { GenerateVoiceDto } from './dto/generate-voice.dto';
 import { GenerateVoiceStyleDto } from './dto/generate-voice-style.dto';
+import { GenerateMediaSearchTermDto } from './dto/generate-media-search-term.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
 import { TranslateDto } from './dto/translate.dto';
@@ -160,6 +161,12 @@ export class AiController {
       }
       res.end('\n[Error] Failed to stream enhanced sentence.');
     }
+  }
+
+  @Post('generate-media-search-term')
+  @HttpCode(HttpStatus.OK)
+  async generateMediaSearchTerm(@Body() body: GenerateMediaSearchTermDto) {
+    return this.aiService.generateMediaSearchTerm(body);
   }
 
   /**
