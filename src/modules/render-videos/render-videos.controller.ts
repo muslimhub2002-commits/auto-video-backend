@@ -582,7 +582,10 @@ export class RenderVideosController {
       text: s.text,
       isSuspense: s.isSuspense,
       soundEffectsAlignToSceneEnd: s.soundEffectsAlignToSceneEnd,
-      mediaType: 'image',
+      mediaType: s.mediaType === 'video' ? 'video' : 'image',
+      ...(typeof (s as any).videoUrl === 'string' && String((s as any).videoUrl).trim()
+        ? { videoUrl: String((s as any).videoUrl).trim() }
+        : {}),
       ...(Array.isArray((s as any).soundEffects)
         ? { soundEffects: (s as any).soundEffects }
         : {}),

@@ -624,8 +624,8 @@ export class AiTextService {
         '- Do NOT include Allah/God as a character.\n' +
         '- If the script mentions Sahaba (companions of Prophet Muhammad), still extract them but set the boolean flags accordingly.\n' +
         '- Each character.description MUST be only two lines max & include facial + physical attributes for consistency.\n' +
-        '- For any character with isProphet=true: DO NOT describe face details Write the description to be safe for BACK VIEW depiction only (physique + clothing) & make sure to include that there is flashy light all around the body & face.\n' +
-        '- For any character with isSahaba=true (except an Army): DO NOT describe face details (no eyes/nose/mouth). Write the description to be safe for BACK VIEW depiction only (physique + clothing + silhouette).\n' +
+        '- For any character with isProphet=true: DO NOT describe face details. Write the description to be safe for a VERY FAR, DISTANT BACK VIEW depiction only (small figure, seen from behind, no facial visibility) using only physique + clothing, and include that there is flashy light all around the body & face.\n' +
+        '- For any character with isSahaba=true (except an Army): DO NOT describe face details (no eyes/nose/mouth). Write the description to be safe for a VERY FAR, DISTANT BACK VIEW depiction only (small figure, seen from behind, no facial visibility) using physique + clothing + silhouette.\n' +
         '- Character keys must be short like C1, C2, C3... in first-appearance order.\n' +
         '- If unsure about any boolean flag, set it to false.\n' +
         '- No extra keys. No extra text.';
@@ -664,7 +664,7 @@ export class AiTextService {
         '- Extract the different canonical ERAS that are relevant to the story.\n' +
         '- Use keys E1, E2, E3... (do NOT use E0).\n' +
         '- Keep era.name short (e.g. "7th century Arabia", "Ottoman era", "Modern day").\n' +
-        '- The description should be maximum three lines & include (environment, lighting, color tone) of the era.\n' +
+        '- The description should be maximum two lines & include (environment, lighting, color tone) of the era.\n' +
         '- You need to approach this from a very creative/weird color perspective.\n' +
         "- Don't add in the description any human or character details; focus only on era-specific environment/atmospheric details.\n" +
         '- If the script implies a time progression, assign eras accordingly. If the era is ambiguous or not visually distinct, it can be null.\n';

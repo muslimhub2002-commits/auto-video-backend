@@ -55,6 +55,7 @@ import {
 import {
   renderWithRemotionLocal as renderWithRemotionLocalExternal,
   renderWithRemotionOnLambda as renderWithRemotionOnLambdaExternal,
+  resolveRemotionRenderTimeoutMs,
 } from './remotion/remotion-render';
 
 @Injectable()
@@ -434,6 +435,7 @@ export class RenderVideosService implements OnModuleInit {
     timeline: any;
     outputFsPath: string;
     publicDir: string;
+    timeoutMs?: number;
   }) {
     if (shouldUseRemotionLambda()) {
       await renderWithRemotionOnLambdaExternal({
@@ -455,6 +457,7 @@ export class RenderVideosService implements OnModuleInit {
       timeline: params.timeline,
       outputFsPath: params.outputFsPath,
       publicDir: params.publicDir,
+      timeoutMs: params.timeoutMs,
     });
   }
 
@@ -910,9 +913,16 @@ export class RenderVideosService implements OnModuleInit {
       await this.jobsRepo.save(job);
 
       const outputFsPath = this.getVideoFsPath(jobId);
+      const renderTimeoutMs = resolveRemotionRenderTimeoutMs(timeline);
       await this.withTimeout(
-        this.renderWithRemotion({ jobId, timeline, outputFsPath, publicDir }),
-        20 * 60_000,
+        this.renderWithRemotion({
+          jobId,
+          timeline,
+          outputFsPath,
+          publicDir,
+          timeoutMs: renderTimeoutMs,
+        }),
+        renderTimeoutMs,
         'Remotion render',
       );
 

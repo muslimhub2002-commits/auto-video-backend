@@ -14,6 +14,47 @@ const getPositiveIntOrNull = (value: unknown) => {
   return Math.floor(num);
 };
 
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+export const resolveRemotionRenderTimeoutMs = (timeline: any) => {
+  const explicitMs = getPositiveIntOrNull(process.env.REMOTION_RENDER_TIMEOUT_MS);
+  if (explicitMs) {
+    return explicitMs;
+  }
+
+  const explicitMinutes = getPositiveIntOrNull(
+    process.env.REMOTION_RENDER_TIMEOUT_MINUTES,
+  );
+  if (explicitMinutes) {
+    return explicitMinutes * 60_000;
+  }
+
+  const fpsRaw = Number(timeline?.fps ?? 30);
+  const fps = Number.isFinite(fpsRaw) && fpsRaw > 0 ? fpsRaw : 30;
+  const durationInFramesRaw = Number(timeline?.durationInFrames ?? 0);
+  const durationInFrames =
+    Number.isFinite(durationInFramesRaw) && durationInFramesRaw > 0
+      ? durationInFramesRaw
+      : 0;
+  const durationSeconds = durationInFrames > 0 ? durationInFrames / fps : 0;
+  const sceneCount = Array.isArray(timeline?.scenes) ? timeline.scenes.length : 0;
+  const widthRaw = Number(timeline?.width ?? 0);
+  const heightRaw = Number(timeline?.height ?? 0);
+  const megapixels =
+    Number.isFinite(widthRaw) && Number.isFinite(heightRaw) && widthRaw > 0 && heightRaw > 0
+      ? (widthRaw * heightRaw) / 1_000_000
+      : 1;
+
+  const baseMs = 20 * 60_000;
+  const durationBudgetMs = durationSeconds * 90_000 / 60;
+  const sceneBudgetMs = sceneCount * 15_000;
+  const resolutionMultiplier = megapixels >= 2 ? 1.5 : megapixels >= 1 ? 1.2 : 1;
+  const computedMs = Math.ceil((baseMs + durationBudgetMs + sceneBudgetMs) * resolutionMultiplier);
+
+  return clamp(computedMs, 20 * 60_000, 3 * 60 * 60_000);
+};
+
 const normalizeAndValidateLambdaServeUrl = (raw: string) => {
   const trimmed = (raw ?? '').trim();
   if (!trimmed) {
@@ -112,6 +153,7 @@ export const renderWithRemotionLocal = async (params: {
   timeline: any;
   outputFsPath: string;
   publicDir: string;
+  timeoutMs?: number;
 }) => {
   const bundler: any = await import('@remotion/bundler');
   const renderer: any = await import('@remotion/renderer');
@@ -166,7 +208,10 @@ export const renderWithRemotionLocal = async (params: {
     inputProps: { timeline: params.timeline },
     chromiumOptions,
     concurrency,
-    timeoutInMilliseconds: 600_000,
+    timeoutInMilliseconds:
+      typeof params.timeoutMs === 'number' && params.timeoutMs > 0
+        ? params.timeoutMs
+        : resolveRemotionRenderTimeoutMs(params.timeline),
   });
 };
 

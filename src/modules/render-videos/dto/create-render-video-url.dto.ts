@@ -63,6 +63,14 @@ class SentenceDto {
   text: string;
 
   @IsOptional()
+  @IsIn(['image', 'video'])
+  mediaType?: 'image' | 'video';
+
+  @IsOptional()
+  @IsString()
+  videoUrl?: string;
+
+  @IsOptional()
   @IsBoolean()
   soundEffectsAlignToSceneEnd?: boolean;
 

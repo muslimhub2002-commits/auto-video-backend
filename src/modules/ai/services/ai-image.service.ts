@@ -918,15 +918,15 @@ export class AiImageService {
       'NO people, NO faces, NO heads, NO hands, NO bodies, NO skin, NO silhouettes, NO characters, NO crowds, NO humanoid statues.';
 
     const backViewOnlyRule =
-      'show the person ONLY from behind (back view) & relatable to the sentence scene. ' +
-      'He can be lying down, sitting, fallen on the ground, walking away, etc., but you MUST NOT show any face or facial details. ';
+      'show the person as a small, distant figure VERY FAR from the camera and ONLY from behind (back view), while still being relatable to the sentence scene. ' +
+      'He can be lying down, sitting, fallen on the ground, walking away, etc., but you MUST keep the shot wide and distant and you MUST NOT show any face or facial details. ';
     const lightAroundBodyRule =
       'Surround the full body with a strong, radiant light aura/glow from all sides, clearly wrapping around the body outline.';
     const targetedBackViewRule = hasMultipleReferencedCharacters
       ? backViewCharacters
         .map(
           (character) =>
-            `${character.name} must be shown ONLY from behind (back view) and you MUST NOT show ${character.name}'s face or facial details.`,
+            `${character.name} must be shown as a small, distant figure VERY FAR from the camera and ONLY from behind (back view), and you MUST NOT show ${character.name}'s face or facial details.`,
         )
         .join(' ')
       : forceBackView
@@ -1013,7 +1013,7 @@ export class AiImageService {
                           targetedLightAroundBodyRule,
                           referencedCharacterKeys.length
                             ? forceBackView
-                              ? 'You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s).'
+                              ? 'You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s), and if any referenced character is Prophet/Sahaba they must appear as a small, distant rear-view figure very far from the camera.'
                               : 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
                             : '',
                         ]
@@ -1022,8 +1022,8 @@ export class AiImageService {
 
                         return (
                           'You are a visual prompt engineer for image generation models. ' +
-                          'Your prompt MUST visually express that emotion through composition, lighting, color palette, environment, and symbolism. ' +
-                          'You need to approach this from a very creative/weird color prespective' +
+                          'Your prompt MUST visually express the exact sentence that is happening in the context of the script' +
+                          'If there are specific characters you need to define their position in the scene(ALL SELECTED CHARACTERS MUST BE INCLUDED) ' +
                           'ABSOLUTE RULE: Do not add any textual elements in the image. ' +
                           AiImageService.NO_TEXT_PROMPT_SUFFIX +
                           (frameBlock ? frameBlock + '\n' : '') +
@@ -1049,9 +1049,6 @@ export class AiImageService {
                       (targetedLightAroundBodyRule
                         ? `- ${targetedLightAroundBodyRule}\n`
                         : '') +
-                      // (focusMaleCharacter
-                      //   ? '- Include the male character(s) implied by the sentence and focus on their action; do not add extra characters beyond what the sentence implies.\n'
-                      //   : '') +
                       'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.' +
                       'The prompt should be on point and concise to best capture the scene for image generation. ',
                   },
@@ -1133,12 +1130,16 @@ export class AiImageService {
                 /\b(back\s*view|from\s+behind|rear\s*view|seen\s+from\s+behind)\b/i.test(
                   prompt,
                 );
+              const hasDistanceRule =
+                /\b(distant\s+figure|very\s+far\s+from\s+the\s+camera|small\s+figure|wide\s+shot|from\s+a\s+distance)\b/i.test(
+                  prompt,
+                );
               const hasNoFace =
                 /\bno\s+face\b|\bface\s+not\s+visible\b|\bwithout\s+(a\s+)?face\b/i.test(
                   prompt,
                 );
-              if (!hasBackView || !hasNoFace) {
-                prompt = `${prompt}, back view only, seen from behind, face not visible`;
+              if (!hasBackView || !hasDistanceRule || !hasNoFace) {
+                prompt = `${prompt}, distant small figure, very far from the camera, wide shot, back view only, seen from behind, face not visible`;
               }
             }
           }
