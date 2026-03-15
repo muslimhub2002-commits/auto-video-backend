@@ -184,11 +184,11 @@ export class RenderVideosService implements OnModuleInit {
     backgroundMusicSrc?: string | null;
     backgroundMusicVolume?: number;
   }) {
-    if (this.isServerlessRuntime()) {
-      throw new ServiceUnavailableException(
-        'Video rendering requires persistent storage. Cloudinary video uploads are disabled, so rendering is not supported on serverless runtimes.',
-      );
-    }
+    // if (this.isServerlessRuntime()) {
+    //   throw new ServiceUnavailableException(
+    //     'Video rendering requires persistent storage. Cloudinary video uploads are disabled, so rendering is not supported on serverless runtimes.',
+    //   );
+    // }
 
     const job = this.jobsRepo.create({
       status: 'queued',
