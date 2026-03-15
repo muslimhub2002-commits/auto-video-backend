@@ -563,11 +563,11 @@ export class RenderVideosController {
 
   @Post('url')
   async createFromUrls(@Body() body: CreateRenderVideoUrlDto) {
-    if (this.renderVideosService.isServerlessRuntime()) {
-      throw new ServiceUnavailableException(
-        'Video rendering jobs cannot run reliably on Vercel Serverless. Deploy the backend to a long-running server (Render/Railway/Fly) or run a dedicated worker for Remotion rendering.',
-      );
-    }
+    // if (this.renderVideosService.isServerlessRuntime()) {
+    //   throw new ServiceUnavailableException(
+    //     'Video rendering jobs cannot run reliably on Vercel Serverless. Deploy the backend to a long-running server (Render/Railway/Fly) or run a dedicated worker for Remotion rendering.',
+    //   );
+    // }
 
     if (!body?.audioUrl) {
       throw new BadRequestException('Missing `audioUrl`');
@@ -681,11 +681,11 @@ export class RenderVideosController {
       images?: Multer.File[];
     },
   ) {
-    if (this.renderVideosService.isServerlessRuntime()) {
-      throw new ServiceUnavailableException(
-        'Video rendering jobs cannot run reliably on serverless runtimes when Cloudinary video uploads are disabled. Deploy the backend to a long-running server (Render/Railway/Fly).',
-      );
-    }
+    // if (this.renderVideosService.isServerlessRuntime()) {
+    //   throw new ServiceUnavailableException(
+    //     'Video rendering jobs cannot run reliably on serverless runtimes when Cloudinary video uploads are disabled. Deploy the backend to a long-running server (Render/Railway/Fly).',
+    //   );
+    // }
 
     const voice = files.voiceOver?.[0];
     const images = files.images ?? [];
@@ -766,11 +766,11 @@ export class RenderVideosController {
       images?: Multer.File[];
     },
   ) {
-    if (this.renderVideosService.isServerlessRuntime()) {
-      throw new ServiceUnavailableException(
-        'Video rendering jobs cannot run reliably on serverless runtimes when Cloudinary video uploads are disabled. Deploy the backend to a long-running server (Render/Railway/Fly).',
-      );
-    }
+    // if (this.renderVideosService.isServerlessRuntime()) {
+    //   throw new ServiceUnavailableException(
+    //     'Video rendering jobs cannot run reliably on serverless runtimes when Cloudinary video uploads are disabled. Deploy the backend to a long-running server (Render/Railway/Fly).',
+    //   );
+    // }
 
     const voice = files.voiceOver?.[0];
     const images = files.images ?? [];
