@@ -48,6 +48,13 @@ type FreestockVideoItem = {
 
 type FreestockProvider = 'pexels' | 'pixabay';
 
+const MAX_FREESTOCK_FETCH_PAGES = 4;
+
+const getFreestockFetchPageSize = (limit: number) => {
+  const safeLimit = Math.max(1, limit);
+  return Math.min(50, Math.max(safeLimit, safeLimit * 2));
+};
+
 const normalizeOrientation = (value: unknown): Video['video_size'] | null => {
   const normalized = String(value ?? '')
     .trim()
@@ -213,27 +220,124 @@ export class VideosLibraryService {
     try {
       const page = Math.max(1, Number(params.page) || 1);
       const limit = Math.min(50, Math.max(1, Number(params.limit) || 20));
+      const requestLimit = getFreestockFetchPageSize(limit);
       if (provider === 'pixabay') {
-        const response = query
-          ? await searchPixabayVideos({
-              query,
-              page,
-              perPage: limit,
+        const items: FreestockVideoItem[] = [];
+        let total = 0;
+
+        for (
+          let providerPage = page, fetchCount = 0;
+          fetchCount < MAX_FREESTOCK_FETCH_PAGES && items.length < limit;
+          providerPage += 1, fetchCount += 1
+        ) {
+          const response = query
+            ? await searchPixabayVideos({
+                query,
+                page: providerPage,
+                perPage: requestLimit,
+              })
+            : await browsePixabayVideos({
+                page: providerPage,
+                perPage: requestLimit,
+              });
+
+          total = Number(response.totalHits) || Number(response.total) || total;
+
+          const batchItems = (response.hits ?? [])
+            .map<FreestockVideoItem | null>((video) => {
+              const selectedFile = pickPixabayVideoFile(video.videos);
+              if (!selectedFile?.url) {
+                return null;
+              }
+
+              const width = Number(selectedFile.width) || null;
+              const height = Number(selectedFile.height) || null;
+              if (!matchesRequestedVideoOrientation(params.orientation, width, height)) {
+                return null;
+              }
+              if (!matchesRequestedSize(params.size, width, height)) {
+                return null;
+              }
+
+              return {
+                id: `pixabay-video-${video.id}`,
+                externalId: String(video.id),
+                source: 'pixabay' as const,
+                video: selectedFile.url,
+                thumbnail: selectedFile.thumbnail?.trim() || null,
+                video_type: video.tags?.trim() || query || null,
+                video_size: inferVideoOrientation(width, height),
+                duration: Number.isFinite(video.duration) ? Number(video.duration) : null,
+                width,
+                height,
+                authorName: video.user?.trim() || null,
+                authorUrl: buildPixabayAuthorUrl(video.user, Number(video.user_id) || null),
+                pexelsUrl: null,
+                pixabayUrl: video.pageURL?.trim() || null,
+                downloadUrl: selectedFile.url,
+              } satisfies FreestockVideoItem;
             })
-          : await browsePixabayVideos({
-              page,
-              perPage: limit,
+            .filter((item): item is FreestockVideoItem => item !== null);
+
+          items.push(...batchItems.slice(0, limit - items.length));
+
+          if ((response.hits ?? []).length < requestLimit) {
+            break;
+          }
+        }
+
+        return {
+          items,
+          total: total || items.length,
+          page,
+          limit,
+        };
+      }
+
+      const items: FreestockVideoItem[] = [];
+      let total = 0;
+
+      for (
+        let providerPage = page, fetchCount = 0;
+        fetchCount < MAX_FREESTOCK_FETCH_PAGES && items.length < limit;
+        providerPage += 1, fetchCount += 1
+      ) {
+        const response = query
+          ? await searchPexelsVideos({
+              query,
+              page: providerPage,
+              perPage: requestLimit,
+              orientation: normalizePexelsOrientation(params.orientation),
+              size: normalizePexelsSize(params.size),
+            })
+          : await browsePexelsVideos({
+              page: providerPage,
+              perPage: requestLimit,
             });
 
-        const items = (response.hits ?? [])
+        total = Number(response.total_results) || total;
+
+        const batchItems = (response.videos ?? [])
           .map<FreestockVideoItem | null>((video) => {
-            const selectedFile = pickPixabayVideoFile(video.videos);
-            if (!selectedFile?.url) {
+            const sortedFiles = [...(video.video_files ?? [])].sort((left, right) => {
+              const leftWidth = Number(left.width) || 0;
+              const rightWidth = Number(right.width) || 0;
+              return rightWidth - leftWidth;
+            });
+            const selectedFile =
+              sortedFiles.find((item) => item.quality === 'hd' && item.link) ||
+              sortedFiles.find((item) => item.link) ||
+              null;
+
+            if (!selectedFile?.link) {
               return null;
             }
 
-            const width = Number(selectedFile.width) || null;
-            const height = Number(selectedFile.height) || null;
+            const width =
+              Number.isFinite(video.width) ? Number(video.width) : Number(selectedFile.width) || null;
+            const height =
+              Number.isFinite(video.height) ? Number(video.height) : Number(selectedFile.height) || null;
+
             if (!matchesRequestedVideoOrientation(params.orientation, width, height)) {
               return null;
             }
@@ -242,95 +346,40 @@ export class VideosLibraryService {
             }
 
             return {
-              id: `pixabay-video-${video.id}`,
+              id: `pexels-video-${video.id}`,
               externalId: String(video.id),
-              source: 'pixabay' as const,
-              video: selectedFile.url,
-              thumbnail: selectedFile.thumbnail?.trim() || null,
-              video_type: video.tags?.trim() || query || null,
+              source: 'pexels' as const,
+              video: selectedFile.link,
+              thumbnail:
+                video.image?.trim() ||
+                video.video_pictures?.[0]?.picture?.trim() ||
+                null,
+              video_type: query || null,
               video_size: inferVideoOrientation(width, height),
               duration: Number.isFinite(video.duration) ? Number(video.duration) : null,
               width,
               height,
-              authorName: video.user?.trim() || null,
-              authorUrl: buildPixabayAuthorUrl(video.user, Number(video.user_id) || null),
-              pexelsUrl: null,
-              pixabayUrl: video.pageURL?.trim() || null,
-              downloadUrl: selectedFile.url,
+              authorName: video.user?.name?.trim() || null,
+              authorUrl: video.user?.url?.trim() || null,
+              pexelsUrl: video.url?.trim() || null,
+              pixabayUrl: null,
+              downloadUrl: selectedFile.link,
             } satisfies FreestockVideoItem;
           })
           .filter((item): item is FreestockVideoItem => item !== null);
 
-        return {
-          items,
-          total: Number(response.totalHits) || Number(response.total) || items.length,
-          page,
-          limit,
-        };
+        items.push(...batchItems.slice(0, limit - items.length));
+
+        if ((response.videos ?? []).length < requestLimit) {
+          break;
+        }
       }
-
-      const response = query
-        ? await searchPexelsVideos({
-            query,
-            page,
-            perPage: limit,
-            orientation: normalizePexelsOrientation(params.orientation),
-            size: normalizePexelsSize(params.size),
-          })
-        : await browsePexelsVideos({
-            page,
-            perPage: limit,
-          });
-
-      const items = (response.videos ?? [])
-        .map<FreestockVideoItem | null>((video) => {
-          const sortedFiles = [...(video.video_files ?? [])].sort((left, right) => {
-            const leftWidth = Number(left.width) || 0;
-            const rightWidth = Number(right.width) || 0;
-            return rightWidth - leftWidth;
-          });
-          const selectedFile =
-            sortedFiles.find((item) => item.quality === 'hd' && item.link) ||
-            sortedFiles.find((item) => item.link) ||
-            null;
-
-          if (!selectedFile?.link) {
-            return null;
-          }
-
-          return {
-            id: `pexels-video-${video.id}`,
-            externalId: String(video.id),
-            source: 'pexels' as const,
-            video: selectedFile.link,
-            thumbnail:
-              video.image?.trim() ||
-              video.video_pictures?.[0]?.picture?.trim() ||
-              null,
-            video_type: query || null,
-            video_size: inferVideoOrientation(
-              Number(video.width) || Number(selectedFile.width) || null,
-              Number(video.height) || Number(selectedFile.height) || null,
-            ),
-            duration: Number.isFinite(video.duration) ? Number(video.duration) : null,
-            width:
-              Number.isFinite(video.width) ? Number(video.width) : Number(selectedFile.width) || null,
-            height:
-              Number.isFinite(video.height) ? Number(video.height) : Number(selectedFile.height) || null,
-            authorName: video.user?.name?.trim() || null,
-            authorUrl: video.user?.url?.trim() || null,
-            pexelsUrl: video.url?.trim() || null,
-            pixabayUrl: null,
-            downloadUrl: selectedFile.link,
-          } satisfies FreestockVideoItem;
-        })
-        .filter((item): item is FreestockVideoItem => item !== null);
 
       return {
         items,
-        total: Number(response.total_results) || items.length,
-        page: Number(response.page) || page,
-        limit: Number(response.per_page) || limit,
+        total: total || items.length,
+        page,
+        limit,
       };
     } catch (error: any) {
       const message = String(error?.message ?? '').trim();

@@ -49,6 +49,13 @@ type FreestockImageItem = {
 
 type FreestockProvider = 'pexels' | 'pixabay';
 
+const MAX_FREESTOCK_FETCH_PAGES = 4;
+
+const getFreestockFetchPageSize = (limit: number) => {
+  const safeLimit = Math.max(1, limit);
+  return Math.min(50, Math.max(safeLimit, safeLimit * 2));
+};
+
 const normalizeOrientation = (value: unknown): Image['image_size'] | null => {
   const normalized = String(value ?? '')
     .trim()
@@ -239,26 +246,133 @@ export class ImagesService {
     try {
       const page = Math.max(1, Number(params.page) || 1);
       const limit = Math.min(50, Math.max(1, Number(params.limit) || 20));
+      const requestLimit = getFreestockFetchPageSize(limit);
       if (provider === 'pixabay') {
-        const response = query
-          ? await searchPixabayImages({
-              query,
-              page,
-              perPage: limit,
-              orientation: normalizePixabayOrientation(params.orientation),
-              colors: normalizePixabayColor(params.color),
+        const items: FreestockImageItem[] = [];
+        let total = 0;
+
+        for (
+          let providerPage = page, fetchCount = 0;
+          fetchCount < MAX_FREESTOCK_FETCH_PAGES && items.length < limit;
+          providerPage += 1, fetchCount += 1
+        ) {
+          const response = query
+            ? await searchPixabayImages({
+                query,
+                page: providerPage,
+                perPage: requestLimit,
+                orientation: normalizePixabayOrientation(params.orientation),
+                colors: normalizePixabayColor(params.color),
+              })
+            : await browsePixabayImages({
+                page: providerPage,
+                perPage: requestLimit,
+                orientation: normalizePixabayOrientation(params.orientation),
+                colors: normalizePixabayColor(params.color),
+              });
+
+          total = Number(response.totalHits) || Number(response.total) || total;
+
+          const batchItems = (response.hits ?? [])
+            .map<FreestockImageItem | null>((image) => {
+              const width = Number(image.imageWidth) || Number(image.webformatWidth) || null;
+              const height = Number(image.imageHeight) || Number(image.webformatHeight) || null;
+              if (!matchesRequestedImageOrientation(params.orientation, width, height)) {
+                return null;
+              }
+              if (!matchesRequestedSize(params.size, width, height)) {
+                return null;
+              }
+
+              const downloadUrl =
+                image.largeImageURL?.trim() ||
+                image.webformatURL?.trim() ||
+                image.previewURL?.trim() ||
+                '';
+
+              if (!downloadUrl) {
+                return null;
+              }
+
+              return {
+                id: `pixabay-image-${image.id}`,
+                externalId: String(image.id),
+                source: 'pixabay',
+                image: downloadUrl,
+                thumbnail:
+                  image.previewURL?.trim() ||
+                  image.webformatURL?.trim() ||
+                  downloadUrl,
+                prompt: image.tags?.trim() || null,
+                image_style: null,
+                image_size: inferImageOrientation(width, height),
+                color: null,
+                width,
+                height,
+                authorName: image.user?.trim() || null,
+                authorUrl: buildPixabayAuthorUrl(image.user, Number(image.user_id) || null),
+                pexelsUrl: null,
+                pixabayUrl: image.pageURL?.trim() || null,
+                downloadUrl,
+              } satisfies FreestockImageItem;
             })
-          : await browsePixabayImages({
-              page,
-              perPage: limit,
-              orientation: normalizePixabayOrientation(params.orientation),
-              colors: normalizePixabayColor(params.color),
+            .filter((item): item is FreestockImageItem => item !== null);
+
+          items.push(...batchItems.slice(0, limit - items.length));
+
+          if ((response.hits ?? []).length < requestLimit) {
+            break;
+          }
+        }
+
+        return {
+          items,
+          total: total || items.length,
+          page,
+          limit,
+        };
+      }
+
+      const items: FreestockImageItem[] = [];
+      let total = 0;
+
+      for (
+        let providerPage = page, fetchCount = 0;
+        fetchCount < MAX_FREESTOCK_FETCH_PAGES && items.length < limit;
+        providerPage += 1, fetchCount += 1
+      ) {
+        const response = query
+          ? await searchPexelsPhotos({
+              query,
+              page: providerPage,
+              perPage: requestLimit,
+              orientation: normalizePexelsSearchOrientation(params.orientation),
+              size: normalizePexelsSize(params.size),
+              color: String(params.color ?? '').trim() || null,
+            })
+          : await browsePexelsPhotos({
+              page: providerPage,
+              perPage: requestLimit,
             });
 
-        const items = (response.hits ?? [])
-          .map<FreestockImageItem | null>((image) => {
-            const width = Number(image.imageWidth) || Number(image.webformatWidth) || null;
-            const height = Number(image.imageHeight) || Number(image.webformatHeight) || null;
+        total = Number(response.total_results) || total;
+
+        const batchItems = (response.photos ?? [])
+          .map<FreestockImageItem | null>((photo) => {
+            const downloadUrl =
+              photo.src?.large2x ||
+              photo.src?.large ||
+              photo.src?.portrait ||
+              photo.src?.landscape ||
+              photo.src?.original ||
+              '';
+
+            if (!downloadUrl) {
+              return null;
+            }
+
+            const width = Number.isFinite(photo.width) ? photo.width : null;
+            const height = Number.isFinite(photo.height) ? photo.height : null;
             if (!matchesRequestedImageOrientation(params.orientation, width, height)) {
               return null;
             }
@@ -266,100 +380,43 @@ export class ImagesService {
               return null;
             }
 
-            const downloadUrl =
-              image.largeImageURL?.trim() ||
-              image.webformatURL?.trim() ||
-              image.previewURL?.trim() ||
-              '';
-
-            if (!downloadUrl) {
-              return null;
-            }
-
             return {
-              id: `pixabay-image-${image.id}`,
-              externalId: String(image.id),
-              source: 'pixabay',
+              id: `pexels-photo-${photo.id}`,
+              externalId: String(photo.id),
+              source: 'pexels',
               image: downloadUrl,
               thumbnail:
-                image.previewURL?.trim() ||
-                image.webformatURL?.trim() ||
+                photo.src?.medium ||
+                photo.src?.small ||
+                photo.src?.tiny ||
                 downloadUrl,
-              prompt: image.tags?.trim() || null,
+              prompt: photo.alt?.trim() || null,
               image_style: null,
               image_size: inferImageOrientation(width, height),
-              color: null,
+              color: photo.avg_color ?? null,
               width,
               height,
-              authorName: image.user?.trim() || null,
-              authorUrl: buildPixabayAuthorUrl(image.user, Number(image.user_id) || null),
-              pexelsUrl: null,
-              pixabayUrl: image.pageURL?.trim() || null,
+              authorName: photo.photographer?.trim() || null,
+              authorUrl: photo.photographer_url?.trim() || null,
+              pexelsUrl: photo.url?.trim() || null,
+              pixabayUrl: null,
               downloadUrl,
             } satisfies FreestockImageItem;
           })
           .filter((item): item is FreestockImageItem => item !== null);
 
-        return {
-          items,
-          total: Number(response.totalHits) || Number(response.total) || items.length,
-          page,
-          limit,
-        };
+        items.push(...batchItems.slice(0, limit - items.length));
+
+        if ((response.photos ?? []).length < requestLimit) {
+          break;
+        }
       }
-
-      const response = query
-        ? await searchPexelsPhotos({
-            query,
-            page,
-            perPage: limit,
-            orientation: normalizePexelsSearchOrientation(params.orientation),
-            size: normalizePexelsSize(params.size),
-            color: String(params.color ?? '').trim() || null,
-          })
-        : await browsePexelsPhotos({
-            page,
-            perPage: limit,
-          });
-
-      const items: FreestockImageItem[] = (response.photos ?? []).map((photo) => {
-        const downloadUrl =
-          photo.src?.large2x ||
-          photo.src?.large ||
-          photo.src?.landscape ||
-          photo.src?.portrait ||
-          photo.src?.original ||
-          '';
-
-        return {
-          id: `pexels-photo-${photo.id}`,
-          externalId: String(photo.id),
-          source: 'pexels',
-          image: downloadUrl,
-          thumbnail:
-            photo.src?.medium ||
-            photo.src?.small ||
-            photo.src?.tiny ||
-            downloadUrl,
-          prompt: photo.alt?.trim() || null,
-          image_style: null,
-          image_size: inferImageOrientation(photo.width, photo.height),
-          color: photo.avg_color ?? null,
-          width: Number.isFinite(photo.width) ? photo.width : null,
-          height: Number.isFinite(photo.height) ? photo.height : null,
-          authorName: photo.photographer?.trim() || null,
-          authorUrl: photo.photographer_url?.trim() || null,
-          pexelsUrl: photo.url?.trim() || null,
-          pixabayUrl: null,
-          downloadUrl,
-        };
-      });
 
       return {
         items,
-        total: Number(response.total_results) || items.length,
-        page: Number(response.page) || page,
-        limit: Number(response.per_page) || limit,
+        total: total || items.length,
+        page,
+        limit,
       };
     } catch (error: any) {
       const message = String(error?.message ?? '').trim();
