@@ -12,9 +12,9 @@ export type CharacterBible = {
   byKey: Record<string, CharacterProfile>;
 };
 
-export type ScriptEraCacheEntry = {
+export type ScriptLocationCacheEntry = {
   expiresAt: number;
-  era: string | null;
+  location: string | null;
 };
 
 export type ImagePayload = {

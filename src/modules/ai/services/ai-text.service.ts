@@ -255,7 +255,7 @@ export class AiTextService {
     sentences: Array<{
       text: string;
       characterKeys: string[];
-      eraKey: string | null;
+      locationKey: string | null;
     }>;
     characters: Array<{
       key: string;
@@ -265,7 +265,7 @@ export class AiTextService {
       isProphet: boolean;
       isWoman: boolean;
     }>;
-    eras: Array<{
+    locations: Array<{
       key: string;
       name: string;
       description?: string;
@@ -288,7 +288,7 @@ export class AiTextService {
         isWoman: boolean;
       };
 
-      type ScriptEra = {
+      type ScriptLocation = {
         key: string;
         name: string;
         description?: string;
@@ -350,28 +350,109 @@ export class AiTextService {
         return out;
       };
 
-      const buildScriptExtractionSample = (
+      const splitLongBlockAtBoundary = (
         value: string,
-        maxChars = 12000,
-      ): string => {
-        const trimmed = value.trim();
-        if (trimmed.length <= maxChars) return trimmed;
+        maxChars = 5000,
+      ): string[] => {
+        const text = value.trim();
+        if (!text) return [];
+        if (text.length <= maxChars) return [text];
 
-        const headLength = Math.floor(maxChars * 0.5);
-        const middleLength = Math.floor(maxChars * 0.2);
-        const tailLength = maxChars - headLength - middleLength - 24;
-        const middleStart = Math.max(
-          0,
-          Math.floor(trimmed.length / 2 - middleLength / 2),
-        );
+        const out: string[] = [];
+        let remaining = text;
 
-        return [
-          trimmed.slice(0, headLength).trim(),
-          trimmed.slice(middleStart, middleStart + middleLength).trim(),
-          trimmed.slice(-Math.max(tailLength, 0)).trim(),
-        ]
+        while (remaining.length > maxChars) {
+          const slice = remaining.slice(0, maxChars + 1);
+          let cutIndex = Math.max(
+            slice.lastIndexOf('. '),
+            slice.lastIndexOf('! '),
+            slice.lastIndexOf('? '),
+            slice.lastIndexOf('.\n'),
+            slice.lastIndexOf('!\n'),
+            slice.lastIndexOf('?\n'),
+          );
+
+          if (cutIndex >= 0) {
+            cutIndex += 1;
+          }
+
+          if (cutIndex < Math.floor(maxChars * 0.55)) {
+            cutIndex = slice.lastIndexOf('\n', maxChars);
+          }
+
+          if (cutIndex < Math.floor(maxChars * 0.55)) {
+            cutIndex = slice.lastIndexOf(' ', maxChars);
+          }
+
+          if (cutIndex < Math.floor(maxChars * 0.55)) {
+            cutIndex = maxChars;
+          }
+
+          const part = remaining.slice(0, cutIndex).trim();
+          if (part) out.push(part);
+          remaining = remaining.slice(cutIndex).trim();
+        }
+
+        if (remaining) out.push(remaining);
+        return out;
+      };
+
+      const chunkTextBlocks = (
+        blocks: string[],
+        maxChars = 5000,
+        maxItems = 12,
+      ): string[] => {
+        const normalizedBlocks = blocks
+          .map((block) => block.trim())
           .filter(Boolean)
-          .join('\n\n[...]\n\n');
+          .flatMap((block) => splitLongBlockAtBoundary(block, maxChars));
+
+        if (!normalizedBlocks.length) return [];
+
+        const segments: string[] = [];
+        let current: string[] = [];
+        let currentLength = 0;
+
+        for (const block of normalizedBlocks) {
+          const separatorLength = current.length > 0 ? 2 : 0;
+          const nextLength = currentLength + separatorLength + block.length;
+
+          if (
+            current.length > 0 &&
+            (current.length >= maxItems || nextLength > maxChars)
+          ) {
+            segments.push(current.join('\n\n'));
+            current = [block];
+            currentLength = block.length;
+            continue;
+          }
+
+          current.push(block);
+          currentLength = nextLength;
+        }
+
+        if (current.length > 0) {
+          segments.push(current.join('\n\n'));
+        }
+
+        return segments;
+      };
+
+      const splitScriptIntoLlmSegments = (
+        value: string,
+        maxChars = 5000,
+        maxItems = 12,
+      ): string[] => {
+        const normalized = value.replace(/\r\n?/gu, '\n').trim();
+        if (!normalized) return [];
+
+        const paragraphBlocks = normalized
+          .split(/\n{2,}/u)
+          .map((block) => block.trim())
+          .filter(Boolean);
+
+        const sourceBlocks = paragraphBlocks.length ? paragraphBlocks : [normalized];
+        return chunkTextBlocks(sourceBlocks, maxChars, maxItems);
       };
 
       const chunkSentences = (
@@ -414,11 +495,11 @@ export class AiTextService {
       const normalizeSentenceItems = (
         parsed: unknown,
         validCharacterKeys: Set<string>,
-        validEraKeys: Set<string>,
+        validLocationKeys: Set<string>,
       ): Array<{
         text: string;
         characterKeys: string[];
-        eraKey: string | null;
+        locationKey: string | null;
       }> => {
         const raw =
           parsed &&
@@ -430,7 +511,7 @@ export class AiTextService {
         const out: Array<{
           text: string;
           characterKeys: string[];
-          eraKey: string | null;
+          locationKey: string | null;
         }> = [];
 
         for (const item of raw) {
@@ -454,13 +535,39 @@ export class AiTextService {
             ),
           );
 
-          const eraKeyRaw = String((item as any).eraKey ?? '')
+          const locationKeyRaw = String((item as any).locationKey ?? '')
             .trim()
             .toUpperCase();
-          const eraKey =
-            eraKeyRaw && validEraKeys.has(eraKeyRaw) ? eraKeyRaw : null;
+          const locationKey =
+            locationKeyRaw && validLocationKeys.has(locationKeyRaw)
+              ? locationKeyRaw
+              : null;
 
-          out.push({ text, characterKeys, eraKey });
+          out.push({ text, characterKeys, locationKey });
+        }
+
+        return out;
+      };
+
+      const normalizeSplitSentenceTexts = (parsed: unknown): string[] => {
+        const raw =
+          parsed && typeof parsed === 'object'
+            ? Array.isArray((parsed as any).sentences)
+              ? ((parsed as any).sentences as unknown[])
+              : []
+            : [];
+
+        const out: string[] = [];
+
+        for (const item of raw) {
+          const text =
+            typeof item === 'string'
+              ? item.trim()
+              : item && typeof item === 'object'
+                ? String((item as any).text ?? '').trim()
+                : '';
+          if (!text) continue;
+          out.push(text);
         }
 
         return out;
@@ -470,11 +577,11 @@ export class AiTextService {
         parsed: unknown,
         texts: string[],
         validCharacterKeys: Set<string>,
-        validEraKeys: Set<string>,
+        validLocationKeys: Set<string>,
       ): Array<{
         text: string;
         characterKeys: string[];
-        eraKey: string | null;
+        locationKey: string | null;
       }> => {
         const raw =
           parsed && typeof parsed === 'object'
@@ -487,7 +594,7 @@ export class AiTextService {
 
         const byIndex = new Map<
           number,
-          { characterKeys: string[]; eraKey: string | null }
+          { characterKeys: string[]; locationKey: string | null }
         >();
 
         for (const item of raw) {
@@ -514,19 +621,21 @@ export class AiTextService {
             ),
           );
 
-          const eraKeyRaw = String((item as any).eraKey ?? '')
+          const locationKeyRaw = String((item as any).locationKey ?? '')
             .trim()
             .toUpperCase();
-          const eraKey =
-            eraKeyRaw && validEraKeys.has(eraKeyRaw) ? eraKeyRaw : null;
+          const locationKey =
+            locationKeyRaw && validLocationKeys.has(locationKeyRaw)
+              ? locationKeyRaw
+              : null;
 
-          byIndex.set(index, { characterKeys, eraKey });
+          byIndex.set(index, { characterKeys, locationKey });
         }
 
         return texts.map((text, index) => ({
           text,
           characterKeys: byIndex.get(index)?.characterKeys ?? [],
-          eraKey: byIndex.get(index)?.eraKey ?? null,
+          locationKey: byIndex.get(index)?.locationKey ?? null,
         }));
       };
 
@@ -576,15 +685,15 @@ export class AiTextService {
         return out;
       };
 
-      const normalizeEras = (parsed: unknown): ScriptEra[] => {
+      const normalizeLocations = (parsed: unknown): ScriptLocation[] => {
         const raw =
           parsed &&
             typeof parsed === 'object' &&
-            Array.isArray((parsed as any).eras)
-            ? ((parsed as any).eras as unknown[])
+            Array.isArray((parsed as any).locations)
+            ? ((parsed as any).locations as unknown[])
             : [];
 
-        const out: ScriptEra[] = [];
+        const out: ScriptLocation[] = [];
         const usedKeys = new Set<string>();
 
         for (let i = 0; i < raw.length; i += 1) {
@@ -613,6 +722,61 @@ export class AiTextService {
         return out;
       };
 
+      const dedupeCharacters = (
+        candidates: ScriptCharacter[],
+      ): ScriptCharacter[] => {
+        const seen = new Set<string>();
+        const out: ScriptCharacter[] = [];
+
+        for (const candidate of candidates) {
+          const name = String(candidate?.name ?? '').trim();
+          const description = String(candidate?.description ?? '').trim();
+          if (!name || !description) continue;
+
+          const identity = normalizeWhitespace(name).toLowerCase();
+          if (!identity || seen.has(identity)) continue;
+
+          out.push({
+            key: `C${out.length + 1}`,
+            name,
+            description,
+            isSahaba: Boolean(candidate?.isSahaba),
+            isProphet: Boolean(candidate?.isProphet),
+            isWoman: Boolean(candidate?.isWoman),
+          });
+          seen.add(identity);
+
+          if (out.length >= 16) break;
+        }
+
+        return out;
+      };
+
+      const dedupeLocations = (candidates: ScriptLocation[]): ScriptLocation[] => {
+        const seen = new Set<string>();
+        const out: ScriptLocation[] = [];
+
+        for (const candidate of candidates) {
+          const name = String(candidate?.name ?? '').trim();
+          if (!name) continue;
+
+          const identity = normalizeWhitespace(name).toLowerCase();
+          if (!identity || seen.has(identity)) continue;
+
+          const description = String(candidate?.description ?? '').trim();
+          out.push({
+            key: `E${out.length + 1}`,
+            name,
+            description: description || undefined,
+          });
+          seen.add(identity);
+
+          if (out.length >= 16) break;
+        }
+
+        return out;
+      };
+
       const requiredCharactersPrompt =
         'You extract canonical CHARACTERS from a narration script for consistent scene depiction.\n' +
         'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
@@ -630,119 +794,290 @@ export class AiTextService {
         '- If unsure about any boolean flag, set it to false.\n' +
         '- No extra keys. No extra text.';
 
-      const extractionSample = buildScriptExtractionSample(script);
+      const extractionSegments = splitScriptIntoLlmSegments(script, 12000, 24);
+
+      const extractCharactersFromSegment = async (
+        segment: string,
+      ): Promise<ScriptCharacter[]> => {
+        const parsedCharacters = await this.llm.completeJson<unknown>({
+          model,
+          retries: 2,
+          messages: [
+            { role: 'system', content: requiredCharactersPrompt },
+            {
+              role: 'user',
+              content:
+                'Return ONLY valid JSON in this exact shape: ' +
+                '{"characters": [{"key":"C1","name":"...","description":"...","isSahaba":false,"isProphet":false,"isWoman":false}]}\n\n' +
+                segment,
+            },
+          ],
+        });
+
+        return normalizeCharacters(parsedCharacters);
+      };
 
       const extractCharacters = async (): Promise<ScriptCharacter[]> => {
         try {
-          const parsedCharacters = await this.llm.completeJson<unknown>({
-            model,
-            retries: 2,
-            messages: [
-              { role: 'system', content: requiredCharactersPrompt },
-              {
-                role: 'user',
-                content:
-                  'Return ONLY valid JSON in this exact shape: ' +
-                  '{"characters": [{"key":"C1","name":"...","description":"...","isSahaba":false,"isProphet":false,"isWoman":false}]}\n\n' +
-                  extractionSample,
-              },
-            ],
-          });
+          if (extractionSegments.length <= 1) {
+            return extractCharactersFromSegment(
+              extractionSegments[0] ?? script,
+            );
+          }
 
-          return normalizeCharacters(parsedCharacters);
+          const extractedChunks = await Promise.all(
+            extractionSegments.map((segment) =>
+              extractCharactersFromSegment(segment).catch((error) => {
+                console.warn('splitScript character extraction chunk fallback:', error);
+                return [];
+              }),
+            ),
+          );
+
+          const combinedCharacters = extractedChunks.flat();
+          if (combinedCharacters.length === 0) return [];
+          const dedupedCandidates = dedupeCharacters(combinedCharacters);
+
+          const combinedPrompt = combinedCharacters
+            .map(
+              (character, index) =>
+                `Candidate ${index + 1}: ${character.name} — ${character.description} | isSahaba=${character.isSahaba} | isProphet=${character.isProphet} | isWoman=${character.isWoman}`,
+            )
+            .join('\n');
+
+          try {
+            const mergedCharacters = await this.llm.completeJson<unknown>({
+              model,
+              retries: 2,
+              messages: [
+                { role: 'system', content: requiredCharactersPrompt },
+                {
+                  role: 'user',
+                  content:
+                    'Merge and deduplicate these candidate characters into the final canonical list for the full script. Return ONLY valid JSON in this exact shape: ' +
+                    '{"characters": [{"key":"C1","name":"...","description":"...","isSahaba":false,"isProphet":false,"isWoman":false}]}\n\n' +
+                    'CANDIDATE CHARACTERS FROM FULL-SCRIPT CHUNKS:\n' +
+                    combinedPrompt,
+                },
+              ],
+            });
+
+            const normalizedMergedCharacters = normalizeCharacters(mergedCharacters);
+            return normalizedMergedCharacters.length
+              ? normalizedMergedCharacters
+              : dedupedCandidates;
+          } catch (mergeError) {
+            console.warn('splitScript character merge fallback:', mergeError);
+            return dedupedCandidates;
+          }
         } catch (error) {
           console.warn('splitScript character extraction fallback:', error);
           return [];
         }
       };
 
-      const requiredErasPrompt =
-        'You extract the different canonical ERAS periods from a narration script.\n' +
+      const requiredLocationsPrompt =
+        'You extract the different canonical LOCATIONS from a narration script.\n' +
         'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
-        '{"eras": [{"key": string, "name": string, "description"?: string}]}\n\n' +
+        '{"locations": [{"key": string, "name": string, "description"?: string}]}\n\n' +
         'Rules:\n' +
-        '- Extract the different canonical ERAS that are relevant to the story.\n' +
+        '- Extract the different canonical LOCATIONS that are relevant to the story.\n' +
         '- Use keys E1, E2, E3... (do NOT use E0).\n' +
-        '- Keep era.name short (e.g. "7th century Arabia", "Ottoman era", "Modern day").\n' +
-        '- The description should be maximum two lines & include (environment, lighting, color tone) of the era.\n' +
-        '- You need to approach this from a very creative/weird color perspective.\n' +
-        "- Don't add in the description any human or character details; focus only on era-specific environment/atmospheric details.\n" +
-        '- If the script implies a time progression, assign eras accordingly. If the era is ambiguous or not visually distinct, it can be null.\n';
+        '- Keep location.name short and production-friendly (e.g. "Desert caravan route", "Ottoman court interior", "Modern city rooftop").\n' +
+        '- The description must be maximum two lines and must describe environment, time of day, and atmospheric details.\n' +
+        "- Don't add any human or character details; focus only on the place, time of day, weather, lighting, mood, and surrounding environment.\n" +
+        '- Multiple sentences can share the same location. Do NOT create one location per sentence.\n' +
+        '- If the story revisits the same place later, reuse the same location concept.\n' +
+        '- If the sentence context is not visually distinct enough to justify a canonical location, do not force a new one.\n';
 
-      const extractEras = async (): Promise<ScriptEra[]> => {
+      const extractLocationsFromSegment = async (
+        segment: string,
+      ): Promise<ScriptLocation[]> => {
+        const parsedLocations = await this.llm.completeJson<unknown>({
+          model,
+          retries: 2,
+          messages: [
+            { role: 'system', content: requiredLocationsPrompt },
+            {
+              role: 'user',
+              content:
+                'Return ONLY valid JSON in this exact shape: ' +
+                '{"locations": [{"key":"E1","name":"...","description":"..."}]}\n\n' +
+                segment,
+            },
+          ],
+        });
+
+        return normalizeLocations(parsedLocations);
+      };
+
+      const extractLocations = async (): Promise<ScriptLocation[]> => {
         try {
-          const parsedEras = await this.llm.completeJson<unknown>({
-            model,
-            retries: 2,
-            messages: [
-              { role: 'system', content: requiredErasPrompt },
-              {
-                role: 'user',
-                content:
-                  'Return ONLY valid JSON in this exact shape: ' +
-                  '{"eras": [{"key":"E1","name":"...","description":"..."}]}\n\n' +
-                  extractionSample,
-              },
-            ],
-          });
+          if (extractionSegments.length <= 1) {
+            return extractLocationsFromSegment(
+              extractionSegments[0] ?? script,
+            );
+          }
 
-          return normalizeEras(parsedEras);
+          const extractedChunks = await Promise.all(
+            extractionSegments.map((segment) =>
+              extractLocationsFromSegment(segment).catch((error) => {
+                console.warn('splitScript location extraction chunk fallback:', error);
+                return [];
+              }),
+            ),
+          );
+
+          const combinedLocations = extractedChunks.flat();
+          if (combinedLocations.length === 0) return [];
+          const dedupedCandidates = dedupeLocations(combinedLocations);
+
+          const combinedPrompt = combinedLocations
+            .map(
+              (location, index) =>
+                `Candidate ${index + 1}: ${location.name}${location.description ? ` — ${location.description}` : ''}`,
+            )
+            .join('\n');
+
+          try {
+            const mergedLocations = await this.llm.completeJson<unknown>({
+              model,
+              retries: 2,
+              messages: [
+                { role: 'system', content: requiredLocationsPrompt },
+                {
+                  role: 'user',
+                  content:
+                    'Merge and deduplicate these candidate locations into the final canonical list for the full script. Return ONLY valid JSON in this exact shape: ' +
+                    '{"locations": [{"key":"E1","name":"...","description":"..."}]}\n\n' +
+                    'CANDIDATE LOCATIONS FROM FULL-SCRIPT CHUNKS:\n' +
+                    combinedPrompt,
+                },
+              ],
+            });
+
+            const normalizedMergedLocations = normalizeLocations(mergedLocations);
+            return normalizedMergedLocations.length
+              ? normalizedMergedLocations
+              : dedupedCandidates;
+          } catch (mergeError) {
+            console.warn('splitScript location merge fallback:', mergeError);
+            return dedupedCandidates;
+          }
         } catch (error) {
-          console.warn('splitScript era extraction fallback:', error);
+          console.warn('splitScript location extraction fallback:', error);
           return [];
         }
       };
 
-      const [characters, eras] = await Promise.all([
-        extractCharacters(),
-        extractEras(),
-      ]);
+      const characters = await extractCharacters();
+      const locations = await extractLocations();
 
       const requiredSplitAndTagPrompt =
-        'You split a script into clean sentences (verbatim) and tag each sentence with character keys + an era key.\n' +
-        'You are given canonical CHARACTERS and ERAS with keys. Use ONLY those keys.\n' +
+        'You split a script into clean sentences (verbatim) and tag each sentence with character keys + a location key.\n' +
+        'You are given canonical CHARACTERS and LOCATIONS with keys. Use ONLY those keys.\n' +
         'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
-        '{"sentences": [{"text": string, "characterKeys": string[], "eraKey": string | null}]}\n\n' +
+        '{"sentences": [{"text": string, "characterKeys": string[], "locationKey": string | null}]}\n\n' +
         'Rules:\n' +
         '- Do NOT add/remove/rewrite words; only split into sentences. Sentence text MUST match the script wording verbatim.\n' +
         '- characterKeys must be a subset of the provided character keys (or empty).\n' +
         '- If a sentence describes a battle/fight/combat moment, include the relevant GROUP/ARMY character keys for the sides involved (in addition to any named protagonists mentioned).\n' +
-        '- eraKey must be one of the provided era keys OR null.\n' +
-        '- Infer an era ONLY if the TARGET sentence clearly implies a time period (explicitly or via strong cues).\n' +
+        '- locationKey must be one of the provided location keys OR null.\n' +
+        '- Infer a location ONLY if the TARGET sentence clearly implies one of the provided canonical locations.\n' +
         '- Use script context only to resolve references/pronouns for the target sentence.\n' +
-        '- If the sentence does NOT imply a clear era, set eraKey to null (do NOT guess).\n' +
+        '- If the sentence does NOT imply a clear canonical location, set locationKey to null (do NOT guess).\n' +
         '- No extra keys. No extra text.';
 
       const charactersList = characters
         .map((c) => `${c.key}: ${c.name} — ${c.description}`)
         .join('\n');
 
-      const erasList = eras
+      const locationsList = locations
         .map(
-          (e) =>
-            `${e.key}: ${e.name}${e.description ? ` — ${e.description}` : ''}`,
+          (location) =>
+            `${location.key}: ${location.name}${location.description ? ` — ${location.description}` : ''}`,
         )
         .join('\n');
 
       const validCharacterKeys = new Set(characters.map((c) => c.key));
-      const validEraKeys = new Set(eras.map((e) => e.key));
+      const validLocationKeys = new Set(locations.map((location) => location.key));
 
-      const splitAndTagInChunks = async () => {
-        const sentenceTexts = splitScriptVerbatim(script);
+      const sentenceRegexCount = (value: string): number => {
+        const matches = value.match(/[.!?]+(?=\s|$)/gu);
+        return matches?.length ?? 0;
+      };
+
+      const shouldUseChunkedMode =
+        script.length > 7000 || sentenceRegexCount(script) > 24;
+
+      const splitSentencesWithLlmInChunks = async (): Promise<string[]> => {
+        const segments = splitScriptIntoLlmSegments(script);
+        if (!segments.length) {
+          return splitScriptVerbatim(script);
+        }
+
+        const sentenceSplitPrompt =
+          'You split a script segment into clean spoken sentences verbatim.\n' +
+          'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
+          '{"sentences": [{"text": string}]}\n\n' +
+          'Rules:\n' +
+          '- Keep the original wording exactly as written. Do NOT paraphrase, summarize, or add words.\n' +
+          '- Preserve the original order.\n' +
+          '- Cover the entire segment exactly once with no omissions and no duplicates.\n' +
+          '- Each output item must be a natural sentence-sized narration unit.\n' +
+          '- If a fragment cannot be split further without rewriting, keep it as one item.\n' +
+          '- No extra keys. No extra text.';
+
+        const sentenceTexts: string[] = [];
+
+        for (const segment of segments) {
+          try {
+            const parsedChunk = await this.llm.completeJson<unknown>({
+              model,
+              retries: 2,
+              messages: [
+                { role: 'system', content: sentenceSplitPrompt },
+                {
+                  role: 'user',
+                  content:
+                    'Return ONLY valid JSON in this exact shape: ' +
+                    '{"sentences": [{"text":"..."}]}\n\n' +
+                    'SCRIPT SEGMENT (split only, verbatim):\n' +
+                    segment,
+                },
+              ],
+            });
+
+            const chunkSentences = normalizeSplitSentenceTexts(parsedChunk);
+            sentenceTexts.push(
+              ...(chunkSentences.length
+                ? chunkSentences
+                : splitScriptVerbatim(segment)),
+            );
+          } catch (error) {
+            console.warn('splitScript chunk sentence-splitting fallback:', error);
+            sentenceTexts.push(...splitScriptVerbatim(segment));
+          }
+        }
+
+        return sentenceTexts.length ? sentenceTexts : splitScriptVerbatim(script);
+      };
+
+      const splitAndTagInChunks = async (sentenceTexts: string[]) => {
         if (!sentenceTexts.length) {
-          return [{ text: script, characterKeys: [], eraKey: null }];
+          return [{ text: script, characterKeys: [], locationKey: null }];
         }
 
         const taggingPrompt =
           'You are tagging sentences that are already split.\n' +
           'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
-          '{"items": [{"index": number, "characterKeys": string[], "eraKey": string | null}]}\n\n' +
+          '{"items": [{"index": number, "characterKeys": string[], "locationKey": string | null}]}\n\n' +
           'Rules:\n' +
           '- Return exactly one item for each TARGET SENTENCE index.\n' +
           '- Do NOT rewrite or repeat sentence text.\n' +
           '- characterKeys must be a subset of the provided character keys (or empty).\n' +
           '- If a sentence describes a battle/fight/combat moment, include the relevant GROUP/ARMY character keys for the sides involved.\n' +
-          '- eraKey must be one of the provided era keys OR null.\n' +
+          '- locationKey must be one of the provided location keys OR null.\n' +
           '- Use local sentence order and optional context sentences only to resolve references/pronouns.\n' +
           '- No extra keys. No extra text.';
 
@@ -750,7 +1085,7 @@ export class AiTextService {
         const taggedSentences: Array<{
           text: string;
           characterKeys: string[];
-          eraKey: string | null;
+          locationKey: string | null;
         }> = [];
 
         for (const chunk of chunks) {
@@ -771,12 +1106,12 @@ export class AiTextService {
                   role: 'user',
                   content:
                     'Return ONLY valid JSON in this exact shape: ' +
-                    '{"items": [{"index": 0, "characterKeys": ["C1"], "eraKey": "E1"}]}\n\n' +
+                    '{"items": [{"index": 0, "characterKeys": ["C1"], "locationKey": "E1"}]}\n\n' +
                     'CANONICAL CHARACTERS (use ONLY these keys):\n' +
                     (charactersList ? charactersList : '(none)') +
                     '\n\n' +
-                    'CANONICAL ERAS (use ONLY these keys):\n' +
-                    (erasList ? erasList : '(none)') +
+                    'CANONICAL LOCATIONS (use ONLY these keys):\n' +
+                    (locationsList ? locationsList : '(none)') +
                     '\n\n' +
                     (previousSentence
                       ? `PREVIOUS CONTEXT SENTENCE:\n${previousSentence}\n\n`
@@ -798,7 +1133,7 @@ export class AiTextService {
                 parsedChunk,
                 chunk.items,
                 validCharacterKeys,
-                validEraKeys,
+                validLocationKeys,
               ),
             );
           } catch (error) {
@@ -807,7 +1142,7 @@ export class AiTextService {
               ...chunk.items.map((text) => ({
                 text,
                 characterKeys: [],
-                eraKey: null,
+                locationKey: null,
               })),
             );
           }
@@ -816,22 +1151,15 @@ export class AiTextService {
         return taggedSentences;
       };
 
-      const sentenceRegexCount = (value: string): number => {
-        const matches = value.match(/[.!?]+(?=\s|$)/gu);
-        return matches?.length ?? 0;
-      };
-
-      const shouldUseChunkedMode =
-        script.length > 7000 || sentenceRegexCount(script) > 24;
-
       let sentences: Array<{
         text: string;
         characterKeys: string[];
-        eraKey: string | null;
+        locationKey: string | null;
       }>;
 
       if (shouldUseChunkedMode) {
-        sentences = await splitAndTagInChunks();
+        const sentenceTexts = await splitSentencesWithLlmInChunks();
+        sentences = await splitAndTagInChunks(sentenceTexts);
       } else {
         try {
           const parsedSentences = await this.llm.completeJson<unknown>({
@@ -843,12 +1171,12 @@ export class AiTextService {
                 role: 'user',
                 content:
                   'Return ONLY valid JSON in this exact shape: ' +
-                  '{"sentences": [{"text":"...","characterKeys":["C1"],"eraKey":"E1"}]}\n\n' +
+                  '{"sentences": [{"text":"...","characterKeys":["C1"],"locationKey":"E1"}]}\n\n' +
                   'CANONICAL CHARACTERS (use ONLY these keys):\n' +
                   (charactersList ? charactersList : '(none)') +
                   '\n\n' +
-                  'CANONICAL ERAS (use ONLY these keys):\n' +
-                  (erasList ? erasList : '(none)') +
+                  'CANONICAL LOCATIONS (use ONLY these keys):\n' +
+                  (locationsList ? locationsList : '(none)') +
                   '\n\n' +
                   'SCRIPT (split + tag):\n' +
                   script,
@@ -859,19 +1187,22 @@ export class AiTextService {
           sentences = normalizeSentenceItems(
             parsedSentences,
             validCharacterKeys,
-            validEraKeys,
+            validLocationKeys,
           );
         } catch (error) {
           console.warn('splitScript full tagging fallback:', error);
-          sentences = await splitAndTagInChunks();
+          const fallbackTexts = shouldUseChunkedMode
+            ? await splitSentencesWithLlmInChunks()
+            : splitScriptVerbatim(script);
+          sentences = await splitAndTagInChunks(fallbackTexts);
         }
       }
 
       if (!sentences.length) {
-        sentences = [{ text: script, characterKeys: [], eraKey: null }];
+        sentences = [{ text: script, characterKeys: [], locationKey: null }];
       }
 
-      return { sentences, characters, eras };
+      return { sentences, characters, locations };
     } catch {
       throw new InternalServerErrorException(
         'Failed to split script into sentences',

@@ -53,6 +53,12 @@ export class AiController {
     return this.aiService.listGoogleModels({ query: q });
   }
 
+  @Get('leonardo-models')
+  @UseGuards(JwtAuthGuard)
+  async listLeonardoModels(@Query('q') q?: string) {
+    return this.aiService.listLeonardoModels({ query: q });
+  }
+
   /**
    * Streams a randomly generated script from the selected model/provider.
    * Response is plain text streamed in small chunks.

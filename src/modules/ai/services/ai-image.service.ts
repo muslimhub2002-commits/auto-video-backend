@@ -19,7 +19,7 @@ import type {
   CharacterBible,
   CharacterGender,
   CharacterProfile,
-  ScriptEraCacheEntry,
+  ScriptLocationCacheEntry,
 } from './ai-image/types';
 
 @Injectable()
@@ -46,9 +46,9 @@ export class AiImageService {
     { expiresAt: number; bible: CharacterBible }
   >();
 
-  private readonly scriptEraCache = new Map<string, ScriptEraCacheEntry>();
+  private readonly scriptLocationCache = new Map<string, ScriptLocationCacheEntry>();
 
-  private readonly sentenceEraCache = new Map<string, ScriptEraCacheEntry>();
+  private readonly sentenceLocationCache = new Map<string, ScriptLocationCacheEntry>();
 
   constructor(
     private readonly runtime: AiRuntimeService,
@@ -99,6 +99,238 @@ export class AiImageService {
     return this.runtime.leonardoModelId;
   }
 
+  private extractLeonardoPlatformModelCandidates(payload: unknown): any[] {
+    if (!payload || typeof payload !== 'object') return [];
+
+    const queue: unknown[] = [payload];
+    const seen = new Set<unknown>();
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current || typeof current !== 'object' || seen.has(current)) {
+        continue;
+      }
+      seen.add(current);
+
+      if (Array.isArray(current)) {
+        if (current.some((item) => item && typeof item === 'object')) {
+          return current;
+        }
+        continue;
+      }
+
+      for (const value of Object.values(current)) {
+        if (Array.isArray(value)) {
+          if (value.some((item) => item && typeof item === 'object')) {
+            return value;
+          }
+          continue;
+        }
+
+        if (value && typeof value === 'object') {
+          queue.push(value);
+        }
+      }
+    }
+
+    return [];
+  }
+
+  private normalizeLeonardoPlatformModel(raw: any): {
+    id: string;
+    value: string;
+    name: string;
+    provider: string;
+    label: string;
+    isDefault: boolean;
+  } | null {
+    const id = String(
+      raw?.id ??
+        raw?.modelId ??
+        raw?.model_id ??
+        raw?.platformModelId ??
+        raw?.platform_model_id ??
+        raw?.platformModel?.id ??
+        raw?.platform_model?.id ??
+        '',
+    ).trim();
+
+    if (!id) return null;
+
+    const name = String(
+      raw?.name ??
+        raw?.displayName ??
+        raw?.display_name ??
+        raw?.modelName ??
+        raw?.model_name ??
+        raw?.title ??
+        raw?.slug ??
+        id,
+    ).trim();
+
+    const provider = String(
+      raw?.provider ??
+        raw?.providerName ??
+        raw?.provider_name ??
+        raw?.vendor ??
+        raw?.owner ??
+        raw?.organization ??
+        'Leonardo',
+    ).trim() || 'Leonardo';
+
+    const normalizedProvider = provider === 'Leonardo.Ai' ? 'Leonardo' : provider;
+    const label = name.toLowerCase().includes(normalizedProvider.toLowerCase())
+      ? name
+      : `${normalizedProvider} - ${name}`;
+    const configuredId = String(this.leonardoModelId ?? '').trim();
+
+    return {
+      id,
+      value: `leonardo:${id}`,
+      name,
+      provider: normalizedProvider,
+      label,
+      isDefault: Boolean(configuredId) && configuredId === id,
+    };
+  }
+
+  private isNativeLeonardoPlatformModel(model: {
+    provider: string;
+    name: string;
+  }): boolean {
+    const provider = String(model.provider ?? '')
+      .trim()
+      .toLowerCase();
+    const name = String(model.name ?? '')
+      .trim()
+      .toLowerCase();
+
+    if (provider === 'leonardo' || provider === 'leonardo.ai') {
+      return true;
+    }
+
+    return (
+      name.startsWith('leonardo ') ||
+      name.startsWith('lucid ') ||
+      name.startsWith('phoenix')
+    );
+  }
+
+  async listLeonardoModels(params?: {
+    query?: string;
+  }): Promise<{
+    models: Array<{
+      id: string;
+      value: string;
+      name: string;
+      provider: string;
+      label: string;
+      isDefault: boolean;
+    }>;
+  }> {
+    if (!this.leonardoApiKey) {
+      throw new InternalServerErrorException(
+        'LEONARDO_API_KEY is not configured on the server',
+      );
+    }
+
+    const response = await fetch(
+      'https://cloud.leonardo.ai/api/rest/v1/platformModels',
+      {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+          Authorization: `Bearer ${this.leonardoApiKey}`,
+        },
+      } as any,
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      console.error('Leonardo list platform models failed', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+      });
+      throw new InternalServerErrorException(
+        'Failed to load Leonardo platform models',
+      );
+    }
+
+    const rawText = await response.text();
+    let payload: unknown = {};
+
+    try {
+      payload = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      console.error('Leonardo list platform models returned invalid JSON', {
+        body: rawText,
+      });
+      throw new InternalServerErrorException(
+        'Leonardo platform models returned an invalid response',
+      );
+    }
+
+    const normalized = this.extractLeonardoPlatformModelCandidates(payload)
+      .map((model) => this.normalizeLeonardoPlatformModel(model))
+      .filter(Boolean) as Array<{
+      id: string;
+      value: string;
+      name: string;
+      provider: string;
+      label: string;
+      isDefault: boolean;
+    }>;
+
+    const deduped = normalized
+      .filter((model) => this.isNativeLeonardoPlatformModel(model))
+      .filter((model, index, collection) =>
+        collection.findIndex((candidate) => candidate.id === model.id) === index,
+      );
+
+    const configuredId = String(this.leonardoModelId ?? '').trim();
+    if (configuredId && !deduped.some((model) => model.id === configuredId)) {
+      deduped.unshift({
+        id: configuredId,
+        value: `leonardo:${configuredId}`,
+        name: 'Server Default',
+        provider: 'Leonardo',
+        label: `Leonardo - Server Default (${configuredId})`,
+        isDefault: true,
+      });
+    }
+
+    const query = String(params?.query ?? '')
+      .trim()
+      .toLowerCase();
+
+    const filtered = query
+      ? deduped.filter((model) => {
+          const haystack = [
+            model.id,
+            model.value,
+            model.name,
+            model.provider,
+            model.label,
+          ]
+            .join(' ')
+            .toLowerCase();
+
+          return haystack.includes(query);
+        })
+      : deduped;
+
+    filtered.sort((left, right) => {
+      if (left.isDefault !== right.isDefault) {
+        return left.isDefault ? -1 : 1;
+      }
+
+      return left.label.localeCompare(right.label);
+    });
+
+    return { models: filtered };
+  }
+
   private sentenceContainsMaleCharacter(text: string): boolean {
     const s = (text ?? '').trim();
     if (!s) return false;
@@ -114,7 +346,7 @@ export class AiImageService {
     return createHash('sha1').update(script, 'utf8').digest('hex');
   }
 
-  private hashSentenceEraForCache(params: {
+  private hashSentenceLocationForCache(params: {
     script: string;
     sentence: string;
   }): string {
@@ -125,19 +357,22 @@ export class AiImageService {
       .digest('hex');
   }
 
-  private normalizeEra(raw: unknown): string | null {
-    const era = String(
-      (raw && typeof raw === 'object' ? (raw as any).era : raw) ?? '',
+  private normalizeLocation(raw: unknown): string | null {
+    const location = String(
+      (raw && typeof raw === 'object' ? (raw as any).location : raw) ?? '',
     )
       .replace(/\s+/g, ' ')
       .trim();
-    if (!era) return null;
+    if (!location) return null;
 
-    const capped = era.length > 80 ? era.slice(0, 77).trimEnd() + '...' : era;
+    const capped =
+      location.length > 80
+        ? location.slice(0, 77).trimEnd() + '...'
+        : location;
     return capped;
   }
 
-  private async getOrCreateEraForSentence(params: {
+  private async getOrCreateLocationForSentence(params: {
     scriptRaw?: string | null;
     sentenceRaw?: string | null;
   }): Promise<string | null> {
@@ -146,23 +381,23 @@ export class AiImageService {
 
     const script = (params.scriptRaw ?? '').trim();
 
-    const key = this.hashSentenceEraForCache({ script, sentence });
+    const key = this.hashSentenceLocationForCache({ script, sentence });
     const now = Date.now();
-    const cached = this.sentenceEraCache.get(key);
-    if (cached && cached.expiresAt > now) return cached.era;
+    const cached = this.sentenceLocationCache.get(key);
+    if (cached && cached.expiresAt > now) return cached.location;
 
     const messages: LlmMessage[] = [
       {
         role: 'system',
         content:
-          'You infer the ERA / time period for a SINGLE target sentence, using the script only as context.\n' +
-          'Return ONLY valid JSON with exactly this shape: {"era": string}.\n\n' +
+          'You infer the canonical LOCATION for a SINGLE target sentence, using the script only as context.\n' +
+          'Return ONLY valid JSON with exactly this shape: {"location": string}.\n\n' +
           'Rules:\n' +
-          '- Infer an era ONLY if the TARGET SENTENCE clearly implies a time period (explicitly or via strong cues).\n' +
+          '- Infer a location ONLY if the TARGET SENTENCE clearly implies a distinct environment, place, time-of-day situation, or atmospheric setting.\n' +
           '- Use SCRIPT CONTEXT only to resolve references/pronouns related to the TARGET SENTENCE.\n' +
-          '- If the target sentence does NOT imply a clear time period, return {"era": ""}.\n' +
-          '- Do NOT guess (do not default to things like "Modern day" unless it is clearly implied).\n' +
-          '- Keep the label short and suitable to prepend as "Era:" (e.g. "7th century Arabia", "Ottoman era", "Medieval Europe").\n' +
+          '- If the target sentence does NOT imply a clear location, return {"location": ""}.\n' +
+          '- Do NOT guess.\n' +
+          '- Keep the label short and suitable to prepend as "Location:" (e.g. "Desert caravan route at dusk", "Ottoman court interior", "Stormy coastal cliff").\n' +
           '- Do NOT include explanations, quotes, or extra keys.',
       },
       {
@@ -170,7 +405,7 @@ export class AiImageService {
         content:
           (script
             ? `SCRIPT CONTEXT (for reference resolution):\n${script}\n\n`
-            : '') + `TARGET SENTENCE (infer era for this ONLY):\n${sentence}`,
+            : '') + `TARGET SENTENCE (infer location for this ONLY):\n${sentence}`,
       },
     ];
 
@@ -182,21 +417,23 @@ export class AiImageService {
         retries: 1,
         messages,
       });
-      return this.normalizeEra(parsed);
+      return this.normalizeLocation(parsed);
     };
 
     try {
-      const era = await tryModel(this.cheapModel);
+      const location = await tryModel(this.cheapModel);
 
-      // If the sentence doesn't clearly imply an era, do not cache.
-      if (!era) return null;
+      if (!location) return null;
 
       const ttlMs = 30 * 60 * 1000;
-      this.sentenceEraCache.set(key, { era, expiresAt: now + ttlMs });
-      return era;
+      this.sentenceLocationCache.set(key, {
+        location,
+        expiresAt: now + ttlMs,
+      });
+      return location;
     } catch (error: any) {
       console.error(
-        'Sentence-era extraction failed (cheap model). Falling back.',
+        'Sentence-location extraction failed (cheap model). Falling back.',
         {
           message: error?.message,
           status: error?.status,
@@ -206,16 +443,19 @@ export class AiImageService {
       );
 
       try {
-        const era = await tryModel(this.model);
+        const location = await tryModel(this.model);
 
-        if (!era) return null;
+        if (!location) return null;
 
         const ttlMs = 30 * 60 * 1000;
-        this.sentenceEraCache.set(key, { era, expiresAt: now + ttlMs });
-        return era;
+        this.sentenceLocationCache.set(key, {
+          location,
+          expiresAt: now + ttlMs,
+        });
+        return location;
       } catch (fallbackErr: any) {
         console.error(
-          'Sentence-era extraction failed (fallback model). Disabling for this sentence temporarily.',
+          'Sentence-location extraction failed (fallback model). Disabling for this sentence temporarily.',
           {
             message: fallbackErr?.message,
             status: fallbackErr?.status,
@@ -225,7 +465,10 @@ export class AiImageService {
         );
 
         const ttlMs = 5 * 60 * 1000;
-        this.sentenceEraCache.set(key, { era: null, expiresAt: now + ttlMs });
+        this.sentenceLocationCache.set(key, {
+          location: null,
+          expiresAt: now + ttlMs,
+        });
         return null;
       }
     }
@@ -740,29 +983,43 @@ export class AiImageService {
     imageModel: string;
     isModelsLab: boolean;
     modelslabModelId: string;
+    isLeonardo: boolean;
+    leonardoModelIdOverride: string;
   } {
     const imageModelRaw = String(dto.imageModel ?? '')
       .trim()
       .toLowerCase();
     const imageModel = imageModelRaw || 'leonardo';
+    const isLeonardo =
+      imageModel === 'leonardo' || imageModel.startsWith('leonardo:');
+    const leonardoModelIdOverride =
+      isLeonardo && imageModel.startsWith('leonardo:')
+        ? imageModel.slice('leonardo:'.length).trim()
+        : '';
     const isModelsLab = imageModel.startsWith('modelslab:');
     const modelslabModelId = isModelsLab
       ? imageModel.slice('modelslab:'.length).trim()
       : '';
 
     if (
-      imageModel !== 'leonardo' &&
+      !isLeonardo &&
       !isModelsLab &&
       !AiImageService.OPENAI_IMAGE_MODELS.has(imageModel) &&
       !AiImageService.GROK_IMAGE_MODELS.has(imageModel) &&
       !AiImageService.IMAGEN_MODELS.has(imageModel)
     ) {
       throw new BadRequestException(
-        `Unsupported imageModel "${dto.imageModel}". Supported: leonardo, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, imagen-3, imagen-4, imagen-4-ultra, and modelslab:<model_id>.`,
+        `Unsupported imageModel "${dto.imageModel}". Supported: leonardo, leonardo:<model_id>, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, imagen-3, imagen-4, imagen-4-ultra, and modelslab:<model_id>.`,
       );
     }
 
-    return { imageModel, isModelsLab, modelslabModelId };
+    return {
+      imageModel,
+      isModelsLab,
+      modelslabModelId,
+      isLeonardo,
+      leonardoModelIdOverride,
+    };
   }
 
   private async persistToCloudinary(params: {
@@ -815,23 +1072,23 @@ export class AiImageService {
 
     const canonicalCharacters = dto.characters?.length ? dto.characters : null;
 
-    const canonicalEras = Array.isArray(dto.eras)
-      ? dto.eras
-        .map((e) => ({
-          key: String((e as any)?.key ?? '').trim(),
-          name: String((e as any)?.name ?? '').trim(),
-          description: String((e as any)?.description ?? '').trim(),
+    const canonicalLocations = Array.isArray(dto.locations)
+      ? dto.locations
+        .map((location) => ({
+          key: String((location as any)?.key ?? '').trim(),
+          name: String((location as any)?.name ?? '').trim(),
+          description: String((location as any)?.description ?? '').trim(),
         }))
-        .filter((e) => e.key && e.name)
+        .filter((location) => location.key && location.name)
       : [];
 
-    const forcedEraKeyProvided = dto.forcedEraKey !== undefined;
-    const requestedEraKeyRaw = forcedEraKeyProvided
-      ? String(dto.forcedEraKey ?? '').trim()
-      : String(dto.eraKey ?? '').trim();
+    const forcedLocationKeyProvided = dto.forcedLocationKey !== undefined;
+    const requestedLocationKeyRaw = forcedLocationKeyProvided
+      ? String(dto.forcedLocationKey ?? '').trim()
+      : String(dto.locationKey ?? '').trim();
 
-    const requestedEra = requestedEraKeyRaw
-      ? (canonicalEras.find((e) => e.key === requestedEraKeyRaw) ?? null)
+    const requestedLocation = requestedLocationKeyRaw
+      ? (canonicalLocations.find((location) => location.key === requestedLocationKeyRaw) ?? null)
       : null;
 
     const forcedCharacterKeysInput = Array.isArray(dto.forcedCharacterKeys)
@@ -854,18 +1111,18 @@ export class AiImageService {
       ? null
       : await this.getOrCreateCharacterBible(fullScriptContext);
 
-    const inferredEra =
-      !requestedEra && !forcedEraKeyProvided
-        ? await this.getOrCreateEraForSentence({
+    const inferredLocation =
+      !requestedLocation && !forcedLocationKeyProvided
+        ? await this.getOrCreateLocationForSentence({
           scriptRaw: fullScriptContext,
           sentenceRaw: sentenceText,
         })
         : null;
 
-    const effectiveEraLine = requestedEra
-      ? `Era: ${requestedEra.description}`
-      : inferredEra
-        ? `Era:${inferredEra}`
+    const effectiveLocationLine = requestedLocation
+      ? `Location: ${requestedLocation.description || requestedLocation.name}`
+      : inferredLocation
+        ? `Location: ${inferredLocation}`
         : '';
 
     const mentionResult = useForcedCharactersOverride
@@ -987,7 +1244,7 @@ export class AiImageService {
           : '';
         if (!useForcedCharactersOverride) {
           console.log(referencedCharacterKeys, 'referencedCharacterKeys');
-          console.log(effectiveEraLine, 'effectiveEraLine');
+          console.log(effectiveLocationLine, 'effectiveLocationLine');
         } else {
           console.log(
             referencedCharacterKeys,
@@ -1034,8 +1291,8 @@ export class AiImageService {
                   {
                     role: 'user',
                     content:
-                      (effectiveEraLine
-                        ? `SCRIPT ERA (use ONLY for era/time):\n${effectiveEraLine}\n\n`
+                      (effectiveLocationLine
+                        ? `SCRIPT LOCATION (use ONLY for environment, time of day, and atmosphere):\n${effectiveLocationLine}\n\n`
                         : '') +
                       characterRefsBlock +
                       (frameBlock ? `${frameBlock}\n\n` : '') +
@@ -1203,7 +1460,12 @@ export class AiImageService {
       const { aspectRatio, isShortForm, width, height } =
         this.resolveAspectRatio(dto);
 
-      const { imageModel, isModelsLab, modelslabModelId } =
+      const {
+        imageModel,
+        isModelsLab,
+        modelslabModelId,
+        leonardoModelIdOverride,
+      } =
         this.validateAndNormalizeImageModel(dto);
 
       if (isModelsLab) {
@@ -1283,7 +1545,7 @@ export class AiImageService {
 
       const leonardo = await generateWithLeonardo({
         leonardoApiKey: this.leonardoApiKey,
-        leonardoModelId: this.leonardoModelId,
+        leonardoModelId: leonardoModelIdOverride || this.leonardoModelId,
         prompt,
         width,
         height,

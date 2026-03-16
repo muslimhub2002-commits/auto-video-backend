@@ -81,6 +81,10 @@ export class AiService {
     return this.videoService.listGoogleModels(params);
   }
 
+  listLeonardoModels(params?: { query?: string }): Promise<{ models: any[] }> {
+    return this.imageService.listLeonardoModels(params);
+  }
+
   createScriptStream(options: GenerateScriptDto) {
     return this.textService.createScriptStream(options);
   }
@@ -93,7 +97,7 @@ export class AiService {
     sentences: Array<{
       text: string;
       characterKeys: string[];
-      eraKey: string | null;
+      locationKey: string | null;
     }>;
     characters: Array<{
       key: string;
@@ -103,7 +107,7 @@ export class AiService {
       isProphet: boolean;
       isWoman: boolean;
     }>;
-    eras: Array<{
+    locations: Array<{
       key: string;
       name: string;
       description?: string;

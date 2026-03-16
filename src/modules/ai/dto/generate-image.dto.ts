@@ -34,7 +34,7 @@ class ScriptCharacterInput {
   isWoman: boolean;
 }
 
-class ScriptEraInput {
+class ScriptLocationInput {
   @IsString()
   @IsNotEmpty()
   key: string;
@@ -55,7 +55,7 @@ export class GenerateImageDto {
   sentence: string;
 
   // Optional full script context. Used ONLY to keep the image prompt representative
-  // of the script's time/era/context (continuity), not to be copied verbatim.
+  // of the script's location/context continuity, not to be copied verbatim.
   @IsString()
   @IsOptional()
   @MaxLength(20000)
@@ -99,13 +99,13 @@ export class GenerateImageDto {
   @IsString()
   @IsOptional()
   @Matches(
-    /^(leonardo|grok-imagine-image|gpt-image-1|gpt-image-1-mini|gpt-image-1\.5|imagen-3|imagen-4|imagen-4-ultra|modelslab:[a-z0-9][a-z0-9-_]{0,40})$/,
+    /^(leonardo(?::[a-z0-9][a-z0-9-]{0,63})?|grok-imagine-image|gpt-image-1|gpt-image-1-mini|gpt-image-1\.5|imagen-3|imagen-4|imagen-4-ultra|modelslab:[a-z0-9][a-z0-9-_]{0,40})$/,
     {
       message:
-        'imageModel must be one of: leonardo, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, imagen-3, imagen-4, imagen-4-ultra, or modelslab:<model_id>',
+        'imageModel must be one of: leonardo, leonardo:<model_id>, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, imagen-3, imagen-4, imagen-4-ultra, or modelslab:<model_id>',
     },
   )
-  @MaxLength(50)
+  @MaxLength(80)
   imageModel?: string;
 
   // Optional script length (e.g. "30 seconds", "1 minute") so the
@@ -135,23 +135,23 @@ export class GenerateImageDto {
   @IsOptional()
   characters?: ScriptCharacterInput[];
 
-  // Optional canonical eras extracted/edited during splitting.
-  // Used to ground visuals in the correct time period when generating prompts.
+  // Optional canonical locations extracted/edited during splitting.
+  // Used to ground visuals in the correct environment/time context when generating prompts.
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => ScriptEraInput)
+  @Type(() => ScriptLocationInput)
   @IsOptional()
-  eras?: ScriptEraInput[];
+  locations?: ScriptLocationInput[];
 
-  // Optional inferred era key for the sentence (from split-script mapping).
+  // Optional inferred location key for the sentence (from split-script mapping).
   @IsString()
   @IsOptional()
-  eraKey?: string;
+  locationKey?: string;
 
-  // Optional user override for the era key.
+  // Optional user override for the location key.
   @IsString()
   @IsOptional()
-  forcedEraKey?: string;
+  forcedLocationKey?: string;
 
   // Optional per-sentence override: if provided, the backend will use these
   // canonical character keys directly and skip mention/detection checks.

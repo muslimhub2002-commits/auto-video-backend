@@ -182,11 +182,11 @@ class UpdateSentenceInput {
 
   @IsString()
   @IsOptional()
-  era_key?: string | null;
+  location_key?: string | null;
 
   @IsString()
   @IsOptional()
-  forced_era_key?: string | null;
+  forced_location_key?: string | null;
 
   @IsArray()
   @ValidateNested({ each: true })
@@ -224,7 +224,7 @@ class ScriptCharacterInput {
   isWoman: boolean;
 }
 
-class ScriptEraInput {
+class ScriptLocationInput {
   @IsString()
   @IsNotEmpty()
   key: string;
@@ -265,9 +265,9 @@ class ShortScriptInput {
 
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => ScriptEraInput)
+  @Type(() => ScriptLocationInput)
   @IsOptional()
-  eras?: ScriptEraInput[];
+  locations?: ScriptLocationInput[];
 }
 
 export class UpdateScriptDto {
@@ -336,9 +336,9 @@ export class UpdateScriptDto {
 
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => ScriptEraInput)
+  @Type(() => ScriptLocationInput)
   @IsOptional()
-  eras?: ScriptEraInput[];
+  locations?: ScriptLocationInput[];
 
   // When true, this script row is treated as a derived Short and hidden from the normal scripts listing.
   @IsBoolean()

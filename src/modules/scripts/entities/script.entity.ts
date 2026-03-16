@@ -68,10 +68,10 @@ export class Script {
     isWoman: boolean;
   }> | null;
 
-  // Canonical era list extracted during splitting.
+  // Canonical location list extracted during splitting.
   // Stored so drafts/library restore keeps stable keys + consistent prompting.
   @Column({ type: 'jsonb', nullable: true })
-  eras: Array<{
+  locations: Array<{
     key: string;
     name: string;
     description?: string;

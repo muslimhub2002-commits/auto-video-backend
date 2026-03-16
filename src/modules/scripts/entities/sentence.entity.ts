@@ -100,13 +100,13 @@ export class Sentence {
   @Column({ type: 'jsonb', nullable: true })
   character_keys: string[] | null;
 
-  // Canonical era key inferred during splitting (non-forced).
+  // Canonical location key inferred during splitting (non-forced).
   @Column({ type: 'text', nullable: true })
-  era_key: string | null;
+  location_key: string | null;
 
-  // Optional per-sentence override for era selection.
+  // Optional per-sentence override for location selection.
   @Column({ type: 'text', nullable: true })
-  forced_era_key: string | null;
+  forced_location_key: string | null;
 
   @ManyToOne(() => Script, (script) => script.sentences, {
     onDelete: 'CASCADE',

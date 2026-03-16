@@ -2,7 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Easing, interpolate } from 'remotion';
 import type { TimelineScene } from '../types';
 
-const SUBTITLE_COLORS = ['#ffd60a', '#ffffff','#ff9248'];
+const SUBTITLE_COLORS = ['#ffd60a', '#ffffff'];
 
 const hashText = (value: string) => {
   let hash = 0;

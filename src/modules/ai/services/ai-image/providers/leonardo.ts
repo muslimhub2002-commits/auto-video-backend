@@ -75,10 +75,38 @@ export const generateWithLeonardo = async (params: {
     return term || null;
   };
 
+  const extractLeonardoBadRequestMessage = (errorText: string): string | null => {
+    const raw = String(errorText ?? '').trim();
+    if (!raw) return null;
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const directMessage = String(
+          (parsed as any).error ??
+            (parsed as any).message ??
+            (parsed as any).detail ??
+            '',
+        ).trim();
+
+        if (directMessage) {
+          return directMessage;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return raw;
+  };
+
+  const contrast = 3.5;
+
   const doCreateGeneration = async (promptForLeonardo: string) =>
     fetch('https://cloud.leonardo.ai/api/rest/v1/generations', {
       method: 'POST',
       headers: {
+        Accept: 'application/json',
         'Content-Type': 'application/json',
         Authorization: `Bearer ${params.leonardoApiKey}`,
       },
@@ -88,6 +116,7 @@ export const generateWithLeonardo = async (params: {
         width: params.width,
         height: params.height,
         num_images: 1,
+        enhancePrompt: false,
       }),
     } as any);
 
@@ -135,8 +164,11 @@ export const generateWithLeonardo = async (params: {
     });
 
     if (createResponse.status === 400) {
+      const upstreamMessage = extractLeonardoBadRequestMessage(errorText);
       throw new BadRequestException(
-        'Invalid request to Leonardo image generation API',
+        upstreamMessage
+          ? `Invalid request to Leonardo image generation API: ${upstreamMessage}`
+          : 'Invalid request to Leonardo image generation API',
       );
     }
 
