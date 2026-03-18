@@ -68,7 +68,11 @@ const normalizePexelsOrientation = (value: unknown) => {
   const normalized = String(value ?? '')
     .trim()
     .toLowerCase();
-  if (normalized === 'portrait' || normalized === 'landscape' || normalized === 'square') {
+  if (
+    normalized === 'portrait' ||
+    normalized === 'landscape' ||
+    normalized === 'square'
+  ) {
     return normalized;
   }
   return null;
@@ -78,13 +82,20 @@ const normalizePexelsSize = (value: unknown) => {
   const normalized = String(value ?? '')
     .trim()
     .toLowerCase();
-  if (normalized === 'small' || normalized === 'medium' || normalized === 'large') {
+  if (
+    normalized === 'small' ||
+    normalized === 'medium' ||
+    normalized === 'large'
+  ) {
     return normalized;
   }
   return null;
 };
 
-const matchesSquareishOrientation = (width?: number | null, height?: number | null) => {
+const matchesSquareishOrientation = (
+  width?: number | null,
+  height?: number | null,
+) => {
   if (!width || !height) return false;
   const ratio = width / height;
   return ratio >= 0.9 && ratio <= 1.1;
@@ -102,10 +113,16 @@ const matchesRequestedVideoOrientation = (
   if (normalized === 'square') {
     return matchesSquareishOrientation(width, height);
   }
-  return inferVideoOrientation(width, height) === normalizeOrientation(normalized);
+  return (
+    inferVideoOrientation(width, height) === normalizeOrientation(normalized)
+  );
 };
 
-const matchesRequestedSize = (requested: unknown, width?: number | null, height?: number | null) => {
+const matchesRequestedSize = (
+  requested: unknown,
+  width?: number | null,
+  height?: number | null,
+) => {
   const normalized = String(requested ?? '')
     .trim()
     .toLowerCase();
@@ -113,12 +130,16 @@ const matchesRequestedSize = (requested: unknown, width?: number | null, height?
 
   const largestDimension = Math.max(width, height);
   if (normalized === 'small') return largestDimension < 1000;
-  if (normalized === 'medium') return largestDimension >= 1000 && largestDimension < 2000;
+  if (normalized === 'medium')
+    return largestDimension >= 1000 && largestDimension < 2000;
   if (normalized === 'large') return largestDimension >= 2000;
   return true;
 };
 
-const buildPixabayAuthorUrl = (username?: string | null, userId?: number | null) => {
+const buildPixabayAuthorUrl = (
+  username?: string | null,
+  userId?: number | null,
+) => {
   const normalizedUsername = String(username ?? '').trim();
   if (!normalizedUsername || !userId) return null;
   return `https://pixabay.com/users/${normalizedUsername}-${userId}/`;
@@ -132,12 +153,17 @@ const pickPixabayVideoFile = (videos?: {
 }) => {
   const files = [videos?.large, videos?.medium, videos?.small, videos?.tiny]
     .filter((item): item is PixabayVideoFile => Boolean(item?.url))
-    .sort((left, right) => (Number(right.width) || 0) - (Number(left.width) || 0));
+    .sort(
+      (left, right) => (Number(right.width) || 0) - (Number(left.width) || 0),
+    );
 
   return files[0] ?? null;
 };
 
-const inferVideoOrientation = (width?: number | null, height?: number | null) => {
+const inferVideoOrientation = (
+  width?: number | null,
+  height?: number | null,
+) => {
   if (!width || !height) return null;
   return width >= height ? VideoSize.LANDSCAPE : VideoSize.PORTRAIT;
 };
@@ -176,7 +202,7 @@ export class VideosLibraryService {
 
     const qb = this.videosRepository
       .createQueryBuilder('v')
-      .where('v.user_id = :user_id', { user_id })
+      .where('v.user_id = :user_id', { user_id });
 
     const query = String(filters.query ?? '').trim();
     const orientation = normalizeOrientation(filters.orientation);
@@ -252,7 +278,13 @@ export class VideosLibraryService {
 
               const width = Number(selectedFile.width) || null;
               const height = Number(selectedFile.height) || null;
-              if (!matchesRequestedVideoOrientation(params.orientation, width, height)) {
+              if (
+                !matchesRequestedVideoOrientation(
+                  params.orientation,
+                  width,
+                  height,
+                )
+              ) {
                 return null;
               }
               if (!matchesRequestedSize(params.size, width, height)) {
@@ -267,11 +299,16 @@ export class VideosLibraryService {
                 thumbnail: selectedFile.thumbnail?.trim() || null,
                 video_type: video.tags?.trim() || query || null,
                 video_size: inferVideoOrientation(width, height),
-                duration: Number.isFinite(video.duration) ? Number(video.duration) : null,
+                duration: Number.isFinite(video.duration)
+                  ? Number(video.duration)
+                  : null,
                 width,
                 height,
                 authorName: video.user?.trim() || null,
-                authorUrl: buildPixabayAuthorUrl(video.user, Number(video.user_id) || null),
+                authorUrl: buildPixabayAuthorUrl(
+                  video.user,
+                  Number(video.user_id) || null,
+                ),
                 pexelsUrl: null,
                 pixabayUrl: video.pageURL?.trim() || null,
                 downloadUrl: selectedFile.url,
@@ -319,11 +356,13 @@ export class VideosLibraryService {
 
         const batchItems = (response.videos ?? [])
           .map<FreestockVideoItem | null>((video) => {
-            const sortedFiles = [...(video.video_files ?? [])].sort((left, right) => {
-              const leftWidth = Number(left.width) || 0;
-              const rightWidth = Number(right.width) || 0;
-              return rightWidth - leftWidth;
-            });
+            const sortedFiles = [...(video.video_files ?? [])].sort(
+              (left, right) => {
+                const leftWidth = Number(left.width) || 0;
+                const rightWidth = Number(right.width) || 0;
+                return rightWidth - leftWidth;
+              },
+            );
             const selectedFile =
               sortedFiles.find((item) => item.quality === 'hd' && item.link) ||
               sortedFiles.find((item) => item.link) ||
@@ -333,12 +372,20 @@ export class VideosLibraryService {
               return null;
             }
 
-            const width =
-              Number.isFinite(video.width) ? Number(video.width) : Number(selectedFile.width) || null;
-            const height =
-              Number.isFinite(video.height) ? Number(video.height) : Number(selectedFile.height) || null;
+            const width = Number.isFinite(video.width)
+              ? Number(video.width)
+              : Number(selectedFile.width) || null;
+            const height = Number.isFinite(video.height)
+              ? Number(video.height)
+              : Number(selectedFile.height) || null;
 
-            if (!matchesRequestedVideoOrientation(params.orientation, width, height)) {
+            if (
+              !matchesRequestedVideoOrientation(
+                params.orientation,
+                width,
+                height,
+              )
+            ) {
               return null;
             }
             if (!matchesRequestedSize(params.size, width, height)) {
@@ -356,7 +403,9 @@ export class VideosLibraryService {
                 null,
               video_type: query || null,
               video_size: inferVideoOrientation(width, height),
-              duration: Number.isFinite(video.duration) ? Number(video.duration) : null,
+              duration: Number.isFinite(video.duration)
+                ? Number(video.duration)
+                : null,
               width,
               height,
               authorName: video.user?.name?.trim() || null,
@@ -387,7 +436,8 @@ export class VideosLibraryService {
         throw new ServiceUnavailableException(message);
       }
       throw new InternalServerErrorException(
-        message || `Failed to search ${provider === 'pixabay' ? 'Pixabay' : 'Pexels'} videos`,
+        message ||
+          `Failed to search ${provider === 'pixabay' ? 'Pixabay' : 'Pexels'} videos`,
       );
     }
   }
@@ -440,10 +490,14 @@ export class VideosLibraryService {
       video: this.toStaticUrl(relPath),
       user_id,
       video_type:
-        String(body.video_type ?? body.source ?? 'freestock').trim() || 'freestock',
+        String(body.video_type ?? body.source ?? 'freestock').trim() ||
+        'freestock',
       video_size:
         normalizeOrientation(body.video_size) ??
-        inferVideoOrientation(Number(body.width) || null, Number(body.height) || null) ??
+        inferVideoOrientation(
+          Number(body.width) || null,
+          Number(body.height) || null,
+        ) ??
         null,
       width: Number.isFinite(Number(body.width)) ? Number(body.width) : null,
       height: Number.isFinite(Number(body.height)) ? Number(body.height) : null,

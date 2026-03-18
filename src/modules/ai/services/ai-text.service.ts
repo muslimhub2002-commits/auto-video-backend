@@ -3,6 +3,7 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { GenerateScriptDto } from '../dto/generate-script.dto';
 import { EnhanceScriptDto } from '../dto/enhance-script.dto';
 import { EnhanceSentenceDto } from '../dto/enhance-sentence.dto';
@@ -253,6 +254,8 @@ export class AiTextService {
     systemPrompt?: string;
   }): Promise<{
     sentences: Array<{
+      id: string;
+      index: number;
       text: string;
       characterKeys: string[];
       locationKey: string | null;
@@ -294,8 +297,114 @@ export class AiTextService {
         description?: string;
       };
 
+      type TaggedSentence = {
+        text: string;
+        characterKeys: string[];
+        locationKey: string | null;
+      };
+
+      type SplitSentenceRecord = TaggedSentence & {
+        id: string;
+        index: number;
+        normalizedText: string;
+      };
+
       const normalizeWhitespace = (value: string): string =>
         value.replace(/\s+/gu, ' ').trim();
+
+      const normalizeSentenceIdentity = (value: string): string =>
+        normalizeWhitespace(value)
+          .toLowerCase()
+          .replace(/[.!?]+$/gu, '')
+          .replace(/["'()[\]{}]/gu, '')
+          .trim();
+
+      const buildSentenceStableId = (text: string, index: number): string => {
+        const source =
+          normalizeSentenceIdentity(text) ||
+          normalizeWhitespace(text).toLowerCase();
+        const fingerprint = createHash('sha1')
+          .update(source || `sentence-${index + 1}`)
+          .digest('hex')
+          .slice(0, 12);
+
+        return `split-s${index + 1}-${fingerprint}`;
+      };
+
+      const finalizeTaggedSentences = (
+        items: TaggedSentence[],
+      ): SplitSentenceRecord[] => {
+        const out: SplitSentenceRecord[] = [];
+        let previousNormalizedText: string | null = null;
+
+        for (const item of items) {
+          const text = String(item?.text ?? '').trim();
+          if (!text) continue;
+
+          const normalizedText =
+            normalizeSentenceIdentity(text) ||
+            normalizeWhitespace(text).toLowerCase();
+          if (!normalizedText) continue;
+
+          // Guard against chunk-boundary duplication without removing intentional repeats.
+          if (normalizedText === previousNormalizedText) {
+            continue;
+          }
+
+          const index = out.length;
+          out.push({
+            id: buildSentenceStableId(text, index),
+            index,
+            text,
+            characterKeys: Array.from(
+              new Set(
+                (Array.isArray(item?.characterKeys) ? item.characterKeys : [])
+                  .map((key) =>
+                    String(key ?? '')
+                      .trim()
+                      .toUpperCase(),
+                  )
+                  .filter(Boolean),
+              ),
+            ),
+            locationKey:
+              item?.locationKey === null
+                ? null
+                : String(item?.locationKey ?? '')
+                  .trim()
+                  .toUpperCase() || null,
+            normalizedText,
+          });
+          previousNormalizedText = normalizedText;
+        }
+
+        return out;
+      };
+
+      const toSplitSentenceResponse = (records: SplitSentenceRecord[]) =>
+        records.map(
+          ({ normalizedText: _normalizedText, ...sentence }) => sentence,
+        );
+
+      const buildSentenceRecords = (texts: string[]): SplitSentenceRecord[] =>
+        finalizeTaggedSentences(
+          texts.map((text) => ({
+            text,
+            characterKeys: [],
+            locationKey: null,
+          })),
+        );
+
+      const countWords = (value: string): number =>
+        value.trim().split(/\s+/u).filter(Boolean).length;
+
+      const estimateScriptSeconds = (value: string): number =>
+        Math.max(1, Math.round((countWords(value) * 60) / this.narrationWpm));
+
+      const estimatedScriptSeconds = estimateScriptSeconds(script);
+      const isLongFormScript =
+        estimatedScriptSeconds > 70 || script.length > 3500;
+      const sentenceMaxChars = isLongFormScript ? 560 : 320;
 
       const splitLongSentence = (value: string, maxChars = 320): string[] => {
         const text = value.trim();
@@ -339,7 +448,7 @@ export class AiTextService {
             const candidate = match.trim();
             if (!candidate) continue;
 
-            const parts = splitLongSentence(candidate);
+            const parts = splitLongSentence(candidate, sentenceMaxChars);
             for (const part of parts) {
               const cleaned = part.trim();
               if (cleaned) out.push(cleaned);
@@ -451,27 +560,33 @@ export class AiTextService {
           .map((block) => block.trim())
           .filter(Boolean);
 
-        const sourceBlocks = paragraphBlocks.length ? paragraphBlocks : [normalized];
+        const sourceBlocks = paragraphBlocks.length
+          ? paragraphBlocks
+          : [normalized];
         return chunkTextBlocks(sourceBlocks, maxChars, maxItems);
       };
 
-      const chunkSentences = (
-        sentences: string[],
+      const chunkSentenceRecords = (
+        sentences: SplitSentenceRecord[],
         maxChars = 5000,
         maxItems = 18,
-      ): Array<{ start: number; items: string[] }> => {
-        const chunks: Array<{ start: number; items: string[] }> = [];
+      ): Array<{ start: number; items: SplitSentenceRecord[] }> => {
+        const chunks: Array<{ start: number; items: SplitSentenceRecord[] }> =
+          [];
         let start = 0;
 
         while (start < sentences.length) {
-          const items: string[] = [];
+          const items: SplitSentenceRecord[] = [];
           let length = 0;
           let cursor = start;
 
           while (cursor < sentences.length) {
             const candidate = sentences[cursor];
-            const nextLength = length + candidate.length + 8;
-            if (items.length > 0 && (items.length >= maxItems || nextLength > maxChars)) {
+            const nextLength = length + candidate.text.length + 8;
+            if (
+              items.length > 0 &&
+              (items.length >= maxItems || nextLength > maxChars)
+            ) {
               break;
             }
 
@@ -752,7 +867,9 @@ export class AiTextService {
         return out;
       };
 
-      const dedupeLocations = (candidates: ScriptLocation[]): ScriptLocation[] => {
+      const dedupeLocations = (
+        candidates: ScriptLocation[],
+      ): ScriptLocation[] => {
         const seen = new Set<string>();
         const out: ScriptLocation[] = [];
 
@@ -788,10 +905,11 @@ export class AiTextService {
         '- Do NOT include Allah/God as a character.\n' +
         '- If the script mentions Sahaba (companions of Prophet Muhammad), still extract them but set the boolean flags accordingly.\n' +
         '- Each character.description MUST be only two lines max & include facial + physical attributes for consistency.\n' +
-        '- For any character with isProphet=true: DO NOT describe face details. Write the description to be safe for a VERY FAR, DISTANT BACK VIEW depiction only (small figure, seen from behind, no facial visibility) using only physique + clothing, and include that there is flashy light all around the body & face.\n' +
+        '- For any character with isProphet=true: DO NOT describe face details. Write the description to be safe for a VERY FAR, DISTANT BACK VIEW depiction only using only physique + clothing, and include that there is flashy light all around the body & face.\n' +
         '- For any character with isSahaba=true (except an Army): DO NOT describe face details (no eyes/nose/mouth). Write the description to be safe for a VERY FAR, DISTANT BACK VIEW depiction only (small figure, seen from behind, no facial visibility) using physique + clothing + silhouette.\n' +
         '- Character keys must be short like C1, C2, C3... in first-appearance order.\n' +
         '- If unsure about any boolean flag, set it to false.\n' +
+        '- Each description needs to be one line max\n' +
         '- No extra keys. No extra text.';
 
       const extractionSegments = splitScriptIntoLlmSegments(script, 12000, 24);
@@ -828,7 +946,10 @@ export class AiTextService {
           const extractedChunks = await Promise.all(
             extractionSegments.map((segment) =>
               extractCharactersFromSegment(segment).catch((error) => {
-                console.warn('splitScript character extraction chunk fallback:', error);
+                console.warn(
+                  'splitScript character extraction chunk fallback:',
+                  error,
+                );
                 return [];
               }),
             ),
@@ -862,7 +983,8 @@ export class AiTextService {
               ],
             });
 
-            const normalizedMergedCharacters = normalizeCharacters(mergedCharacters);
+            const normalizedMergedCharacters =
+              normalizeCharacters(mergedCharacters);
             return normalizedMergedCharacters.length
               ? normalizedMergedCharacters
               : dedupedCandidates;
@@ -884,7 +1006,7 @@ export class AiTextService {
         '- Extract the different canonical LOCATIONS that are relevant to the story.\n' +
         '- Use keys E1, E2, E3... (do NOT use E0).\n' +
         '- Keep location.name short and production-friendly (e.g. "Desert caravan route", "Ottoman court interior", "Modern city rooftop").\n' +
-        '- The description must be maximum two lines and must describe environment, time of day, and atmospheric details.\n' +
+        '- The description must be maximum two lines and must describe environment structure, time of day\n' +
         "- Don't add any human or character details; focus only on the place, time of day, weather, lighting, mood, and surrounding environment.\n" +
         '- Multiple sentences can share the same location. Do NOT create one location per sentence.\n' +
         '- If the story revisits the same place later, reuse the same location concept.\n' +
@@ -914,15 +1036,16 @@ export class AiTextService {
       const extractLocations = async (): Promise<ScriptLocation[]> => {
         try {
           if (extractionSegments.length <= 1) {
-            return extractLocationsFromSegment(
-              extractionSegments[0] ?? script,
-            );
+            return extractLocationsFromSegment(extractionSegments[0] ?? script);
           }
 
           const extractedChunks = await Promise.all(
             extractionSegments.map((segment) =>
               extractLocationsFromSegment(segment).catch((error) => {
-                console.warn('splitScript location extraction chunk fallback:', error);
+                console.warn(
+                  'splitScript location extraction chunk fallback:',
+                  error,
+                );
                 return [];
               }),
             ),
@@ -956,7 +1079,8 @@ export class AiTextService {
               ],
             });
 
-            const normalizedMergedLocations = normalizeLocations(mergedLocations);
+            const normalizedMergedLocations =
+              normalizeLocations(mergedLocations);
             return normalizedMergedLocations.length
               ? normalizedMergedLocations
               : dedupedCandidates;
@@ -980,6 +1104,9 @@ export class AiTextService {
         '{"sentences": [{"text": string, "characterKeys": string[], "locationKey": string | null}]}\n\n' +
         'Rules:\n' +
         '- Do NOT add/remove/rewrite words; only split into sentences. Sentence text MUST match the script wording verbatim.\n' +
+        (isLongFormScript
+          ? '- LONG-FORM MODE: Preserve naturally long spoken sentences. Do NOT split one grammatical sentence into multiple items unless there is a true sentence boundary in the text.\n'
+          : '- SHORT-FORM MODE: Prefer tighter spoken sentence units when a natural sentence boundary already exists in the text.\n') +
         '- characterKeys must be a subset of the provided character keys (or empty).\n' +
         '- If a sentence describes a battle/fight/combat moment, include the relevant GROUP/ARMY character keys for the sides involved (in addition to any named protagonists mentioned).\n' +
         '- locationKey must be one of the provided location keys OR null.\n' +
@@ -1000,7 +1127,9 @@ export class AiTextService {
         .join('\n');
 
       const validCharacterKeys = new Set(characters.map((c) => c.key));
-      const validLocationKeys = new Set(locations.map((location) => location.key));
+      const validLocationKeys = new Set(
+        locations.map((location) => location.key),
+      );
 
       const sentenceRegexCount = (value: string): number => {
         const matches = value.match(/[.!?]+(?=\s|$)/gu);
@@ -1010,10 +1139,12 @@ export class AiTextService {
       const shouldUseChunkedMode =
         script.length > 7000 || sentenceRegexCount(script) > 24;
 
-      const splitSentencesWithLlmInChunks = async (): Promise<string[]> => {
+      const splitSentencesWithLlmInChunks = async (): Promise<
+        SplitSentenceRecord[]
+      > => {
         const segments = splitScriptIntoLlmSegments(script);
         if (!segments.length) {
-          return splitScriptVerbatim(script);
+          return buildSentenceRecords(splitScriptVerbatim(script));
         }
 
         const sentenceSplitPrompt =
@@ -1022,6 +1153,9 @@ export class AiTextService {
           '{"sentences": [{"text": string}]}\n\n' +
           'Rules:\n' +
           '- Keep the original wording exactly as written. Do NOT paraphrase, summarize, or add words.\n' +
+          (isLongFormScript
+            ? '- LONG-FORM MODE: Keep naturally long narration sentences intact. Do NOT break a sentence into smaller parts just because it is lengthy; split only at true sentence-ending punctuation or very strong narration breaks already present in the text.\n'
+            : '- SHORT-FORM MODE: Keep sentence units concise when the text already contains natural sentence-ending punctuation.\n') +
           '- Preserve the original order.\n' +
           '- Cover the entire segment exactly once with no omissions and no duplicates.\n' +
           '- Each output item must be a natural sentence-sized narration unit.\n' +
@@ -1055,17 +1189,26 @@ export class AiTextService {
                 : splitScriptVerbatim(segment)),
             );
           } catch (error) {
-            console.warn('splitScript chunk sentence-splitting fallback:', error);
+            console.warn(
+              'splitScript chunk sentence-splitting fallback:',
+              error,
+            );
             sentenceTexts.push(...splitScriptVerbatim(segment));
           }
         }
 
-        return sentenceTexts.length ? sentenceTexts : splitScriptVerbatim(script);
+        const fallbackTexts = sentenceTexts.length
+          ? sentenceTexts
+          : splitScriptVerbatim(script);
+
+        return buildSentenceRecords(fallbackTexts);
       };
 
-      const splitAndTagInChunks = async (sentenceTexts: string[]) => {
-        if (!sentenceTexts.length) {
-          return [{ text: script, characterKeys: [], locationKey: null }];
+      const splitAndTagInChunks = async (
+        sentenceRecords: SplitSentenceRecord[],
+      ) => {
+        if (!sentenceRecords.length) {
+          return buildSentenceRecords([script]);
         }
 
         const taggingPrompt =
@@ -1081,19 +1224,18 @@ export class AiTextService {
           '- Use local sentence order and optional context sentences only to resolve references/pronouns.\n' +
           '- No extra keys. No extra text.';
 
-        const chunks = chunkSentences(sentenceTexts);
-        const taggedSentences: Array<{
-          text: string;
-          characterKeys: string[];
-          locationKey: string | null;
-        }> = [];
+        const chunks = chunkSentenceRecords(sentenceRecords);
+        const taggedSentences: SplitSentenceRecord[] = [];
 
         for (const chunk of chunks) {
           const previousSentence =
-            chunk.start > 0 ? sentenceTexts[chunk.start - 1] : null;
+            chunk.start > 0
+              ? (sentenceRecords[chunk.start - 1]?.text ?? null)
+              : null;
           const nextSentence =
-            chunk.start + chunk.items.length < sentenceTexts.length
-              ? sentenceTexts[chunk.start + chunk.items.length]
+            chunk.start + chunk.items.length < sentenceRecords.length
+              ? (sentenceRecords[chunk.start + chunk.items.length]?.text ??
+                null)
               : null;
 
           try {
@@ -1118,7 +1260,7 @@ export class AiTextService {
                       : '') +
                     'TARGET SENTENCES:\n' +
                     chunk.items
-                      .map((text, index) => `${index}: ${text}`)
+                      .map((item, index) => `${index}: ${item.text}`)
                       .join('\n') +
                     '\n\n' +
                     (nextSentence
@@ -1128,19 +1270,25 @@ export class AiTextService {
               ],
             });
 
+            const normalizedChunk = normalizeTaggedSentenceChunk(
+              parsedChunk,
+              chunk.items.map((item) => item.text),
+              validCharacterKeys,
+              validLocationKeys,
+            );
+
             taggedSentences.push(
-              ...normalizeTaggedSentenceChunk(
-                parsedChunk,
-                chunk.items,
-                validCharacterKeys,
-                validLocationKeys,
-              ),
+              ...chunk.items.map((item, index) => ({
+                ...item,
+                characterKeys: normalizedChunk[index]?.characterKeys ?? [],
+                locationKey: normalizedChunk[index]?.locationKey ?? null,
+              })),
             );
           } catch (error) {
             console.warn('splitScript chunk tagging fallback:', error);
             taggedSentences.push(
-              ...chunk.items.map((text) => ({
-                text,
+              ...chunk.items.map((item) => ({
+                ...item,
                 characterKeys: [],
                 locationKey: null,
               })),
@@ -1148,18 +1296,14 @@ export class AiTextService {
           }
         }
 
-        return taggedSentences;
+        return finalizeTaggedSentences(taggedSentences);
       };
 
-      let sentences: Array<{
-        text: string;
-        characterKeys: string[];
-        locationKey: string | null;
-      }>;
+      let sentences: SplitSentenceRecord[];
 
       if (shouldUseChunkedMode) {
-        const sentenceTexts = await splitSentencesWithLlmInChunks();
-        sentences = await splitAndTagInChunks(sentenceTexts);
+        const sentenceRecords = await splitSentencesWithLlmInChunks();
+        sentences = await splitAndTagInChunks(sentenceRecords);
       } else {
         try {
           const parsedSentences = await this.llm.completeJson<unknown>({
@@ -1184,25 +1328,31 @@ export class AiTextService {
             ],
           });
 
-          sentences = normalizeSentenceItems(
-            parsedSentences,
-            validCharacterKeys,
-            validLocationKeys,
+          sentences = finalizeTaggedSentences(
+            normalizeSentenceItems(
+              parsedSentences,
+              validCharacterKeys,
+              validLocationKeys,
+            ),
           );
         } catch (error) {
           console.warn('splitScript full tagging fallback:', error);
-          const fallbackTexts = shouldUseChunkedMode
+          const fallbackSentenceRecords = shouldUseChunkedMode
             ? await splitSentencesWithLlmInChunks()
-            : splitScriptVerbatim(script);
-          sentences = await splitAndTagInChunks(fallbackTexts);
+            : buildSentenceRecords(splitScriptVerbatim(script));
+          sentences = await splitAndTagInChunks(fallbackSentenceRecords);
         }
       }
 
       if (!sentences.length) {
-        sentences = [{ text: script, characterKeys: [], locationKey: null }];
+        sentences = buildSentenceRecords([script]);
       }
 
-      return { sentences, characters, locations };
+      return {
+        sentences: toSplitSentenceResponse(sentences),
+        characters,
+        locations,
+      };
     } catch {
       throw new InternalServerErrorException(
         'Failed to split script into sentences',
@@ -1605,7 +1755,9 @@ export class AiTextService {
         .trim();
 
       if (!searchTerm) {
-        throw new InternalServerErrorException('Empty media search term returned');
+        throw new InternalServerErrorException(
+          'Empty media search term returned',
+        );
       }
 
       return { searchTerm };
@@ -1618,7 +1770,9 @@ export class AiTextService {
       }
 
       console.error('Failed to generate media search term:', error);
-      throw new InternalServerErrorException('Failed to generate media search term');
+      throw new InternalServerErrorException(
+        'Failed to generate media search term',
+      );
     }
   }
 

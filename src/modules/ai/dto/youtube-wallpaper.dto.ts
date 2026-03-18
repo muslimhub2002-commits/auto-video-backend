@@ -56,10 +56,10 @@ export class YoutubeWallpaperDto {
   @IsString()
   @IsOptional()
   @Matches(
-    /^(leonardo(?::[a-z0-9][a-z0-9-]{0,63})?|grok-imagine-image|gpt-image-1|gpt-image-1-mini|gpt-image-1\.5|imagen-3|imagen-4|imagen-4-ultra|modelslab:[a-z0-9][a-z0-9-_]{0,40})$/,
+    /^(leonardo(?::[a-z0-9][a-z0-9-]{0,63})?|grok-imagine-image|gpt-image-1|gpt-image-1-mini|gpt-image-1\.5|gemini-2\.5-flash-image|gemini-3\.1-flash-image-preview|gemini-3-pro-image-preview|imagen-3|imagen-4|imagen-4-ultra|modelslab:[a-z0-9][a-z0-9-_]{0,40})$/,
     {
       message:
-        'imageModel must be one of: leonardo, leonardo:<model_id>, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, imagen-3, imagen-4, imagen-4-ultra, or modelslab:<model_id>',
+        'imageModel must be one of: leonardo, leonardo:<model_id>, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, gemini-2.5-flash-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, imagen-3, imagen-4, imagen-4-ultra, or modelslab:<model_id>',
     },
   )
   @MaxLength(80)

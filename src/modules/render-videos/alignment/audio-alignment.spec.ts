@@ -3,10 +3,7 @@ import { alignByWordCount } from './audio-alignment';
 describe('alignByWordCount', () => {
   it('creates synthetic word timings for each sentence', () => {
     const timings = alignByWordCount(
-      [
-        { text: 'Hello world again' },
-        { text: 'Second sentence here' },
-      ],
+      [{ text: 'Hello world again' }, { text: 'Second sentence here' }],
       6,
     );
 

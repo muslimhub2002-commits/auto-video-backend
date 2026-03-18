@@ -299,7 +299,6 @@ export class LlmRouter {
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
     const completeOnce = async (): Promise<string> => {
-
       if (isGeminiModel(model)) {
         if (!this.gemini) {
           throw new Error(

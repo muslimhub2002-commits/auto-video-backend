@@ -32,7 +32,10 @@ export class AiImageService {
 
   private static readonly GROK_IMAGE_MODELS = new Set(['grok-imagine-image']);
 
-  private static readonly IMAGEN_MODELS = new Set([
+  private static readonly GEMINI_IMAGE_MODELS = new Set([
+    'gemini-2.5-flash-image',
+    'gemini-3.1-flash-image-preview',
+    'gemini-3-pro-image-preview',
     'imagen-3',
     'imagen-4',
     'imagen-4-ultra',
@@ -46,14 +49,20 @@ export class AiImageService {
     { expiresAt: number; bible: CharacterBible }
   >();
 
-  private readonly scriptLocationCache = new Map<string, ScriptLocationCacheEntry>();
+  private readonly scriptLocationCache = new Map<
+    string,
+    ScriptLocationCacheEntry
+  >();
 
-  private readonly sentenceLocationCache = new Map<string, ScriptLocationCacheEntry>();
+  private readonly sentenceLocationCache = new Map<
+    string,
+    ScriptLocationCacheEntry
+  >();
 
   constructor(
     private readonly runtime: AiRuntimeService,
     private readonly imagesService: ImagesService,
-  ) { }
+  ) {}
 
   private static readonly NO_TEXT_PROMPT_SUFFIX =
     'No text, no letters, no words, no captions, no subtitles, no watermark, no logo, no signature, no symbols, no numbers.';
@@ -168,17 +177,19 @@ export class AiImageService {
         id,
     ).trim();
 
-    const provider = String(
-      raw?.provider ??
-        raw?.providerName ??
-        raw?.provider_name ??
-        raw?.vendor ??
-        raw?.owner ??
-        raw?.organization ??
-        'Leonardo',
-    ).trim() || 'Leonardo';
+    const provider =
+      String(
+        raw?.provider ??
+          raw?.providerName ??
+          raw?.provider_name ??
+          raw?.vendor ??
+          raw?.owner ??
+          raw?.organization ??
+          'Leonardo',
+      ).trim() || 'Leonardo';
 
-    const normalizedProvider = provider === 'Leonardo.Ai' ? 'Leonardo' : provider;
+    const normalizedProvider =
+      provider === 'Leonardo.Ai' ? 'Leonardo' : provider;
     const label = name.toLowerCase().includes(normalizedProvider.toLowerCase())
       ? name
       : `${normalizedProvider} - ${name}`;
@@ -216,9 +227,7 @@ export class AiImageService {
     );
   }
 
-  async listLeonardoModels(params?: {
-    query?: string;
-  }): Promise<{
+  async listLeonardoModels(params?: { query?: string }): Promise<{
     models: Array<{
       id: string;
       value: string;
@@ -284,8 +293,10 @@ export class AiImageService {
 
     const deduped = normalized
       .filter((model) => this.isNativeLeonardoPlatformModel(model))
-      .filter((model, index, collection) =>
-        collection.findIndex((candidate) => candidate.id === model.id) === index,
+      .filter(
+        (model, index, collection) =>
+          collection.findIndex((candidate) => candidate.id === model.id) ===
+          index,
       );
 
     const configuredId = String(this.leonardoModelId ?? '').trim();
@@ -366,9 +377,7 @@ export class AiImageService {
     if (!location) return null;
 
     const capped =
-      location.length > 80
-        ? location.slice(0, 77).trimEnd() + '...'
-        : location;
+      location.length > 80 ? location.slice(0, 77).trimEnd() + '...' : location;
     return capped;
   }
 
@@ -405,7 +414,8 @@ export class AiImageService {
         content:
           (script
             ? `SCRIPT CONTEXT (for reference resolution):\n${script}\n\n`
-            : '') + `TARGET SENTENCE (infer location for this ONLY):\n${sentence}`,
+            : '') +
+          `TARGET SENTENCE (infer location for this ONLY):\n${sentence}`,
       },
     ];
 
@@ -1006,10 +1016,10 @@ export class AiImageService {
       !isModelsLab &&
       !AiImageService.OPENAI_IMAGE_MODELS.has(imageModel) &&
       !AiImageService.GROK_IMAGE_MODELS.has(imageModel) &&
-      !AiImageService.IMAGEN_MODELS.has(imageModel)
+      !AiImageService.GEMINI_IMAGE_MODELS.has(imageModel)
     ) {
       throw new BadRequestException(
-        `Unsupported imageModel "${dto.imageModel}". Supported: leonardo, leonardo:<model_id>, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, imagen-3, imagen-4, imagen-4-ultra, and modelslab:<model_id>.`,
+        `Unsupported imageModel "${dto.imageModel}". Supported: leonardo, leonardo:<model_id>, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, gemini-2.5-flash-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, imagen-3, imagen-4, imagen-4-ultra, and modelslab:<model_id>.`,
       );
     }
 
@@ -1058,7 +1068,7 @@ export class AiImageService {
     // It is intentionally large and will be further split later if desired.
 
     const style =
-      dto.style?.trim() || 'Anime style, detailed, vibrant, high quality';
+      dto.style?.trim() || 'Anime style, 4K QUALITY DETAILED, vibrant';
 
     const fullScriptContext = dto.script?.trim();
 
@@ -1074,12 +1084,12 @@ export class AiImageService {
 
     const canonicalLocations = Array.isArray(dto.locations)
       ? dto.locations
-        .map((location) => ({
-          key: String((location as any)?.key ?? '').trim(),
-          name: String((location as any)?.name ?? '').trim(),
-          description: String((location as any)?.description ?? '').trim(),
-        }))
-        .filter((location) => location.key && location.name)
+          .map((location) => ({
+            key: String((location as any)?.key ?? '').trim(),
+            name: String((location as any)?.name ?? '').trim(),
+            description: String((location as any)?.description ?? '').trim(),
+          }))
+          .filter((location) => location.key && location.name)
       : [];
 
     const forcedLocationKeyProvided = dto.forcedLocationKey !== undefined;
@@ -1088,7 +1098,9 @@ export class AiImageService {
       : String(dto.locationKey ?? '').trim();
 
     const requestedLocation = requestedLocationKeyRaw
-      ? (canonicalLocations.find((location) => location.key === requestedLocationKeyRaw) ?? null)
+      ? (canonicalLocations.find(
+          (location) => location.key === requestedLocationKeyRaw,
+        ) ?? null)
       : null;
 
     const forcedCharacterKeysInput = Array.isArray(dto.forcedCharacterKeys)
@@ -1097,13 +1109,13 @@ export class AiImageService {
     const forcedCharactersProvided = forcedCharacterKeysInput !== null;
     const forcedKeysRaw = forcedCharactersProvided
       ? forcedCharacterKeysInput
-        .map((k) => String(k ?? '').trim())
-        .filter(Boolean)
+          .map((k) => String(k ?? '').trim())
+          .filter(Boolean)
       : [];
     const forcedKeys = canonicalCharacters?.length
       ? forcedKeysRaw.filter((k) =>
-        canonicalCharacters.some((c) => c.key === k),
-      )
+          canonicalCharacters.some((c) => c.key === k),
+        )
       : [];
     const useForcedCharactersOverride = forcedCharactersProvided;
 
@@ -1114,9 +1126,9 @@ export class AiImageService {
     const inferredLocation =
       !requestedLocation && !forcedLocationKeyProvided
         ? await this.getOrCreateLocationForSentence({
-          scriptRaw: fullScriptContext,
-          sentenceRaw: sentenceText,
-        })
+            scriptRaw: fullScriptContext,
+            sentenceRaw: sentenceText,
+          })
         : null;
 
     const effectiveLocationLine = requestedLocation
@@ -1127,29 +1139,29 @@ export class AiImageService {
 
     const mentionResult = useForcedCharactersOverride
       ? (() => {
-        const forcedReferencedCharacters = (canonicalCharacters ?? []).filter(
-          (character) => forcedKeys.includes(character.key),
-        );
+          const forcedReferencedCharacters = (canonicalCharacters ?? []).filter(
+            (character) => forcedKeys.includes(character.key),
+          );
 
-        return {
-          blockHumans: forcedReferencedCharacters.some(
-            (character) => character.isWoman,
-          ),
-          forceBackView: forcedReferencedCharacters.some(
-            (character) => character.isSahaba || character.isProphet,
-          ),
-          forceLightAroundBody: forcedReferencedCharacters.some(
-            (character) => character.isProphet,
-          ),
-          characterKeys: forcedKeys,
-        };
-      })()
+          return {
+            blockHumans: forcedReferencedCharacters.some(
+              (character) => character.isWoman,
+            ),
+            forceBackView: forcedReferencedCharacters.some(
+              (character) => character.isSahaba || character.isProphet,
+            ),
+            forceLightAroundBody: forcedReferencedCharacters.some(
+              (character) => character.isProphet,
+            ),
+            characterKeys: forcedKeys,
+          };
+        })()
       : await this.sentenceMentionsAllahProphetOrSahaba({
-        script: fullScriptContext,
-        sentence: dto.sentence,
-        characters: canonicalCharacters,
-        characterBible,
-      });
+          script: fullScriptContext,
+          sentence: dto.sentence,
+          characters: canonicalCharacters,
+          characterBible,
+        });
 
     // const blockHumans = mentionResult.blockHumans;
     const forceBackView = mentionResult.forceBackView;
@@ -1181,21 +1193,21 @@ export class AiImageService {
       'Surround the full body with a strong, radiant light aura/glow from all sides, clearly wrapping around the body outline.';
     const targetedBackViewRule = hasMultipleReferencedCharacters
       ? backViewCharacters
-        .map(
-          (character) =>
-            `${character.name} must be shown as a small, distant figure VERY FAR from the camera and ONLY from behind (back view), and you MUST NOT show ${character.name}'s face or facial details.`,
-        )
-        .join(' ')
+          .map(
+            (character) =>
+              `${character.name} must be shown as a small, distant figure VERY FAR from the camera and ONLY from behind (back view), and you MUST NOT show ${character.name}'s face or facial details.`,
+          )
+          .join(' ')
       : forceBackView
         ? backViewOnlyRule.trim()
         : '';
     const targetedLightAroundBodyRule = hasMultipleReferencedCharacters
       ? lightAroundBodyCharacters
-        .map(
-          (character) =>
-            `Apply the strong radiant light aura wrapping all around the full body ONLY to ${character.name}.`,
-        )
-        .join(' ')
+          .map(
+            (character) =>
+              `Apply the strong radiant light aura wrapping all around the full body ONLY to ${character.name}.`,
+          )
+          .join(' ')
       : forceLightAroundBody
         ? lightAroundBodyRule
         : '';
@@ -1209,38 +1221,37 @@ export class AiImageService {
           frameType === 'single'
             ? ''
             : (frameType === 'start'
-              ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
-              : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
-            (continuityPrompt
-              ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
-              : '');
+                ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
+                : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
+              (continuityPrompt
+                ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
+                : '');
 
         const characterRefsBlock = referencedCharacterKeys.length
           ? (() => {
-            const resolveDescription = (key: string): string | null => {
-              if (canonicalCharacters?.length) {
-                const c = canonicalCharacters.find((cc) => cc.key === key);
-                return c ? `${c.name}: ${c.description}` : null;
-              }
-              if (characterBible) {
-                const c = characterBible.byKey[key];
-                return c ? `${c.name}: ${c.description}` : null;
-              }
-              return null;
-            };
+              const resolveDescription = (key: string): string | null => {
+                if (canonicalCharacters?.length) {
+                  const c = canonicalCharacters.find((cc) => cc.key === key);
+                  return c ? `${c.name}: ${c.description}` : null;
+                }
+                if (characterBible) {
+                  const c = characterBible.byKey[key];
+                  return c ? `${c.name}: ${c.description}` : null;
+                }
+                return null;
+              };
 
+              const lines = referencedCharacterKeys
+                .map(resolveDescription)
+                .filter(Boolean)
+                .join('\n');
 
-            const lines = referencedCharacterKeys
-              .map(resolveDescription)
-              .filter(Boolean)
-              .join('\n');
-
-            return lines
-              ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
-              lines +
-              '\n\n'
-              : '';
-          })()
+              return lines
+                ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
+                    lines +
+                    '\n\n'
+                : '';
+            })()
           : '';
         if (!useForcedCharactersOverride) {
           console.log(referencedCharacterKeys, 'referencedCharacterKeys');
@@ -1263,30 +1274,30 @@ export class AiImageService {
                 messages: [
                   {
                     role: 'system',
-                    content:
-                      (() => {
-                        const humanDepictionRule = [
-                          targetedBackViewRule,
-                          targetedLightAroundBodyRule,
-                          referencedCharacterKeys.length
-                            ? forceBackView
-                              ? 'You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s), and if any referenced character is Prophet/Sahaba they must appear as a small, distant rear-view figure very far from the camera.'
-                              : 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
-                            : '',
-                        ]
-                          .filter(Boolean)
-                          .join(' ');
+                    content: (() => {
+                      const humanDepictionRule = [
+                        targetedBackViewRule,
+                        targetedLightAroundBodyRule,
+                        referencedCharacterKeys.length
+                          ? forceBackView
+                            ? 'You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s), and if any referenced character is Prophet/Sahaba they must appear as a small, distant rear-view figure very far from the camera.'
+                            : 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
+                          : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ');
 
-                        return (
-                          'You are a visual prompt engineer for image generation models. ' +
-                          'Your prompt MUST visually express the exact sentence that is happening in the context of the script' +
-                          'If there are specific characters you need to define their position in the scene(ALL SELECTED CHARACTERS MUST BE INCLUDED) ' +
-                          'ABSOLUTE RULE: Do not add any textual elements in the image. ' +
-                          AiImageService.NO_TEXT_PROMPT_SUFFIX +
-                          (frameBlock ? frameBlock + '\n' : '') +
-                          humanDepictionRule
-                        );
-                      })(),
+                      return (
+                        'You are a visual prompt engineer for image generation models. ' +
+                        'Your prompt MUST visually express the exact sentence that is happening in the context of the script' +
+                        'If there are specific characters you need to define their position in the scene(ALL SELECTED CHARACTERS MUST BE INCLUDED) ' +
+                        'ABSOLUTE RULE: Do not add any textual elements in the image.' +
+                        'ABSOLUTE RULE: The prompt must be 4 lines max with great detail' +
+                        AiImageService.NO_TEXT_PROMPT_SUFFIX +
+                        (frameBlock ? frameBlock + '\n' : '') +
+                        humanDepictionRule
+                      );
+                    })(),
                   },
                   {
                     role: 'user',
@@ -1375,7 +1386,7 @@ export class AiImageService {
         //   if (!hasNoHumans) {
         //     prompt = `${prompt}, no people, no humans, no faces, no hands, no silhouettes`;
         //   }
-        // } else 
+        // } else
         {
           if (forceBackView) {
             if (targetedBackViewRule) {
@@ -1465,8 +1476,7 @@ export class AiImageService {
         isModelsLab,
         modelslabModelId,
         leonardoModelIdOverride,
-      } =
-        this.validateAndNormalizeImageModel(dto);
+      } = this.validateAndNormalizeImageModel(dto);
 
       if (isModelsLab) {
         const apiKey = String(
@@ -1525,7 +1535,7 @@ export class AiImageService {
         });
       }
 
-      if (AiImageService.IMAGEN_MODELS.has(imageModel)) {
+      if (AiImageService.GEMINI_IMAGE_MODELS.has(imageModel)) {
         const image = await generateWithImagen({
           geminiApiKey: this.geminiApiKey,
           imageModel: imageModel as any,

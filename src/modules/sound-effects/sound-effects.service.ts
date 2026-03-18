@@ -140,11 +140,15 @@ export class SoundEffectsService implements OnModuleInit {
 
     const existing = await query.getOne();
     if (existing) {
-      throw new BadRequestException('A sound effect with this title already exists');
+      throw new BadRequestException(
+        'A sound effect with this title already exists',
+      );
     }
   }
 
-  private async getAudioDurationSecondsFromFile(filePath: string): Promise<number | null> {
+  private async getAudioDurationSecondsFromFile(
+    filePath: string,
+  ): Promise<number | null> {
     try {
       const command: any = RenderInternals.callFf({
         bin: 'ffprobe',
@@ -205,7 +209,8 @@ export class SoundEffectsService implements OnModuleInit {
     const list = (Array.isArray(items) ? items : []).filter(
       (item) =>
         item &&
-        (item.duration_seconds === null || item.duration_seconds === undefined) &&
+        (item.duration_seconds === null ||
+          item.duration_seconds === undefined) &&
         String(item.url ?? '').trim(),
     );
 
@@ -396,13 +401,15 @@ export class SoundEffectsService implements OnModuleInit {
     const rawVolume = Number(params.volumePercent);
     const volumePercent = Number.isFinite(rawVolume)
       ? clampPercent(rawVolume)
-      : target.volume_percent ?? 100;
+      : (target.volume_percent ?? 100);
 
     (target as any).name = name;
     target.title = name;
     target.volume_percent = volumePercent;
     target.audio_settings = normalizeSoundEffectAudioSettings(
-      params.audioSettings ?? target.audio_settings ?? DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+      params.audioSettings ??
+        target.audio_settings ??
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
     );
     return this.normalizeStoredSoundEffect(await this.repo.save(target));
   }
@@ -427,7 +434,7 @@ export class SoundEffectsService implements OnModuleInit {
     const rawVolume = Number(params.volumePercent);
     const volumePercent = Number.isFinite(rawVolume)
       ? clampPercent(rawVolume)
-      : source.volume_percent ?? 100;
+      : (source.volume_percent ?? 100);
 
     const clone = this.repo.create({
       user_id: source.user_id,
@@ -440,7 +447,9 @@ export class SoundEffectsService implements OnModuleInit {
       volume_percent: volumePercent,
       duration_seconds: source.duration_seconds,
       audio_settings: normalizeSoundEffectAudioSettings(
-        params.audioSettings ?? source.audio_settings ?? DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+        params.audioSettings ??
+          source.audio_settings ??
+          DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
       ),
       is_transition_sound: source.is_transition_sound,
       is_merged: false,
@@ -657,16 +666,23 @@ export class SoundEffectsService implements OnModuleInit {
     for (let i = 0; i < params.inputCount; i += 1) {
       const delayMs = Math.max(0, Math.round(params.items[i]?.delayMs ?? 0));
       const volume = clamp01(params.items[i]?.volume ?? 1);
-      const trimStartSeconds = Math.max(0, Number(params.items[i]?.trimStartSeconds ?? 0) || 0);
+      const trimStartSeconds = Math.max(
+        0,
+        Number(params.items[i]?.trimStartSeconds ?? 0) || 0,
+      );
       const rawTrimDurationSeconds = params.items[i]?.trimDurationSeconds;
       const trimDurationSeconds =
-        typeof rawTrimDurationSeconds === 'number' && Number.isFinite(rawTrimDurationSeconds)
+        typeof rawTrimDurationSeconds === 'number' &&
+        Number.isFinite(rawTrimDurationSeconds)
           ? Math.max(0, rawTrimDurationSeconds)
           : null;
       const out = `a${i}`;
       const filters: string[] = [];
 
-      if (trimStartSeconds > 0 || (trimDurationSeconds !== null && trimDurationSeconds > 0)) {
+      if (
+        trimStartSeconds > 0 ||
+        (trimDurationSeconds !== null && trimDurationSeconds > 0)
+      ) {
         const trimArgs: string[] = [];
         if (trimStartSeconds > 0) {
           trimArgs.push(`start=${trimStartSeconds.toFixed(6)}`);
@@ -684,9 +700,7 @@ export class SoundEffectsService implements OnModuleInit {
       filters.push(`adelay=${delayMs}:all=1`);
       filters.push(`volume=${volume.toFixed(6)}`);
       filters.push('aresample=async=1');
-      parts.push(
-        `[${i}:a]${filters.join(',')}[${out}]`,
-      );
+      parts.push(`[${i}:a]${filters.join(',')}[${out}]`);
       outLabels.push(`[${out}]`);
     }
 
@@ -840,9 +854,8 @@ export class SoundEffectsService implements OnModuleInit {
 
       const outPath = fs.existsSync(outMp3) ? outMp3 : outWav;
       const mergedBuffer = fs.readFileSync(outPath);
-      const mergedDurationSeconds = await this.getAudioDurationSecondsFromFile(
-        outPath,
-      );
+      const mergedDurationSeconds =
+        await this.getAudioDurationSecondsFromFile(outPath);
 
       return {
         mergedBuffer,
@@ -939,7 +952,10 @@ export class SoundEffectsService implements OnModuleInit {
       name: title,
       url: uploaded.url,
       public_id: uploaded.public_id,
-      hash: crypto.createHash('sha256').update(rendered.mergedBuffer).digest('hex'),
+      hash: crypto
+        .createHash('sha256')
+        .update(rendered.mergedBuffer)
+        .digest('hex'),
       number_of_times_used: 0,
       volume_percent: volumePercent,
       duration_seconds: rendered.mergedDurationSeconds,

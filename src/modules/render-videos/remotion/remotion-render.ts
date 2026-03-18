@@ -18,7 +18,9 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
 export const resolveRemotionRenderTimeoutMs = (timeline: any) => {
-  const explicitMs = getPositiveIntOrNull(process.env.REMOTION_RENDER_TIMEOUT_MS);
+  const explicitMs = getPositiveIntOrNull(
+    process.env.REMOTION_RENDER_TIMEOUT_MS,
+  );
   if (explicitMs) {
     return explicitMs;
   }
@@ -38,19 +40,27 @@ export const resolveRemotionRenderTimeoutMs = (timeline: any) => {
       ? durationInFramesRaw
       : 0;
   const durationSeconds = durationInFrames > 0 ? durationInFrames / fps : 0;
-  const sceneCount = Array.isArray(timeline?.scenes) ? timeline.scenes.length : 0;
+  const sceneCount = Array.isArray(timeline?.scenes)
+    ? timeline.scenes.length
+    : 0;
   const widthRaw = Number(timeline?.width ?? 0);
   const heightRaw = Number(timeline?.height ?? 0);
   const megapixels =
-    Number.isFinite(widthRaw) && Number.isFinite(heightRaw) && widthRaw > 0 && heightRaw > 0
+    Number.isFinite(widthRaw) &&
+    Number.isFinite(heightRaw) &&
+    widthRaw > 0 &&
+    heightRaw > 0
       ? (widthRaw * heightRaw) / 1_000_000
       : 1;
 
   const baseMs = 20 * 60_000;
-  const durationBudgetMs = durationSeconds * 90_000 / 60;
+  const durationBudgetMs = (durationSeconds * 90_000) / 60;
   const sceneBudgetMs = sceneCount * 15_000;
-  const resolutionMultiplier = megapixels >= 2 ? 1.5 : megapixels >= 1 ? 1.2 : 1;
-  const computedMs = Math.ceil((baseMs + durationBudgetMs + sceneBudgetMs) * resolutionMultiplier);
+  const resolutionMultiplier =
+    megapixels >= 2 ? 1.5 : megapixels >= 1 ? 1.2 : 1;
+  const computedMs = Math.ceil(
+    (baseMs + durationBudgetMs + sceneBudgetMs) * resolutionMultiplier,
+  );
 
   return clamp(computedMs, 20 * 60_000, 3 * 60 * 60_000);
 };

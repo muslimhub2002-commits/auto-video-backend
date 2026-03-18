@@ -117,7 +117,9 @@ export const normalizeSoundEffectAudioSettings = (
       ? (raw.eq as Record<string, unknown>)
       : {};
   const compressor =
-    raw.compressor && typeof raw.compressor === 'object' && !Array.isArray(raw.compressor)
+    raw.compressor &&
+    typeof raw.compressor === 'object' &&
+    !Array.isArray(raw.compressor)
       ? (raw.compressor as Record<string, unknown>)
       : {};
   const reverb =
@@ -129,7 +131,9 @@ export const normalizeSoundEffectAudioSettings = (
       ? (raw.echo as Record<string, unknown>)
       : {};
   const saturation =
-    raw.saturation && typeof raw.saturation === 'object' && !Array.isArray(raw.saturation)
+    raw.saturation &&
+    typeof raw.saturation === 'object' &&
+    !Array.isArray(raw.saturation)
       ? (raw.saturation as Record<string, unknown>)
       : {};
   const trim =
@@ -140,42 +144,159 @@ export const normalizeSoundEffectAudioSettings = (
   return {
     version: 1,
     eq: {
-      lowGainDb: clamp(eq.lowGainDb, -24, 24, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.lowGainDb),
-      midGainDb: clamp(eq.midGainDb, -24, 24, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.midGainDb),
-      highGainDb: clamp(eq.highGainDb, -24, 24, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.highGainDb),
-      lowFrequencyHz: clamp(eq.lowFrequencyHz, 40, 600, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.lowFrequencyHz),
-      midFrequencyHz: clamp(eq.midFrequencyHz, 300, 4000, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.midFrequencyHz),
-      highFrequencyHz: clamp(eq.highFrequencyHz, 2000, 12000, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.highFrequencyHz),
-      midQ: clamp(eq.midQ, 0.1, 10, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.midQ),
+      lowGainDb: clamp(
+        eq.lowGainDb,
+        -24,
+        24,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.lowGainDb,
+      ),
+      midGainDb: clamp(
+        eq.midGainDb,
+        -24,
+        24,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.midGainDb,
+      ),
+      highGainDb: clamp(
+        eq.highGainDb,
+        -24,
+        24,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.highGainDb,
+      ),
+      lowFrequencyHz: clamp(
+        eq.lowFrequencyHz,
+        40,
+        600,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.lowFrequencyHz,
+      ),
+      midFrequencyHz: clamp(
+        eq.midFrequencyHz,
+        300,
+        4000,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.midFrequencyHz,
+      ),
+      highFrequencyHz: clamp(
+        eq.highFrequencyHz,
+        2000,
+        12000,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.highFrequencyHz,
+      ),
+      midQ: clamp(
+        eq.midQ,
+        0.1,
+        10,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.eq.midQ,
+      ),
     },
     compressor: {
-      enabled: clampBoolean(compressor.enabled, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.enabled),
-      threshold: clamp(compressor.threshold, -100, 0, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.threshold),
-      ratio: clamp(compressor.ratio, 1, 20, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.ratio),
-      attack: clamp(compressor.attack, 0, 1, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.attack),
-      release: clamp(compressor.release, 0, 2, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.release),
-      knee: clamp(compressor.knee, 0, 40, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.knee),
+      enabled: clampBoolean(
+        compressor.enabled,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.enabled,
+      ),
+      threshold: clamp(
+        compressor.threshold,
+        -100,
+        0,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.threshold,
+      ),
+      ratio: clamp(
+        compressor.ratio,
+        1,
+        20,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.ratio,
+      ),
+      attack: clamp(
+        compressor.attack,
+        0,
+        1,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.attack,
+      ),
+      release: clamp(
+        compressor.release,
+        0,
+        2,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.release,
+      ),
+      knee: clamp(
+        compressor.knee,
+        0,
+        40,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.compressor.knee,
+      ),
     },
     reverb: {
-      enabled: clampBoolean(reverb.enabled, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.reverb.enabled),
-      mix: clamp(reverb.mix, 0, 1, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.reverb.mix),
-      duration: clamp(reverb.duration, 0.1, 8, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.reverb.duration),
-      decay: clamp(reverb.decay, 0.1, 8, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.reverb.decay),
+      enabled: clampBoolean(
+        reverb.enabled,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.reverb.enabled,
+      ),
+      mix: clamp(
+        reverb.mix,
+        0,
+        1,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.reverb.mix,
+      ),
+      duration: clamp(
+        reverb.duration,
+        0.1,
+        8,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.reverb.duration,
+      ),
+      decay: clamp(
+        reverb.decay,
+        0.1,
+        8,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.reverb.decay,
+      ),
     },
     echo: {
-      enabled: clampBoolean(echo.enabled, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.echo.enabled),
+      enabled: clampBoolean(
+        echo.enabled,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.echo.enabled,
+      ),
       mix: clamp(echo.mix, 0, 1, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.echo.mix),
-      delayMs: clamp(echo.delayMs, 20, 2000, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.echo.delayMs),
-      feedback: clamp(echo.feedback, 0, 0.95, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.echo.feedback),
+      delayMs: clamp(
+        echo.delayMs,
+        20,
+        2000,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.echo.delayMs,
+      ),
+      feedback: clamp(
+        echo.feedback,
+        0,
+        0.95,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.echo.feedback,
+      ),
     },
     saturation: {
-      enabled: clampBoolean(saturation.enabled, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.saturation.enabled),
-      drive: clamp(saturation.drive, 1, 10, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.saturation.drive),
-      mix: clamp(saturation.mix, 0, 1, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.saturation.mix),
+      enabled: clampBoolean(
+        saturation.enabled,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.saturation.enabled,
+      ),
+      drive: clamp(
+        saturation.drive,
+        1,
+        10,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.saturation.drive,
+      ),
+      mix: clamp(
+        saturation.mix,
+        0,
+        1,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.saturation.mix,
+      ),
     },
     trim: {
-      startSeconds: clamp(trim.startSeconds, 0, 600, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.trim.startSeconds),
-      durationSeconds: clamp(trim.durationSeconds, 0, 600, DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.trim.durationSeconds),
+      startSeconds: clamp(
+        trim.startSeconds,
+        0,
+        600,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.trim.startSeconds,
+      ),
+      durationSeconds: clamp(
+        trim.durationSeconds,
+        0,
+        600,
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS.trim.durationSeconds,
+      ),
     },
   };
 };

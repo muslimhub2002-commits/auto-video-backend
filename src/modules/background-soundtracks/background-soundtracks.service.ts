@@ -96,7 +96,9 @@ export class BackgroundSoundtracksService implements OnModuleInit {
     });
 
     if (existing && existing.id !== params.excludeId) {
-      throw new BadRequestException('A background soundtrack with this title already exists');
+      throw new BadRequestException(
+        'A background soundtrack with this title already exists',
+      );
     }
   }
 
@@ -222,12 +224,14 @@ export class BackgroundSoundtracksService implements OnModuleInit {
     const raw = Number(params.volumePercent);
     const volumePercent = Number.isFinite(raw)
       ? Math.max(0, Math.min(300, raw))
-      : target.volume_percent ?? 100;
+      : (target.volume_percent ?? 100);
 
     target.title = title;
     target.volume_percent = volumePercent;
     target.audio_settings = normalizeSoundEffectAudioSettings(
-      params.audioSettings ?? target.audio_settings ?? DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+      params.audioSettings ??
+        target.audio_settings ??
+        DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
     );
 
     return this.normalizeStoredSoundtrack(await this.repo.save(target));
@@ -251,7 +255,7 @@ export class BackgroundSoundtracksService implements OnModuleInit {
     const raw = Number(params.volumePercent);
     const volumePercent = Number.isFinite(raw)
       ? Math.max(0, Math.min(300, raw))
-      : source.volume_percent ?? 100;
+      : (source.volume_percent ?? 100);
 
     const clone = this.repo.create({
       user_id: source.user_id,
@@ -263,7 +267,9 @@ export class BackgroundSoundtracksService implements OnModuleInit {
       is_favorite: false,
       volume_percent: volumePercent,
       audio_settings: normalizeSoundEffectAudioSettings(
-        params.audioSettings ?? source.audio_settings ?? DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+        params.audioSettings ??
+          source.audio_settings ??
+          DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
       ),
       is_preset: true,
       source_soundtrack_id: source.id,

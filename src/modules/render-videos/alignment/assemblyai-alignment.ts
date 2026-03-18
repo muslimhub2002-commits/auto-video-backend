@@ -89,7 +89,9 @@ const createTranscript = async (audioUrl: string): Promise<string> => {
 };
 
 const pollTranscript = async (transcriptId: string) => {
-  const pollIntervalMs = Number(process.env.ASSEMBLYAI_POLL_INTERVAL_MS ?? '3000');
+  const pollIntervalMs = Number(
+    process.env.ASSEMBLYAI_POLL_INTERVAL_MS ?? '3000',
+  );
   const safePollIntervalMs = Number.isFinite(pollIntervalMs)
     ? Math.max(1000, pollIntervalMs)
     : 3000;
@@ -122,7 +124,9 @@ const pollTranscript = async (transcriptId: string) => {
   }
 };
 
-export const alignWithAssemblyAi = async (audioPath: string): Promise<WordTiming[]> => {
+export const alignWithAssemblyAi = async (
+  audioPath: string,
+): Promise<WordTiming[]> => {
   if (!isAssemblyAiEnabled()) {
     throw new Error('ASSEMBLYAI_API_KEY is not configured');
   }
@@ -139,7 +143,12 @@ export const alignWithAssemblyAi = async (audioPath: string): Promise<WordTiming
       const endSeconds = toSeconds(word.end);
       const confidence = Number(word.confidence);
 
-      if (!text || startSeconds === null || endSeconds === null || endSeconds <= startSeconds) {
+      if (
+        !text ||
+        startSeconds === null ||
+        endSeconds === null ||
+        endSeconds <= startSeconds
+      ) {
         return null;
       }
 

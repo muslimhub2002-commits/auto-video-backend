@@ -42,19 +42,19 @@ export class MergeSoundEffectsDto {
   @IsOptional()
   @IsString()
   title?: string;
-  
+
   @IsOptional()
   @IsNumber()
   volumePercent?: number;
-  
+
   @IsOptional()
   @IsObject()
   audioSettings?: Record<string, unknown> | null;
-  
+
   @IsOptional()
   @IsBoolean()
   isPreset?: boolean;
-  
+
   @IsOptional()
   @IsBoolean()
   requireUniqueTitle?: boolean;

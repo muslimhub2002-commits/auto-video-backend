@@ -75,7 +75,9 @@ export const generateWithLeonardo = async (params: {
     return term || null;
   };
 
-  const extractLeonardoBadRequestMessage = (errorText: string): string | null => {
+  const extractLeonardoBadRequestMessage = (
+    errorText: string,
+  ): string | null => {
     const raw = String(errorText ?? '').trim();
     if (!raw) return null;
 
@@ -83,10 +85,7 @@ export const generateWithLeonardo = async (params: {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
         const directMessage = String(
-          (parsed as any).error ??
-            (parsed as any).message ??
-            (parsed as any).detail ??
-            '',
+          parsed.error ?? parsed.message ?? parsed.detail ?? '',
         ).trim();
 
         if (directMessage) {

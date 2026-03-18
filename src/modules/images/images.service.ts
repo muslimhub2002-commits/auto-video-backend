@@ -69,7 +69,11 @@ const normalizePexelsSearchOrientation = (value: unknown) => {
   const normalized = String(value ?? '')
     .trim()
     .toLowerCase();
-  if (normalized === 'portrait' || normalized === 'landscape' || normalized === 'square') {
+  if (
+    normalized === 'portrait' ||
+    normalized === 'landscape' ||
+    normalized === 'square'
+  ) {
     return normalized;
   }
   return null;
@@ -79,7 +83,11 @@ const normalizePexelsSize = (value: unknown) => {
   const normalized = String(value ?? '')
     .trim()
     .toLowerCase();
-  if (normalized === 'small' || normalized === 'medium' || normalized === 'large') {
+  if (
+    normalized === 'small' ||
+    normalized === 'medium' ||
+    normalized === 'large'
+  ) {
     return normalized;
   }
   return null;
@@ -120,7 +128,10 @@ const normalizePixabayColor = (value: unknown) => {
   return allowedColors.has(normalized) ? normalized : null;
 };
 
-const matchesSquareishOrientation = (width?: number | null, height?: number | null) => {
+const matchesSquareishOrientation = (
+  width?: number | null,
+  height?: number | null,
+) => {
   if (!width || !height) return false;
   const ratio = width / height;
   return ratio >= 0.9 && ratio <= 1.1;
@@ -139,10 +150,16 @@ const matchesRequestedImageOrientation = (
     return matchesSquareishOrientation(width, height);
   }
 
-  return inferImageOrientation(width, height) === normalizeOrientation(normalized);
+  return (
+    inferImageOrientation(width, height) === normalizeOrientation(normalized)
+  );
 };
 
-const matchesRequestedSize = (requested: unknown, width?: number | null, height?: number | null) => {
+const matchesRequestedSize = (
+  requested: unknown,
+  width?: number | null,
+  height?: number | null,
+) => {
   const normalized = String(requested ?? '')
     .trim()
     .toLowerCase();
@@ -150,20 +167,29 @@ const matchesRequestedSize = (requested: unknown, width?: number | null, height?
 
   const largestDimension = Math.max(width, height);
   if (normalized === 'small') return largestDimension < 1000;
-  if (normalized === 'medium') return largestDimension >= 1000 && largestDimension < 2000;
+  if (normalized === 'medium')
+    return largestDimension >= 1000 && largestDimension < 2000;
   if (normalized === 'large') return largestDimension >= 2000;
   return true;
 };
 
-const buildPixabayAuthorUrl = (username?: string | null, userId?: number | null) => {
+const buildPixabayAuthorUrl = (
+  username?: string | null,
+  userId?: number | null,
+) => {
   const normalizedUsername = String(username ?? '').trim();
   if (!normalizedUsername || !userId) return null;
   return `https://pixabay.com/users/${normalizedUsername}-${userId}/`;
 };
 
-const inferImageOrientation = (width?: number | null, height?: number | null) => {
+const inferImageOrientation = (
+  width?: number | null,
+  height?: number | null,
+) => {
   if (!width || !height) return null;
-  return width >= height ? ('landscape' as Image['image_size']) : ('portrait' as Image['image_size']);
+  return width >= height
+    ? ('landscape' as Image['image_size'])
+    : ('portrait' as Image['image_size']);
 };
 
 @Injectable()
@@ -275,9 +301,21 @@ export class ImagesService {
 
           const batchItems = (response.hits ?? [])
             .map<FreestockImageItem | null>((image) => {
-              const width = Number(image.imageWidth) || Number(image.webformatWidth) || null;
-              const height = Number(image.imageHeight) || Number(image.webformatHeight) || null;
-              if (!matchesRequestedImageOrientation(params.orientation, width, height)) {
+              const width =
+                Number(image.imageWidth) ||
+                Number(image.webformatWidth) ||
+                null;
+              const height =
+                Number(image.imageHeight) ||
+                Number(image.webformatHeight) ||
+                null;
+              if (
+                !matchesRequestedImageOrientation(
+                  params.orientation,
+                  width,
+                  height,
+                )
+              ) {
                 return null;
               }
               if (!matchesRequestedSize(params.size, width, height)) {
@@ -310,7 +348,10 @@ export class ImagesService {
                 width,
                 height,
                 authorName: image.user?.trim() || null,
-                authorUrl: buildPixabayAuthorUrl(image.user, Number(image.user_id) || null),
+                authorUrl: buildPixabayAuthorUrl(
+                  image.user,
+                  Number(image.user_id) || null,
+                ),
                 pexelsUrl: null,
                 pixabayUrl: image.pageURL?.trim() || null,
                 downloadUrl,
@@ -373,7 +414,13 @@ export class ImagesService {
 
             const width = Number.isFinite(photo.width) ? photo.width : null;
             const height = Number.isFinite(photo.height) ? photo.height : null;
-            if (!matchesRequestedImageOrientation(params.orientation, width, height)) {
+            if (
+              !matchesRequestedImageOrientation(
+                params.orientation,
+                width,
+                height,
+              )
+            ) {
               return null;
             }
             if (!matchesRequestedSize(params.size, width, height)) {
@@ -424,7 +471,8 @@ export class ImagesService {
         throw new ServiceUnavailableException(message);
       }
       throw new InternalServerErrorException(
-        message || `Failed to search ${provider === 'pixabay' ? 'Pixabay' : 'Pexels'} images`,
+        message ||
+          `Failed to search ${provider === 'pixabay' ? 'Pixabay' : 'Pexels'} images`,
       );
     }
   }
@@ -667,7 +715,10 @@ export class ImagesService {
     });
 
     const inferredSize = normalizeOrientation(body.image_size);
-    const sourceLabel = String(body.source ?? 'freestock').trim().toLowerCase() || 'freestock';
+    const sourceLabel =
+      String(body.source ?? 'freestock')
+        .trim()
+        .toLowerCase() || 'freestock';
     const filename = `${sourceLabel}-${crypto.randomUUID()}.jpg`;
 
     return this.saveCompressedToCloudinary({

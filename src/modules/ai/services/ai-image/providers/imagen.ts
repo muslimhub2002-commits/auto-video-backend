@@ -3,9 +3,23 @@ import { InternalServerErrorException } from '@nestjs/common';
 import { downloadImageToBuffer } from '../image-bytes';
 import type { ImagePayload } from '../types';
 
+const DIRECT_GEMINI_IMAGE_MODELS = new Set([
+  'gemini-2.5-flash-image',
+  'gemini-3.1-flash-image-preview',
+  'gemini-3-pro-image-preview',
+]);
+
+type GeminiImageModel =
+  | 'gemini-2.5-flash-image'
+  | 'gemini-3.1-flash-image-preview'
+  | 'gemini-3-pro-image-preview'
+  | 'imagen-3'
+  | 'imagen-4'
+  | 'imagen-4-ultra';
+
 export const generateWithImagen = async (params: {
   geminiApiKey: string | null | undefined;
-  imageModel: 'imagen-3' | 'imagen-4' | 'imagen-4-ultra';
+  imageModel: GeminiImageModel;
   prompt: string;
   aspectRatio: '16:9' | '9:16' | '1:1';
 }): Promise<ImagePayload> => {
@@ -16,6 +30,97 @@ export const generateWithImagen = async (params: {
   }
 
   const ai = new GoogleGenAI({ apiKey: params.geminiApiKey });
+
+  const coerceToBuffer = (value: any): Buffer | null => {
+    if (!value) return null;
+    if (Buffer.isBuffer(value)) return value;
+    if (typeof value === 'string') return Buffer.from(value, 'base64');
+    if (value instanceof Uint8Array) return Buffer.from(value);
+    if (Array.isArray(value)) return Buffer.from(value);
+    return null;
+  };
+
+  const extractParts = (response: any): any[] => {
+    const topLevelParts = Array.isArray(response?.parts) ? response.parts : [];
+    const candidateParts = Array.isArray(response?.candidates)
+      ? response.candidates.flatMap((candidate: any) => {
+          if (Array.isArray(candidate?.content?.parts)) {
+            return candidate.content.parts;
+          }
+
+          if (Array.isArray(candidate?.parts)) {
+            return candidate.parts;
+          }
+
+          return [];
+        })
+      : [];
+
+    return [...topLevelParts, ...candidateParts];
+  };
+
+  const extractInlineImageBuffer = (response: any): Buffer | null => {
+    const parts = extractParts(response);
+
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+      const part = parts[index];
+      if (part?.thought) continue;
+
+      const inlineData = part?.inlineData ?? part?.inline_data ?? null;
+      const mimeType = String(
+        inlineData?.mimeType ?? inlineData?.mime_type ?? '',
+      )
+        .trim()
+        .toLowerCase();
+
+      if (mimeType && !mimeType.startsWith('image/')) {
+        continue;
+      }
+
+      const buffer =
+        coerceToBuffer(inlineData?.data) ||
+        coerceToBuffer(inlineData?.imageBytes) ||
+        coerceToBuffer(inlineData?.bytes);
+
+      if (buffer) {
+        return buffer;
+      }
+    }
+
+    return null;
+  };
+
+  if (DIRECT_GEMINI_IMAGE_MODELS.has(params.imageModel)) {
+    const imageConfig: any = {
+      aspectRatio: params.aspectRatio,
+    };
+
+    if (params.imageModel !== 'gemini-2.5-flash-image') {
+      imageConfig.imageSize = '1K';
+    }
+
+    const response = await (ai as any).models.generateContent({
+      model: params.imageModel,
+      contents: [params.prompt],
+      config: {
+        responseModalities: ['IMAGE'],
+        imageConfig,
+      },
+    });
+
+    const buffer = extractInlineImageBuffer(response);
+    if (!buffer) {
+      console.error('Gemini image generation returned an unexpected shape', {
+        model: params.imageModel,
+        responseKeys: response ? Object.keys(response) : null,
+      });
+      throw new InternalServerErrorException(
+        'Gemini image generation did not return an image',
+      );
+    }
+
+    return { buffer, base64: buffer.toString('base64') };
+  }
 
   const imagenModelCandidates = (() => {
     if (params.imageModel === 'imagen-4') {
@@ -118,15 +223,6 @@ export const generateWithImagen = async (params: {
   const first =
     Array.isArray(candidates) && candidates.length > 0 ? candidates[0] : null;
   const firstImage = first?.image ?? first;
-
-  const coerceToBuffer = (value: any): Buffer | null => {
-    if (!value) return null;
-    if (Buffer.isBuffer(value)) return value;
-    if (typeof value === 'string') return Buffer.from(value, 'base64');
-    if (value instanceof Uint8Array) return Buffer.from(value);
-    if (Array.isArray(value)) return Buffer.from(value);
-    return null;
-  };
 
   let buffer: Buffer | null = null;
   buffer =

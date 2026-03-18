@@ -175,7 +175,7 @@ export const buildTimeline = (params: {
       : [];
 
     const normalizedSoundEffects = Array.isArray(s.soundEffects)
-      ? s.soundEffects
+      ? (s.soundEffects
           .map((se) => {
             const src = String(se?.src ?? '').trim();
             if (!src) return null;
@@ -211,11 +211,12 @@ export const buildTimeline = (params: {
           durationSeconds: number;
           hasKnownDuration: boolean;
           volume: number;
-        }>
+        }>)
       : [];
 
     const wantsSoundEffectsAlignToSceneEnd =
-      s.soundEffectsAlignToSceneEnd === true && normalizedSoundEffects.length > 0;
+      s.soundEffectsAlignToSceneEnd === true &&
+      normalizedSoundEffects.length > 0;
 
     const alignedSoundEffects = wantsSoundEffectsAlignToSceneEnd
       ? (() => {

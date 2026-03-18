@@ -4,10 +4,7 @@ describe('buildTimeline', () => {
   it('maps sentence word timings into frame-relative subtitle words', () => {
     const timeline = buildTimeline({
       language: 'en',
-      sentences: [
-        { text: 'Hello world' },
-        { text: 'Second scene' },
-      ],
+      sentences: [{ text: 'Hello world' }, { text: 'Second scene' }],
       imagePaths: ['one.png', 'two.png'],
       scriptLength: '30 seconds',
       audioDurationSeconds: 2,

@@ -184,7 +184,8 @@ export class ScriptsService implements OnModuleInit {
           item?.timing_mode,
         );
         const audioSettingsOverride =
-          item?.audio_settings_override && typeof item.audio_settings_override === 'object'
+          item?.audio_settings_override &&
+          typeof item.audio_settings_override === 'object'
             ? normalizeSoundEffectAudioSettings(item.audio_settings_override)
             : null;
 
@@ -390,7 +391,9 @@ export class ScriptsService implements OnModuleInit {
         : true;
       const hasSentenceSoundEffectAudioSettingsOverride =
         sentenceSoundEffectsTableExists
-          ? await this.sentenceSoundEffectsColumnExists('audio_settings_override')
+          ? await this.sentenceSoundEffectsColumnExists(
+              'audio_settings_override',
+            )
           : true;
 
       if (
@@ -443,7 +446,9 @@ export class ScriptsService implements OnModuleInit {
           : true;
       const finalHasSentenceSoundEffectAudioSettingsOverride =
         finalSentenceSoundEffectsTableExists
-          ? await this.sentenceSoundEffectsColumnExists('audio_settings_override')
+          ? await this.sentenceSoundEffectsColumnExists(
+              'audio_settings_override',
+            )
           : true;
 
       if (
@@ -635,8 +640,9 @@ export class ScriptsService implements OnModuleInit {
 
         const hasLegacyForcedEraKey =
           await this.sentencesColumnExists('forced_era_key');
-        const hasForcedLocationKey =
-          await this.sentencesColumnExists('forced_location_key');
+        const hasForcedLocationKey = await this.sentencesColumnExists(
+          'forced_location_key',
+        );
         if (hasLegacyForcedEraKey && hasForcedLocationKey) {
           await this.dataSource.query(
             'UPDATE sentences SET forced_location_key = forced_era_key WHERE forced_location_key IS NULL AND forced_era_key IS NOT NULL',
@@ -654,9 +660,9 @@ export class ScriptsService implements OnModuleInit {
         await this.dataSource.query(
           "ALTER TABLE sentence_sound_effects ADD COLUMN IF NOT EXISTS timing_mode VARCHAR(32) NOT NULL DEFAULT 'with_previous'",
         );
-          await this.dataSource.query(
-            'ALTER TABLE sentence_sound_effects ADD COLUMN IF NOT EXISTS audio_settings_override JSONB NULL',
-          );
+        await this.dataSource.query(
+          'ALTER TABLE sentence_sound_effects ADD COLUMN IF NOT EXISTS audio_settings_override JSONB NULL',
+        );
       } catch (err: any) {
         const message = String(err?.message || '');
         if (
@@ -1102,19 +1108,15 @@ export class ScriptsService implements OnModuleInit {
                   s.image_motion_speed,
                 ),
                 image_effects_mode: this.normalizeImageEffectsMode(
-                  (s as any).image_effects_mode,
+                  s.image_effects_mode,
                 ),
-                image_filter_id: this.normalizeOptionalId(
-                  (s as any).image_filter_id,
-                ),
+                image_filter_id: this.normalizeOptionalId(s.image_filter_id),
                 image_filter_settings: this.normalizeSettingsObject(
-                  (s as any).image_filter_settings,
+                  s.image_filter_settings,
                 ),
-                motion_effect_id: this.normalizeOptionalId(
-                  (s as any).motion_effect_id,
-                ),
+                motion_effect_id: this.normalizeOptionalId(s.motion_effect_id),
                 image_motion_settings: this.normalizeSettingsObject(
-                  (s as any).image_motion_settings,
+                  s.image_motion_settings,
                 ),
                 transition_sound_effects:
                   this.normalizeTransitionSoundEffectsInput(
@@ -1130,9 +1132,9 @@ export class ScriptsService implements OnModuleInit {
                   Array.isArray(s.character_keys) && s.character_keys.length > 0
                     ? s.character_keys
                     : null,
-                location_key: String((s as any).location_key ?? '').trim() || null,
+                location_key: String(s.location_key ?? '').trim() || null,
                 forced_location_key:
-                  String((s as any).forced_location_key ?? '').trim() || null,
+                  String(s.forced_location_key ?? '').trim() || null,
               });
             },
           );
@@ -1705,8 +1707,7 @@ export class ScriptsService implements OnModuleInit {
               (s as any).character_keys.length > 0
                 ? (s as any).character_keys
                 : null,
-            location_key:
-              String((s as any).location_key ?? '').trim() || null,
+            location_key: String((s as any).location_key ?? '').trim() || null,
             forced_location_key:
               String((s as any).forced_location_key ?? '').trim() || null,
           });
@@ -2249,8 +2250,7 @@ export class ScriptsService implements OnModuleInit {
               (s as any).character_keys.length > 0
                 ? (s as any).character_keys
                 : null,
-            location_key:
-              String((s as any).location_key ?? '').trim() || null,
+            location_key: String((s as any).location_key ?? '').trim() || null,
             forced_location_key:
               String((s as any).forced_location_key ?? '').trim() || null,
           });
@@ -2430,7 +2430,9 @@ export class ScriptsService implements OnModuleInit {
             image_effects_mode: this.normalizeImageEffectsMode(
               (s as any).image_effects_mode,
             ),
-            image_filter_id: this.normalizeOptionalId((s as any).image_filter_id),
+            image_filter_id: this.normalizeOptionalId(
+              (s as any).image_filter_id,
+            ),
             image_filter_settings: this.normalizeSettingsObject(
               (s as any).image_filter_settings,
             ),

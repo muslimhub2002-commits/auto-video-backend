@@ -293,7 +293,8 @@ export class RenderVideosController {
       }
 
       const soundEffects = (s as any)?.soundEffects;
-      const soundEffectsAlignToSceneEnd = (s as any)?.soundEffectsAlignToSceneEnd;
+      const soundEffectsAlignToSceneEnd = (s as any)
+        ?.soundEffectsAlignToSceneEnd;
       if (
         soundEffectsAlignToSceneEnd != null &&
         typeof soundEffectsAlignToSceneEnd !== 'boolean'
@@ -583,7 +584,8 @@ export class RenderVideosController {
       isSuspense: s.isSuspense,
       soundEffectsAlignToSceneEnd: s.soundEffectsAlignToSceneEnd,
       mediaType: s.mediaType === 'video' ? 'video' : 'image',
-      ...(typeof (s as any).videoUrl === 'string' && String((s as any).videoUrl).trim()
+      ...(typeof (s as any).videoUrl === 'string' &&
+      String((s as any).videoUrl).trim()
         ? { videoUrl: String((s as any).videoUrl).trim() }
         : {}),
       ...(Array.isArray((s as any).soundEffects)

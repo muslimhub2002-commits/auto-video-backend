@@ -355,9 +355,12 @@ const buildSentenceTimingsFromWordTimeline = (params: {
 
   const lastWordEnd =
     (params.wordsTimeline[params.wordsTimeline.length - 1]?.endSeconds ??
-      params.audioDurationSeconds) || 1;
+      params.audioDurationSeconds) ||
+    1;
   const totalDuration = Math.max(1, lastWordEnd);
-  const cleaned = params.sentences.map((sentence) => String(sentence.text ?? '').trim());
+  const cleaned = params.sentences.map((sentence) =>
+    String(sentence.text ?? '').trim(),
+  );
   const transcriptTokens = params.wordsTimeline.map((word) => word.token);
 
   const findBestMatch = (
@@ -428,7 +431,9 @@ const buildSentenceTimingsFromWordTimeline = (params: {
     const match = findBestMatch(wordIndex, sentenceTokens);
 
     if (!match) {
-      const prevEnd = timings.length ? timings[timings.length - 1].endSeconds : 0;
+      const prevEnd = timings.length
+        ? timings[timings.length - 1].endSeconds
+        : 0;
       const remainingDuration = Math.max(0.1, totalDuration - prevEnd);
       const remaining = alignByWordCount(
         params.sentences.slice(index),
@@ -463,7 +468,10 @@ const buildSentenceTimingsFromWordTimeline = (params: {
     }
 
     startSeconds = Math.max(0, Math.min(startSeconds, totalDuration));
-    endSeconds = Math.max(startSeconds + 0.05, Math.min(endSeconds, totalDuration));
+    endSeconds = Math.max(
+      startSeconds + 0.05,
+      Math.min(endSeconds, totalDuration),
+    );
 
     const words = normalizedWords.map((word, offset) => {
       const matchedWord = params.wordsTimeline[match.start + offset];
@@ -533,7 +541,11 @@ export const alignByWordCount = (
       text: cleaned[index],
       startSeconds,
       endSeconds,
-      words: buildSyntheticWordTimings(cleaned[index], startSeconds, endSeconds),
+      words: buildSyntheticWordTimings(
+        cleaned[index],
+        startSeconds,
+        endSeconds,
+      ),
     };
   });
 
@@ -736,9 +748,12 @@ export const alignAudioToSentences = async (params: {
         '[RenderVideosService] AssemblyAI returned no usable words, falling back',
       );
     } catch (error: any) {
-      console.warn('[RenderVideosService] AssemblyAI alignment failed, falling back', {
-        message: error?.message,
-      });
+      console.warn(
+        '[RenderVideosService] AssemblyAI alignment failed, falling back',
+        {
+          message: error?.message,
+        },
+      );
     }
   }
 

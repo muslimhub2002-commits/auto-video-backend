@@ -31,7 +31,9 @@ export class ImageFiltersService {
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
     const safeLimit =
       Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 50;
-    const search = String(q ?? '').trim().toLowerCase();
+    const search = String(q ?? '')
+      .trim()
+      .toLowerCase();
 
     const qb = this.repo
       .createQueryBuilder('image_filter')

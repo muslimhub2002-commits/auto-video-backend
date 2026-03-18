@@ -1,5 +1,12 @@
 import { Type } from 'class-transformer';
-import { IsNumber, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class CreateSoundEffectDto {
   @IsOptional()
