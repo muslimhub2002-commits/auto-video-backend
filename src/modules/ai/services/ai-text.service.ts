@@ -905,8 +905,8 @@ export class AiTextService {
         '- Do NOT include Allah/God as a character.\n' +
         '- If the script mentions Sahaba (companions of Prophet Muhammad), still extract them but set the boolean flags accordingly.\n' +
         '- Each character.description MUST be only two lines max & include facial + physical attributes for consistency.\n' +
-        '- For any character with isProphet=true: DO NOT describe face details. Write the description to be safe for a VERY FAR, DISTANT BACK VIEW depiction only using only physique + clothing, and include that there is flashy light all around the body & face.\n' +
-        '- For any character with isSahaba=true (except an Army): DO NOT describe face details (no eyes/nose/mouth). Write the description to be safe for a VERY FAR, DISTANT BACK VIEW depiction only (small figure, seen from behind, no facial visibility) using physique + clothing + silhouette.\n' +
+        '- For any character with isProphet=true: DO NOT describe face details. Write the description to be safe for a BACK VIEW depiction only using only physique + clothing and skin color.\n' +
+        '- For any character with isSahaba=true (except an Army): DO NOT describe face details (no eyes/nose/mouth). Write the description to be safe for a BACK VIEW depiction only using physique + clothing and skin color.\n' +
         '- Character keys must be short like C1, C2, C3... in first-appearance order.\n' +
         '- If unsure about any boolean flag, set it to false.\n' +
         '- Each description needs to be one line max\n' +

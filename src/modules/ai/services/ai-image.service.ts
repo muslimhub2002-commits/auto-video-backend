@@ -62,7 +62,7 @@ export class AiImageService {
   constructor(
     private readonly runtime: AiRuntimeService,
     private readonly imagesService: ImagesService,
-  ) {}
+  ) { }
 
   private static readonly NO_TEXT_PROMPT_SUFFIX =
     'No text, no letters, no words, no captions, no subtitles, no watermark, no logo, no signature, no symbols, no numbers.';
@@ -155,37 +155,37 @@ export class AiImageService {
   } | null {
     const id = String(
       raw?.id ??
-        raw?.modelId ??
-        raw?.model_id ??
-        raw?.platformModelId ??
-        raw?.platform_model_id ??
-        raw?.platformModel?.id ??
-        raw?.platform_model?.id ??
-        '',
+      raw?.modelId ??
+      raw?.model_id ??
+      raw?.platformModelId ??
+      raw?.platform_model_id ??
+      raw?.platformModel?.id ??
+      raw?.platform_model?.id ??
+      '',
     ).trim();
 
     if (!id) return null;
 
     const name = String(
       raw?.name ??
-        raw?.displayName ??
-        raw?.display_name ??
-        raw?.modelName ??
-        raw?.model_name ??
-        raw?.title ??
-        raw?.slug ??
-        id,
+      raw?.displayName ??
+      raw?.display_name ??
+      raw?.modelName ??
+      raw?.model_name ??
+      raw?.title ??
+      raw?.slug ??
+      id,
     ).trim();
 
     const provider =
       String(
         raw?.provider ??
-          raw?.providerName ??
-          raw?.provider_name ??
-          raw?.vendor ??
-          raw?.owner ??
-          raw?.organization ??
-          'Leonardo',
+        raw?.providerName ??
+        raw?.provider_name ??
+        raw?.vendor ??
+        raw?.owner ??
+        raw?.organization ??
+        'Leonardo',
       ).trim() || 'Leonardo';
 
     const normalizedProvider =
@@ -283,13 +283,13 @@ export class AiImageService {
     const normalized = this.extractLeonardoPlatformModelCandidates(payload)
       .map((model) => this.normalizeLeonardoPlatformModel(model))
       .filter(Boolean) as Array<{
-      id: string;
-      value: string;
-      name: string;
-      provider: string;
-      label: string;
-      isDefault: boolean;
-    }>;
+        id: string;
+        value: string;
+        name: string;
+        provider: string;
+        label: string;
+        isDefault: boolean;
+      }>;
 
     const deduped = normalized
       .filter((model) => this.isNativeLeonardoPlatformModel(model))
@@ -317,18 +317,18 @@ export class AiImageService {
 
     const filtered = query
       ? deduped.filter((model) => {
-          const haystack = [
-            model.id,
-            model.value,
-            model.name,
-            model.provider,
-            model.label,
-          ]
-            .join(' ')
-            .toLowerCase();
+        const haystack = [
+          model.id,
+          model.value,
+          model.name,
+          model.provider,
+          model.label,
+        ]
+          .join(' ')
+          .toLowerCase();
 
-          return haystack.includes(query);
-        })
+        return haystack.includes(query);
+      })
       : deduped;
 
     filtered.sort((left, right) => {
@@ -719,7 +719,6 @@ export class AiImageService {
   }): Promise<{
     blockHumans: boolean;
     forceBackView: boolean;
-    forceLightAroundBody: boolean;
     characterKeys: string[];
   }> {
     const sentence = (params.sentence ?? '').trim();
@@ -727,7 +726,6 @@ export class AiImageService {
       return {
         blockHumans: false,
         forceBackView: false,
-        forceLightAroundBody: false,
         characterKeys: [],
       };
     }
@@ -800,7 +798,6 @@ export class AiImageService {
         });
 
         const forceBackView = mentionsProphetOrSahaba;
-        const forceLightAroundBody = mentionsProphet;
         const blockHumans = Boolean(
           mentionsWoman || (mentionsAllah && !forceBackView),
         );
@@ -808,7 +805,6 @@ export class AiImageService {
         return {
           blockHumans,
           forceBackView,
-          forceLightAroundBody,
           characterKeys,
         };
       }
@@ -852,16 +848,14 @@ export class AiImageService {
       const mentionsWoman = Boolean((parsed as any)?.mentionsWoman);
 
       const forceBackView = mentionsProphetOrSahaba;
-      const forceLightAroundBody = mentionsProphet;
       const blockHumans = Boolean(
         mentionsWoman || (mentionsAllah && !forceBackView),
       );
 
-      if (blockHumans || forceBackView || forceLightAroundBody) {
+      if (blockHumans || forceBackView) {
         return {
           blockHumans,
           forceBackView,
-          forceLightAroundBody,
           characterKeys: [],
         };
       }
@@ -875,7 +869,6 @@ export class AiImageService {
         return {
           blockHumans: false,
           forceBackView: false,
-          forceLightAroundBody: false,
           characterKeys,
         };
       }
@@ -883,7 +876,6 @@ export class AiImageService {
       return {
         blockHumans: false,
         forceBackView: false,
-        forceLightAroundBody: false,
         characterKeys: [],
       };
     } catch (error) {
@@ -891,7 +883,6 @@ export class AiImageService {
       return {
         blockHumans: false,
         forceBackView: false,
-        forceLightAroundBody: false,
         characterKeys: [],
       };
     }
@@ -1084,12 +1075,12 @@ export class AiImageService {
 
     const canonicalLocations = Array.isArray(dto.locations)
       ? dto.locations
-          .map((location) => ({
-            key: String((location as any)?.key ?? '').trim(),
-            name: String((location as any)?.name ?? '').trim(),
-            description: String((location as any)?.description ?? '').trim(),
-          }))
-          .filter((location) => location.key && location.name)
+        .map((location) => ({
+          key: String((location as any)?.key ?? '').trim(),
+          name: String((location as any)?.name ?? '').trim(),
+          description: String((location as any)?.description ?? '').trim(),
+        }))
+        .filter((location) => location.key && location.name)
       : [];
 
     const forcedLocationKeyProvided = dto.forcedLocationKey !== undefined;
@@ -1099,8 +1090,8 @@ export class AiImageService {
 
     const requestedLocation = requestedLocationKeyRaw
       ? (canonicalLocations.find(
-          (location) => location.key === requestedLocationKeyRaw,
-        ) ?? null)
+        (location) => location.key === requestedLocationKeyRaw,
+      ) ?? null)
       : null;
 
     const forcedCharacterKeysInput = Array.isArray(dto.forcedCharacterKeys)
@@ -1109,13 +1100,13 @@ export class AiImageService {
     const forcedCharactersProvided = forcedCharacterKeysInput !== null;
     const forcedKeysRaw = forcedCharactersProvided
       ? forcedCharacterKeysInput
-          .map((k) => String(k ?? '').trim())
-          .filter(Boolean)
+        .map((k) => String(k ?? '').trim())
+        .filter(Boolean)
       : [];
     const forcedKeys = canonicalCharacters?.length
       ? forcedKeysRaw.filter((k) =>
-          canonicalCharacters.some((c) => c.key === k),
-        )
+        canonicalCharacters.some((c) => c.key === k),
+      )
       : [];
     const useForcedCharactersOverride = forcedCharactersProvided;
 
@@ -1126,9 +1117,9 @@ export class AiImageService {
     const inferredLocation =
       !requestedLocation && !forcedLocationKeyProvided
         ? await this.getOrCreateLocationForSentence({
-            scriptRaw: fullScriptContext,
-            sentenceRaw: sentenceText,
-          })
+          scriptRaw: fullScriptContext,
+          sentenceRaw: sentenceText,
+        })
         : null;
 
     const effectiveLocationLine = requestedLocation
@@ -1139,33 +1130,30 @@ export class AiImageService {
 
     const mentionResult = useForcedCharactersOverride
       ? (() => {
-          const forcedReferencedCharacters = (canonicalCharacters ?? []).filter(
-            (character) => forcedKeys.includes(character.key),
-          );
+        const forcedReferencedCharacters = (canonicalCharacters ?? []).filter(
+          (character) => forcedKeys.includes(character.key),
+        );
 
-          return {
-            blockHumans: forcedReferencedCharacters.some(
-              (character) => character.isWoman,
-            ),
-            forceBackView: forcedReferencedCharacters.some(
-              (character) => character.isSahaba || character.isProphet,
-            ),
-            forceLightAroundBody: forcedReferencedCharacters.some(
-              (character) => character.isProphet,
-            ),
-            characterKeys: forcedKeys,
-          };
-        })()
+        return {
+          blockHumans: forcedReferencedCharacters.some(
+            (character) => character.isWoman,
+          ),
+          forceBackView: forcedReferencedCharacters.some(
+            (character) => character.isSahaba || character.isProphet,
+          ),
+
+          characterKeys: forcedKeys,
+        };
+      })()
       : await this.sentenceMentionsAllahProphetOrSahaba({
-          script: fullScriptContext,
-          sentence: dto.sentence,
-          characters: canonicalCharacters,
-          characterBible,
-        });
+        script: fullScriptContext,
+        sentence: dto.sentence,
+        characters: canonicalCharacters,
+        characterBible,
+      });
 
     // const blockHumans = mentionResult.blockHumans;
     const forceBackView = mentionResult.forceBackView;
-    const forceLightAroundBody = mentionResult.forceLightAroundBody;
     const referencedCharacterKeys = mentionResult.characterKeys;
     const referencedCanonicalCharacters = (canonicalCharacters ?? []).filter(
       (character) => referencedCharacterKeys.includes(character.key),
@@ -1193,23 +1181,13 @@ export class AiImageService {
       'Surround the full body with a strong, radiant light aura/glow from all sides, clearly wrapping around the body outline.';
     const targetedBackViewRule = hasMultipleReferencedCharacters
       ? backViewCharacters
-          .map(
-            (character) =>
-              `${character.name} must be shown as a small, distant figure VERY FAR from the camera and ONLY from behind (back view), and you MUST NOT show ${character.name}'s face or facial details.`,
-          )
-          .join(' ')
+        .map(
+          (character) =>
+            `${character.name} must be shown ONLY from behind (back view), and you MUST NOT show ${character.name}'s face or facial details.`,
+        )
+        .join(' ')
       : forceBackView
         ? backViewOnlyRule.trim()
-        : '';
-    const targetedLightAroundBodyRule = hasMultipleReferencedCharacters
-      ? lightAroundBodyCharacters
-          .map(
-            (character) =>
-              `Apply the strong radiant light aura wrapping all around the full body ONLY to ${character.name}.`,
-          )
-          .join(' ')
-      : forceLightAroundBody
-        ? lightAroundBodyRule
         : '';
     try {
       let prompt = (dto.prompt ?? '').trim();
@@ -1221,37 +1199,37 @@ export class AiImageService {
           frameType === 'single'
             ? ''
             : (frameType === 'start'
-                ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
-                : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
-              (continuityPrompt
-                ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
-                : '');
+              ? 'FRAME CONTEXT: This image is the START FRAME of the scene for the TARGET SENTENCE. Establish the environment and the beginning of the action. The prompt MUST include the words "START FRAME".'
+              : 'FRAME CONTEXT: This image is the END FRAME of the SAME scene for the TARGET SENTENCE. It must be a direct continuation of the START FRAME with the SAME environment/camera/lighting/style; advance the action slightly so the two frames complete each other. The prompt MUST include the words "END FRAME".') +
+            (continuityPrompt
+              ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
+              : '');
 
         const characterRefsBlock = referencedCharacterKeys.length
           ? (() => {
-              const resolveDescription = (key: string): string | null => {
-                if (canonicalCharacters?.length) {
-                  const c = canonicalCharacters.find((cc) => cc.key === key);
-                  return c ? `${c.name}: ${c.description}` : null;
-                }
-                if (characterBible) {
-                  const c = characterBible.byKey[key];
-                  return c ? `${c.name}: ${c.description}` : null;
-                }
-                return null;
-              };
+            const resolveDescription = (key: string): string | null => {
+              if (canonicalCharacters?.length) {
+                const c = canonicalCharacters.find((cc) => cc.key === key);
+                return c ? `${c.name}: ${c.description}` : null;
+              }
+              if (characterBible) {
+                const c = characterBible.byKey[key];
+                return c ? `${c.name}: ${c.description}` : null;
+              }
+              return null;
+            };
 
-              const lines = referencedCharacterKeys
-                .map(resolveDescription)
-                .filter(Boolean)
-                .join('\n');
+            const lines = referencedCharacterKeys
+              .map(resolveDescription)
+              .filter(Boolean)
+              .join('\n');
 
-              return lines
-                ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
-                    lines +
-                    '\n\n'
-                : '';
-            })()
+            return lines
+              ? 'CHARACTER CONSISTENCY (must include these exact attributes in the prompt):\n' +
+              lines +
+              '\n\n'
+              : '';
+          })()
           : '';
         if (!useForcedCharactersOverride) {
           console.log(referencedCharacterKeys, 'referencedCharacterKeys');
@@ -1277,12 +1255,11 @@ export class AiImageService {
                     content: (() => {
                       const humanDepictionRule = [
                         targetedBackViewRule,
-                        targetedLightAroundBodyRule,
-                        referencedCharacterKeys.length
-                          ? forceBackView
-                            ? 'You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s), and if any referenced character is Prophet/Sahaba they must appear as a small, distant rear-view figure very far from the camera.'
-                            : 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
-                          : '',
+                        // referencedCharacterKeys.length
+                        //   ? forceBackView
+                        //     ? 'You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s), and if any referenced character is Prophet/Sahaba they must appear as a small, distant rear-view figure very far from the camera.'
+                        //     : 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
+                        //   : '',
                       ]
                         .filter(Boolean)
                         .join(' ');
@@ -1290,8 +1267,10 @@ export class AiImageService {
                       return (
                         'You are a visual prompt engineer for image generation models. ' +
                         'Your prompt MUST visually express the exact sentence that is happening in the context of the script' +
-                        'If there are specific characters you need to define their position in the scene(ALL SELECTED CHARACTERS MUST BE INCLUDED) ' +
-                        'ABSOLUTE RULE: Do not add any textual elements in the image.' +
+                        'If there are more than one character or group of people you need to define what is the position of these character(s) or group of people related to each other(Looking at each other,Confronting,Fighting,etc...)' +
+                        'Don\'t leave any important visual detail out, and be sure to include any important visual element that is implied by the sentence. ' +
+                        'Don\'t mention the characters names' +
+                        'Use reasoning to highlight the important objects and actions and stress on it in the prompt.' +
                         'ABSOLUTE RULE: The prompt must be 4 lines max with great detail' +
                         AiImageService.NO_TEXT_PROMPT_SUFFIX +
                         (frameBlock ? frameBlock + '\n' : '') +
@@ -1303,20 +1282,14 @@ export class AiImageService {
                     role: 'user',
                     content:
                       (effectiveLocationLine
-                        ? `SCRIPT LOCATION (use ONLY for environment, time of day, and atmosphere):\n${effectiveLocationLine}\n\n`
+                        ? `SCRIPT LOCATION (use ONLY for environment structure, time of day):\n${effectiveLocationLine}\n\n`
                         : '') +
                       characterRefsBlock +
                       (frameBlock ? `${frameBlock}\n\n` : '') +
                       `Sentence: "${dto.sentence}"\n` +
                       `Desired style: ${style}.\n\n` +
                       'Important constraints:\n' +
-                      '- Do not depict women/females.\n' +
-                      (targetedBackViewRule
-                        ? `- ${targetedBackViewRule}\n`
-                        : '') +
-                      (targetedLightAroundBodyRule
-                        ? `- ${targetedLightAroundBodyRule}\n`
-                        : '') +
+                      'Do not depict women/females.\n' +
                       'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.' +
                       'The prompt should be on point and concise to best capture the scene for image generation. ',
                   },
@@ -1357,103 +1330,6 @@ export class AiImageService {
           const hasAnyStyleHint = styleHints.some((re) => re.test(prompt));
           if (!hasAnyStyleHint) {
             prompt = `${prompt}, ${styleText}`;
-          }
-        }
-
-        if (frameType === 'start') {
-          const hasStartFrame = /\bstart\s*frame\b/i.test(prompt);
-          if (!hasStartFrame) {
-            prompt = `${prompt}, START FRAME of the scene`;
-          }
-        } else if (frameType === 'end') {
-          const hasEndFrame = /\bend\s*frame\b/i.test(prompt);
-          if (!hasEndFrame) {
-            prompt = `${prompt}, END FRAME of the same scene, same environment as the start frame, slightly progressed action`;
-          }
-          if (
-            continuityPrompt &&
-            !prompt.toLowerCase().includes('continuity')
-          ) {
-            prompt = `${prompt}, continuity to match: ${continuityPrompt}`;
-          }
-        }
-
-        // if (blockHumans) {
-        //   const hasNoHumans =
-        //     /\bno\s+(people|humans|human\s+figures?)\b|\bno\s+faces\b|\bno\s+hands\b|\bno\s+silhouettes\b|\bnon[-\s]?figurative\b/i.test(
-        //       prompt,
-        //     );
-        //   if (!hasNoHumans) {
-        //     prompt = `${prompt}, no people, no humans, no faces, no hands, no silhouettes`;
-        //   }
-        // } else
-        {
-          if (forceBackView) {
-            if (targetedBackViewRule) {
-              if (!prompt.includes(targetedBackViewRule)) {
-                prompt = `${prompt}, ${targetedBackViewRule}`;
-              }
-            } else {
-              const hasBackView =
-                /\b(back\s*view|from\s+behind|rear\s*view|seen\s+from\s+behind)\b/i.test(
-                  prompt,
-                );
-              const hasDistanceRule =
-                /\b(distant\s+figure|very\s+far\s+from\s+the\s+camera|small\s+figure|wide\s+shot|from\s+a\s+distance)\b/i.test(
-                  prompt,
-                );
-              const hasNoFace =
-                /\bno\s+face\b|\bface\s+not\s+visible\b|\bwithout\s+(a\s+)?face\b/i.test(
-                  prompt,
-                );
-              if (!hasBackView || !hasDistanceRule || !hasNoFace) {
-                prompt = `${prompt}, distant small figure, very far from the camera, wide shot, back view only, seen from behind, face not visible`;
-              }
-            }
-          }
-
-          if (forceLightAroundBody) {
-            if (targetedLightAroundBodyRule) {
-              if (!prompt.includes(targetedLightAroundBodyRule)) {
-                prompt = `${prompt}, ${targetedLightAroundBodyRule}`;
-              }
-            } else {
-              const hasLightAroundBody =
-                /\b(light\s+(all\s+around|around)\s+the\s+body|light\s+aura|radiant\s+light|glow\s+around\s+the\s+body|surrounded\s+by\s+light)\b/i.test(
-                  prompt,
-                );
-              if (!hasLightAroundBody) {
-                prompt = `${prompt}, radiant light aura surrounding the full body from all sides`;
-              }
-            }
-          }
-
-          if (referencedCharacterKeys.length) {
-            const resolveCharacterDetail = (key: string): string | null => {
-              if (canonicalCharacters?.length) {
-                const c = canonicalCharacters.find((cc) => cc.key === key);
-                return c ? `${c.key} (${c.description})` : null;
-              }
-              if (characterBible) {
-                const c = characterBible.byKey[key];
-                return c ? `${c.key} (${c.description})` : null;
-              }
-              return null;
-            };
-
-            const characterSuffix = referencedCharacterKeys
-              .map(resolveCharacterDetail)
-              .filter(Boolean)
-              .join(', ');
-
-            if (
-              characterSuffix &&
-              !prompt.toLowerCase().includes('character details:') &&
-              !prompt.includes('CHARACTER') &&
-              !prompt.includes('C1')
-            ) {
-              prompt = `${prompt}, character details: ${characterSuffix}`;
-            }
           }
         }
       }
