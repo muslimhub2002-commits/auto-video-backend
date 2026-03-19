@@ -12,6 +12,10 @@ import {
   alignWithAssemblyAi,
   isAssemblyAiEnabled,
 } from './assemblyai-alignment';
+import {
+  alignWithReplicateWhisperX,
+  isReplicateWhisperXEnabled,
+} from './replicate-whisperx-alignment';
 
 const readHeaderBytes = (filePath: string, length: number): Buffer => {
   const fd = fs.openSync(filePath, 'r');
@@ -269,6 +273,20 @@ export type WithTimeout = <T>(
   ms: number,
   label: string,
 ) => Promise<T>;
+
+const getReplicateWhisperXTimeoutMs = (audioDurationSeconds: number) => {
+  const configured = Number(process.env.REPLICATE_WHISPERX_TIMEOUT_MS ?? '');
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(60_000, Math.floor(configured));
+  }
+
+  const safeAudioDurationSeconds = Number.isFinite(audioDurationSeconds)
+    ? Math.max(0, audioDurationSeconds)
+    : 0;
+  const dynamicTimeoutMs = Math.ceil(safeAudioDurationSeconds * 12_000) + 180_000;
+
+  return Math.min(1_800_000, Math.max(420_000, dynamicTimeoutMs));
+};
 
 const normalizeWord = (raw: string) =>
   raw
@@ -718,10 +736,48 @@ export const alignAudioToSentences = async (params: {
     audioPath: params.audioPath,
     audioDurationSeconds: params.audioDurationSeconds,
     sentenceCount: params.sentences.length,
+    hasReplicateWhisperX: isReplicateWhisperXEnabled(),
     hasAssemblyAi: isAssemblyAiEnabled(),
     hasOpenAI: !!params.openai,
     disableRenderer: !!params.disableRenderer,
   });
+
+  if (isReplicateWhisperXEnabled()) {
+    try {
+      const whisperXTimeoutMs = getReplicateWhisperXTimeoutMs(
+        params.audioDurationSeconds,
+      );
+      const whisperXWords = await params.withTimeout(
+        alignWithReplicateWhisperX(params.audioPath),
+        whisperXTimeoutMs,
+        'Replicate WhisperX transcription',
+      );
+      const indexedWhisperXWords = toIndexedWordsTimeline(whisperXWords);
+      if (indexedWhisperXWords.length > 0) {
+        console.log('[RenderVideosService] Using Replicate WhisperX alignment', {
+          alignedWords: indexedWhisperXWords.length,
+          timeoutMs: whisperXTimeoutMs,
+        });
+
+        return buildSentenceTimingsFromWordTimeline({
+          sentences: params.sentences,
+          wordsTimeline: indexedWhisperXWords,
+          audioDurationSeconds: params.audioDurationSeconds,
+        });
+      }
+
+      console.warn(
+        '[RenderVideosService] Replicate WhisperX returned no usable words, falling back',
+      );
+    } catch (error: any) {
+      console.warn(
+        '[RenderVideosService] Replicate WhisperX alignment failed, falling back',
+        {
+          message: error?.message,
+        },
+      );
+    }
+  }
 
   if (isAssemblyAiEnabled()) {
     try {

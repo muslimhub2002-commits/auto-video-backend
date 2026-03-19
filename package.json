@@ -54,6 +54,7 @@
     "react-dom": "^19.0.0",
     "reflect-metadata": "^0.2.2",
     "remotion": "4.0.409",
+    "replicate": "^1.4.0",
     "rxjs": "^7.8.1",
     "tinify": "^1.7.1",
     "translate-google": "^1.5.0",

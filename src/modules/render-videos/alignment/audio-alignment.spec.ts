@@ -1,6 +1,40 @@
-import { alignByWordCount } from './audio-alignment';
+jest.mock('./assemblyai-alignment', () => ({
+  alignWithAssemblyAi: jest.fn(),
+  isAssemblyAiEnabled: jest.fn(),
+}));
+
+jest.mock('./replicate-whisperx-alignment', () => ({
+  alignWithReplicateWhisperX: jest.fn(),
+  isReplicateWhisperXEnabled: jest.fn(),
+}));
+
+import {
+  alignAudioToSentences,
+  alignByWordCount,
+} from './audio-alignment';
+import {
+  alignWithAssemblyAi,
+  isAssemblyAiEnabled,
+} from './assemblyai-alignment';
+import {
+  alignWithReplicateWhisperX,
+  isReplicateWhisperXEnabled,
+} from './replicate-whisperx-alignment';
+
+const mockedAlignWithAssemblyAi = jest.mocked(alignWithAssemblyAi);
+const mockedIsAssemblyAiEnabled = jest.mocked(isAssemblyAiEnabled);
+const mockedAlignWithReplicateWhisperX = jest.mocked(alignWithReplicateWhisperX);
+const mockedIsReplicateWhisperXEnabled = jest.mocked(
+  isReplicateWhisperXEnabled,
+);
 
 describe('alignByWordCount', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedIsReplicateWhisperXEnabled.mockReturnValue(false);
+    mockedIsAssemblyAiEnabled.mockReturnValue(false);
+  });
+
   it('creates synthetic word timings for each sentence', () => {
     const timings = alignByWordCount(
       [{ text: 'Hello world again' }, { text: 'Second sentence here' }],
@@ -29,5 +63,97 @@ describe('alignByWordCount', () => {
         words[index - 1].endSeconds,
       );
     }
+  });
+
+  it('uses Replicate WhisperX before AssemblyAI when it returns word timings', async () => {
+    mockedIsReplicateWhisperXEnabled.mockReturnValue(true);
+    mockedIsAssemblyAiEnabled.mockReturnValue(true);
+    mockedAlignWithReplicateWhisperX.mockResolvedValue([
+      { text: 'Hello', startSeconds: 0, endSeconds: 0.4 },
+      { text: 'world', startSeconds: 0.4, endSeconds: 0.9 },
+    ]);
+
+    const timings = await alignAudioToSentences({
+      openai: null,
+      audioPath: 'unused.mp3',
+      sentences: [{ text: 'Hello world' }],
+      audioDurationSeconds: 1,
+      withTimeout: async (promise) => promise,
+      disableRenderer: true,
+    });
+
+    expect(mockedAlignWithReplicateWhisperX).toHaveBeenCalledTimes(1);
+    expect(mockedAlignWithAssemblyAi).not.toHaveBeenCalled();
+    expect(timings[0].words?.map((word) => word.text)).toEqual([
+      'Hello',
+      'world',
+    ]);
+  });
+
+  it('falls back from Replicate WhisperX to AssemblyAI when WhisperX fails', async () => {
+    mockedIsReplicateWhisperXEnabled.mockReturnValue(true);
+    mockedIsAssemblyAiEnabled.mockReturnValue(true);
+    mockedAlignWithReplicateWhisperX.mockRejectedValue(
+      new Error('WhisperX timeout'),
+    );
+    mockedAlignWithAssemblyAi.mockResolvedValue([
+      { text: 'Fallback', startSeconds: 0, endSeconds: 0.45 },
+      { text: 'path', startSeconds: 0.45, endSeconds: 1 },
+    ]);
+
+    const timings = await alignAudioToSentences({
+      openai: null,
+      audioPath: 'unused.mp3',
+      sentences: [{ text: 'Fallback path' }],
+      audioDurationSeconds: 1,
+      withTimeout: async (promise) => promise,
+      disableRenderer: true,
+    });
+
+    expect(mockedAlignWithReplicateWhisperX).toHaveBeenCalledTimes(1);
+    expect(mockedAlignWithAssemblyAi).toHaveBeenCalledTimes(1);
+    expect(timings[0].words?.map((word) => word.text)).toEqual([
+      'Fallback',
+      'path',
+    ]);
+  });
+
+  it('falls back to OpenAI when Replicate WhisperX and AssemblyAI fail', async () => {
+    mockedIsReplicateWhisperXEnabled.mockReturnValue(true);
+    mockedIsAssemblyAiEnabled.mockReturnValue(true);
+    mockedAlignWithReplicateWhisperX.mockRejectedValue(
+      new Error('WhisperX timeout'),
+    );
+    mockedAlignWithAssemblyAi.mockRejectedValue(new Error('Assembly down'));
+
+    const createTranscription = jest.fn().mockResolvedValue({
+      segments: [
+        {
+          start: 0,
+          end: 1,
+          text: 'OpenAI transcript',
+        },
+      ],
+    });
+
+    const timings = await alignAudioToSentences({
+      openai: {
+        audio: {
+          transcriptions: {
+            create: createTranscription,
+          },
+        },
+      } as any,
+      audioPath: __filename,
+      sentences: [{ text: 'OpenAI transcript' }],
+      audioDurationSeconds: 1,
+      withTimeout: async (promise) => promise,
+      disableRenderer: true,
+    });
+
+    expect(mockedAlignWithReplicateWhisperX).toHaveBeenCalledTimes(1);
+    expect(mockedAlignWithAssemblyAi).toHaveBeenCalledTimes(1);
+    expect(createTranscription).toHaveBeenCalledTimes(1);
+    expect(timings[0].text).toBe('OpenAI transcript');
   });
 });
