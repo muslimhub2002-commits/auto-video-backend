@@ -7,6 +7,8 @@ import { createHash } from 'crypto';
 import { GenerateScriptDto } from '../dto/generate-script.dto';
 import { EnhanceScriptDto } from '../dto/enhance-script.dto';
 import { EnhanceSentenceDto } from '../dto/enhance-sentence.dto';
+import { GenerateBulkLookEffectsDto } from '../dto/generate-bulk-look-effects.dto';
+import { GenerateBulkMotionEffectsDto } from '../dto/generate-bulk-motion-effects.dto';
 import { GenerateMediaSearchTermDto } from '../dto/generate-media-search-term.dto';
 import { TranslateDto } from '../dto/translate.dto';
 import type { LlmMessage } from '../llm/llm-types';
@@ -19,6 +21,24 @@ import translateGoogle = require('translate-google');
 export class AiTextService {
   // Narration pacing assumption (words per minute) used to derive strict word-count targets.
   private readonly narrationWpm = 150;
+  private readonly visualEffectOptions = [
+    'colorGrading',
+    'animatedLighting',
+    'glassSubtle',
+    'glassReflections',
+    'glassStrong',
+  ] as const;
+  private readonly motionEffectOptions = [
+    'slowZoomIn',
+    'slowZoomOut',
+    'diagonalDrift',
+    'cinematicPan',
+    'focusShift',
+    'parallaxMotion',
+    'shakeMicroMotion',
+    'splitMotion',
+    'rotationDrift',
+  ] as const;
 
   constructor(private readonly runtime: AiRuntimeService) { }
 
@@ -112,6 +132,390 @@ export class AiTextService {
     const maxWords = Math.max(minWords + 1, targetWords + tolerance);
 
     return { targetWords, minWords, maxWords };
+  }
+
+  private clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    return Math.min(max, Math.max(min, numeric));
+  }
+
+  private chunkItemsByBudget<T>(
+    items: T[],
+    getText: (item: T) => string,
+    maxChars = 12000,
+    maxItems = 18,
+  ): T[][] {
+    const chunks: T[][] = [];
+    let current: T[] = [];
+    let currentChars = 0;
+
+    for (const item of items) {
+      const text = getText(item);
+      const itemChars = text.length + 2;
+
+      if (current.length > 0 && (current.length >= maxItems || currentChars + itemChars > maxChars)) {
+        chunks.push(current);
+        current = [];
+        currentChars = 0;
+      }
+
+      current.push(item);
+      currentChars += itemChars;
+    }
+
+    if (current.length > 0) chunks.push(current);
+    return chunks;
+  }
+
+  private normalizeLookSettings(
+    value: Record<string, unknown> | null | undefined,
+    blurFallback = 0,
+  ): Record<string, unknown> {
+    return {
+      presetKey: 'custom',
+      saturation: this.clampNumber(value?.saturation, 0, 2.5, 1),
+      contrast: this.clampNumber(value?.contrast, 0, 2.5, 1),
+      brightness: this.clampNumber(value?.brightness, 0, 2.5, 1),
+      blurPx: this.clampNumber(blurFallback, 0, 20, 0),
+      sepia: this.clampNumber(value?.sepia, 0, 1, 0),
+      grayscale: this.clampNumber(value?.grayscale, 0, 1, 0),
+      hueRotateDeg: this.clampNumber(value?.hueRotateDeg, -180, 180, 0),
+      animatedLightingIntensity: this.clampNumber(
+        value?.animatedLightingIntensity,
+        0,
+        1,
+        0,
+      ),
+      glassOverlayOpacity: this.clampNumber(value?.glassOverlayOpacity, 0, 0.4, 0),
+    };
+  }
+
+  private omitLookBlur(
+    value: Record<string, unknown> | null | undefined,
+  ): Record<string, unknown> {
+    if (!value || typeof value !== 'object') return {};
+
+    const { blurPx: _blurPx, ...rest } = value;
+    return rest;
+  }
+
+  private normalizeMotionSettings(
+    value: Record<string, unknown> | null | undefined,
+    speedFallback = 1.2,
+  ): Record<string, unknown> {
+    const toBoolean = (raw: unknown, fallback = false) =>
+      typeof raw === 'boolean' ? raw : fallback;
+
+    return {
+      presetKey: 'custom',
+      speed: this.clampNumber(value?.speed, 0.5, 2.5, speedFallback),
+      startScale: this.clampNumber(value?.startScale, 0.5, 2, 1),
+      endScale: this.clampNumber(value?.endScale, 0.5, 2, 1.055),
+      scaleEndNoLimit: toBoolean(value?.scaleEndNoLimit, true),
+      translateXStart: this.clampNumber(value?.translateXStart, -20, 20, 0),
+      translateXEnd: this.clampNumber(value?.translateXEnd, -20, 20, 0),
+      translateXEndNoLimit: toBoolean(value?.translateXEndNoLimit, true),
+      translateYStart: this.clampNumber(value?.translateYStart, -20, 20, 0),
+      translateYEnd: this.clampNumber(value?.translateYEnd, -20, 20, 0),
+      translateYEndNoLimit: toBoolean(value?.translateYEndNoLimit, true),
+      rotateStart: this.clampNumber(value?.rotateStart, -10, 10, 0),
+      rotateEnd: this.clampNumber(value?.rotateEnd, -10, 10, 0),
+      rotateEndNoLimit: toBoolean(value?.rotateEndNoLimit, true),
+      originX: this.clampNumber(value?.originX, 0, 100, 50),
+      originY: this.clampNumber(value?.originY, 0, 100, 50),
+    };
+  }
+
+  async generateBulkLookEffects(
+    dto: GenerateBulkLookEffectsDto,
+  ): Promise<{
+    items: Array<{
+      sentenceId: string;
+      index: number;
+      visualEffect:
+        | 'colorGrading'
+        | 'animatedLighting'
+        | 'glassSubtle'
+        | 'glassReflections'
+        | 'glassStrong';
+      imageFilterSettings: Record<string, unknown>;
+    }>;
+  }> {
+    const sentences = Array.isArray(dto?.sentences)
+      ? dto.sentences
+          .map((item) => ({
+            index: Number(item?.index),
+            sentenceId: String(item?.sentenceId ?? '').trim(),
+            imagePrompt: String(item?.imagePrompt ?? '').trim(),
+            visualEffect: item?.visualEffect ?? null,
+            imageFilterSettings:
+              item?.imageFilterSettings && typeof item.imageFilterSettings === 'object'
+                ? item.imageFilterSettings
+                : null,
+          }))
+          .filter(
+            (item) =>
+              Number.isFinite(item.index) && item.sentenceId.length > 0 && item.imagePrompt.length > 0,
+          )
+      : [];
+
+    if (!sentences.length) {
+      throw new BadRequestException('At least one eligible sentence is required');
+    }
+
+    const model = dto.model?.trim() || this.cheapModel;
+    const customSystemPrompt = dto.systemPrompt?.trim();
+    const chunks = this.chunkItemsByBudget(
+      sentences,
+      (item) => `${item.index}|${item.sentenceId}|${item.imagePrompt}`,
+      12000,
+      16,
+    );
+
+    const systemPrompt = [
+      customSystemPrompt,
+      'You are an AI art director creating RANDOM but tasteful LOOK effects for already-generated images.',
+      'Always respond with pure JSON as an OBJECT with exactly this shape: {"items": [{"sentenceId": string, "index": number, "visualEffect": string, "imageFilterSettings": object}]}',
+      'Rules:',
+      `- visualEffect must be one of: ${this.visualEffectOptions.join(', ')}.`,
+      '- Return exactly one item for each provided image.',
+      '- Each image should get a fitting but varied random look. Do not make all images identical.',
+      '- Work only from the image prompt and any current look values provided.',
+      '- imageFilterSettings must contain only editable numeric tuning values for the selected look and presetKey="custom".',
+      '- Never include blurPx in imageFilterSettings. Blur is locked and must stay unchanged.',
+      '- Do not return imagePrompt or extra keys.',
+      '- No prose. No markdown. JSON only.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      const chunkResults = await Promise.all(
+        chunks.map(async (chunk) => {
+          try {
+            const parsed = await this.llm.completeJson<{
+              items?: Array<{
+                sentenceId?: unknown;
+                index?: unknown;
+                visualEffect?: unknown;
+                imageFilterSettings?: unknown;
+              }>;
+            }>({
+              model,
+              retries: 2,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                {
+                  role: 'user',
+                  content:
+                    'Return ONLY valid JSON in this exact shape: {"items":[{"sentenceId":"...","index":0,"visualEffect":"colorGrading","imageFilterSettings":{"presetKey":"custom"}}]}\n\n' +
+                    'TARGET IMAGES:\n' +
+                    chunk
+                      .map(
+                        (item) =>
+                          `- index=${item.index}; sentenceId=${item.sentenceId}; currentVisualEffect=${item.visualEffect ?? 'none'}; currentSettings=${JSON.stringify(this.omitLookBlur(item.imageFilterSettings))}; imagePrompt=${JSON.stringify(item.imagePrompt)}`,
+                      )
+                      .join('\n'),
+                },
+              ],
+            });
+
+            const bySentenceId = new Map(chunk.map((item) => [item.sentenceId, item]));
+
+            return (Array.isArray(parsed?.items) ? parsed.items : [])
+              .map((item) => {
+                const sentenceId = String(item?.sentenceId ?? '').trim();
+                const source = bySentenceId.get(sentenceId);
+                const visualEffect = this.visualEffectOptions.find(
+                  (value) => value === item?.visualEffect,
+                );
+
+                if (!source || !visualEffect) return null;
+
+                return {
+                  sentenceId: source.sentenceId,
+                  index: source.index,
+                  visualEffect,
+                  imageFilterSettings: this.normalizeLookSettings(
+                    item?.imageFilterSettings as Record<string, unknown> | null | undefined,
+                    this.clampNumber(source.imageFilterSettings?.blurPx, 0, 20, 0),
+                  ),
+                };
+              })
+              .filter(Boolean) as Array<{
+              sentenceId: string;
+              index: number;
+              visualEffect:
+                | 'colorGrading'
+                | 'animatedLighting'
+                | 'glassSubtle'
+                | 'glassReflections'
+                | 'glassStrong';
+              imageFilterSettings: Record<string, unknown>;
+            }>;
+          } catch (error) {
+            console.warn('generateBulkLookEffects chunk fallback:', error);
+            return [];
+          }
+        }),
+      );
+
+      return { items: chunkResults.flat() };
+    } catch (error) {
+      console.error('Failed to generate bulk look effects:', error);
+      throw new InternalServerErrorException('Failed to generate bulk look effects');
+    }
+  }
+
+  async generateBulkMotionEffects(
+    dto: GenerateBulkMotionEffectsDto,
+  ): Promise<{
+    items: Array<{
+      sentenceId: string;
+      index: number;
+      imageMotionEffect:
+        | 'slowZoomIn'
+        | 'slowZoomOut'
+        | 'diagonalDrift'
+        | 'cinematicPan'
+        | 'focusShift'
+        | 'parallaxMotion'
+        | 'shakeMicroMotion'
+        | 'splitMotion'
+        | 'rotationDrift';
+      imageMotionSettings: Record<string, unknown>;
+    }>;
+  }> {
+    const sentences = Array.isArray(dto?.sentences)
+      ? dto.sentences
+          .map((item) => ({
+            index: Number(item?.index),
+            sentenceId: String(item?.sentenceId ?? '').trim(),
+            imagePrompt: String(item?.imagePrompt ?? '').trim(),
+            imageMotionEffect: item?.imageMotionEffect ?? null,
+            imageMotionSpeed: this.clampNumber(item?.imageMotionSpeed, 0.5, 2.5, 1.2),
+            imageMotionSettings:
+              item?.imageMotionSettings && typeof item.imageMotionSettings === 'object'
+                ? item.imageMotionSettings
+                : null,
+          }))
+          .filter(
+            (item) =>
+              Number.isFinite(item.index) && item.sentenceId.length > 0 && item.imagePrompt.length > 0,
+          )
+      : [];
+
+    if (!sentences.length) {
+      throw new BadRequestException('At least one eligible sentence is required');
+    }
+
+    const model = dto.model?.trim() || this.cheapModel;
+    const customSystemPrompt = dto.systemPrompt?.trim();
+    const chunks = this.chunkItemsByBudget(
+      sentences,
+      (item) => `${item.index}|${item.sentenceId}|${item.imagePrompt}`,
+      12000,
+      16,
+    );
+
+    const systemPrompt = [
+      customSystemPrompt,
+      'You are an AI motion director creating RANDOM but tasteful camera-like MOTION effects for already-generated still images.',
+      'Always respond with pure JSON as an OBJECT with exactly this shape: {"items": [{"sentenceId": string, "index": number, "imageMotionEffect": string, "imageMotionSettings": object}]}',
+      'Rules:',
+      `- imageMotionEffect must be one of: ${this.motionEffectOptions.join(', ')}.`,
+      '- Return exactly one item for each provided image.',
+      '- Each image should get a fitting but varied random motion style. Do not make all images identical.',
+      '- Work only from the image prompt and any current motion values provided.',
+      '- IMPORTANT: Keep the currentMotionSpeed exactly unchanged. Do NOT return a new speed and do NOT encode a different speed in imageMotionSettings.speed.',
+      '- imageMotionSettings must contain only numeric/boolean tuning values and presetKey="custom".',
+      '- Do not return imagePrompt or extra keys.',
+      '- No prose. No markdown. JSON only.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      const chunkResults = await Promise.all(
+        chunks.map(async (chunk) => {
+          try {
+            const parsed = await this.llm.completeJson<{
+              items?: Array<{
+                sentenceId?: unknown;
+                index?: unknown;
+                imageMotionEffect?: unknown;
+                imageMotionSettings?: unknown;
+              }>;
+            }>({
+              model,
+              retries: 2,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                {
+                  role: 'user',
+                  content:
+                    'Return ONLY valid JSON in this exact shape: {"items":[{"sentenceId":"...","index":0,"imageMotionEffect":"slowZoomIn","imageMotionSettings":{"presetKey":"custom"}}]}\n\n' +
+                    'TARGET IMAGES:\n' +
+                    chunk
+                      .map(
+                        (item) =>
+                          `- index=${item.index}; sentenceId=${item.sentenceId}; currentMotionEffect=${item.imageMotionEffect ?? 'default'}; currentMotionSpeed=${item.imageMotionSpeed}; currentSettings=${JSON.stringify(item.imageMotionSettings ?? {})}; imagePrompt=${JSON.stringify(item.imagePrompt)}`,
+                      )
+                      .join('\n'),
+                },
+              ],
+            });
+
+            const bySentenceId = new Map(chunk.map((item) => [item.sentenceId, item]));
+
+            return (Array.isArray(parsed?.items) ? parsed.items : [])
+              .map((item) => {
+                const sentenceId = String(item?.sentenceId ?? '').trim();
+                const source = bySentenceId.get(sentenceId);
+                const imageMotionEffect = this.motionEffectOptions.find(
+                  (value) => value === item?.imageMotionEffect,
+                );
+
+                if (!source || !imageMotionEffect) return null;
+
+                return {
+                  sentenceId: source.sentenceId,
+                  index: source.index,
+                  imageMotionEffect,
+                  imageMotionSettings: this.normalizeMotionSettings(
+                    item?.imageMotionSettings as Record<string, unknown> | null | undefined,
+                    source.imageMotionSpeed,
+                  ),
+                };
+              })
+              .filter(Boolean) as Array<{
+              sentenceId: string;
+              index: number;
+              imageMotionEffect:
+                | 'slowZoomIn'
+                | 'slowZoomOut'
+                | 'diagonalDrift'
+                | 'cinematicPan'
+                | 'focusShift'
+                | 'parallaxMotion'
+                | 'shakeMicroMotion'
+                | 'splitMotion'
+                | 'rotationDrift';
+              imageMotionSettings: Record<string, unknown>;
+            }>;
+          } catch (error) {
+            console.warn('generateBulkMotionEffects chunk fallback:', error);
+            return [];
+          }
+        }),
+      );
+
+      return { items: chunkResults.flat() };
+    } catch (error) {
+      console.error('Failed to generate bulk motion effects:', error);
+      throw new InternalServerErrorException('Failed to generate bulk motion effects');
+    }
   }
 
   async createScriptStream(options: GenerateScriptDto) {

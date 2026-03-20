@@ -23,6 +23,8 @@ import { GenerateVoiceStyleDto } from './dto/generate-voice-style.dto';
 import { GenerateMediaSearchTermDto } from './dto/generate-media-search-term.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
+import { GenerateBulkLookEffectsDto } from './dto/generate-bulk-look-effects.dto';
+import { GenerateBulkMotionEffectsDto } from './dto/generate-bulk-motion-effects.dto';
 import { TranslateDto } from './dto/translate.dto';
 import { YoutubeSeoDto } from './dto/youtube-seo.dto';
 import { YoutubeWallpaperDto } from './dto/youtube-wallpaper.dto';
@@ -167,6 +169,22 @@ export class AiController {
       }
       res.end('\n[Error] Failed to stream enhanced sentence.');
     }
+  }
+
+  @Post('generate-bulk-look-effects')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async generateBulkLookEffects(@Body() body: GenerateBulkLookEffectsDto) {
+    return this.aiService.generateBulkLookEffects(body);
+  }
+
+  @Post('generate-bulk-motion-effects')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async generateBulkMotionEffects(
+    @Body() body: GenerateBulkMotionEffectsDto,
+  ) {
+    return this.aiService.generateBulkMotionEffects(body);
   }
 
   @Post('generate-media-search-term')

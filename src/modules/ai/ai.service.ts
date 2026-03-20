@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { GenerateScriptDto } from './dto/generate-script.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
+import { GenerateBulkLookEffectsDto } from './dto/generate-bulk-look-effects.dto';
+import { GenerateBulkMotionEffectsDto } from './dto/generate-bulk-motion-effects.dto';
 import { GenerateMediaSearchTermDto } from './dto/generate-media-search-term.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
 import { YoutubeWallpaperDto } from './dto/youtube-wallpaper.dto';
@@ -130,6 +132,42 @@ export class AiService {
 
   createEnhanceSentenceStream(dto: EnhanceSentenceDto) {
     return this.textService.createEnhanceSentenceStream(dto);
+  }
+
+  generateBulkLookEffects(dto: GenerateBulkLookEffectsDto): Promise<{
+    items: Array<{
+      sentenceId: string;
+      index: number;
+      visualEffect:
+        | 'colorGrading'
+        | 'animatedLighting'
+        | 'glassSubtle'
+        | 'glassReflections'
+        | 'glassStrong';
+      imageFilterSettings: Record<string, unknown>;
+    }>;
+  }> {
+    return this.textService.generateBulkLookEffects(dto);
+  }
+
+  generateBulkMotionEffects(dto: GenerateBulkMotionEffectsDto): Promise<{
+    items: Array<{
+      sentenceId: string;
+      index: number;
+      imageMotionEffect:
+        | 'slowZoomIn'
+        | 'slowZoomOut'
+        | 'diagonalDrift'
+        | 'cinematicPan'
+        | 'focusShift'
+        | 'parallaxMotion'
+        | 'shakeMicroMotion'
+        | 'splitMotion'
+        | 'rotationDrift';
+      imageMotionSettings: Record<string, unknown>;
+    }>;
+  }> {
+    return this.textService.generateBulkMotionEffects(dto);
   }
 
   generateMediaSearchTerm(dto: GenerateMediaSearchTermDto) {
