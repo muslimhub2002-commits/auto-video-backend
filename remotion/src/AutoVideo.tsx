@@ -2,6 +2,7 @@ import React from 'react';
 import {
   AbsoluteFill,
   Audio,
+  OffthreadVideo,
   Sequence,
   delayRender,
   continueRender,
@@ -15,10 +16,14 @@ import {
   DEFAULT_GLITCH_FX_URL,
   DEFAULT_SUSPENSE_GLITCH_SFX_URL,
   DEFAULT_WHOOSH_SFX_URL,
+  FLASH_EDGE_FRAMES,
   GLITCH_EDGE_FRAMES,
   WHIP_EDGE_FRAMES,
 } from './constants';
-import { preloadMedia, resolveMediaSrc } from './utils/media';
+import {
+  preloadMedia,
+  resolveMediaSrc,
+} from './utils/media';
 import { Scene } from './components/Scene';
 import { buildCutTransitions, getCutSeed, pickWhipDirection } from './utils/transitions';
 
@@ -77,6 +82,28 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
     });
   }, [timeline.scenes]);
   const showSubtitles = timeline.addSubtitles !== false;
+  const recurringSubscribeOverlay = timeline.assets?.recurringSubscribeOverlay;
+  const recurringSubscribeOverlaySrc = recurringSubscribeOverlay?.videoSrc
+    ? resolveMediaSrc(recurringSubscribeOverlay.videoSrc)
+    : null;
+  const recurringSubscribeOverlayIntervalFrames = recurringSubscribeOverlay
+    ? Math.max(1, Math.round(recurringSubscribeOverlay.intervalSeconds * (timeline.fps || 30)))
+    : null;
+  const recurringSubscribeOverlayDurationFrames = recurringSubscribeOverlay
+    ? Math.max(
+        1,
+        Math.round(recurringSubscribeOverlay.durationSeconds * (timeline.fps || 30)),
+      )
+    : null;
+  const recurringSubscribeOverlayInset = Math.max(16, Math.round(timeline.width * 0.02));
+  const recurringSubscribeOverlayWidth = Math.max(260, Math.round(timeline.width * 0.24));
+  const videoScenePremountFrames =
+    Math.max(
+      FLASH_EDGE_FRAMES,
+      GLITCH_EDGE_FRAMES,
+      WHIP_EDGE_FRAMES,
+      CHROMA_EDGE_FRAMES,
+    ) + 2;
 
   // Preload remote media so we don't show the black background while assets fetch.
   const preloadHandle = React.useMemo(
@@ -106,6 +133,9 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
     if (cameraClickSfxSrc) sources.add(resolveMediaSrc(cameraClickSfxSrc));
     if (isSuspenseOpening && suspenseGlitchSfxSrc) {
       sources.add(resolveMediaSrc(suspenseGlitchSfxSrc));
+    }
+    if (recurringSubscribeOverlaySrc) {
+      sources.add(recurringSubscribeOverlaySrc);
     }
 
     for (const scene of timeline.scenes) {
@@ -149,7 +179,35 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       // leave a delayRender handle unresolved which would hang rendering.
       safeContinue();
     };
-  }, [preloadHandle, timeline]);
+  }, [preloadHandle, recurringSubscribeOverlaySrc, timeline]);
+
+  const recurringSubscribeOverlayStartFrames = React.useMemo(() => {
+    if (
+      !recurringSubscribeOverlay ||
+      !recurringSubscribeOverlaySrc ||
+      !recurringSubscribeOverlayIntervalFrames ||
+      !recurringSubscribeOverlayDurationFrames
+    ) {
+      return [] as number[];
+    }
+
+    const starts: number[] = [];
+    for (
+      let startFrame = recurringSubscribeOverlayIntervalFrames;
+      startFrame < timeline.durationInFrames;
+      startFrame += recurringSubscribeOverlayIntervalFrames
+    ) {
+      starts.push(startFrame);
+    }
+
+    return starts;
+  }, [
+    recurringSubscribeOverlay,
+    recurringSubscribeOverlayDurationFrames,
+    recurringSubscribeOverlayIntervalFrames,
+    recurringSubscribeOverlaySrc,
+    timeline.durationInFrames,
+  ]);
 
 
   return (
@@ -358,6 +416,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       {timeline.scenes.map((scene, idx) => {
         const prev = idx > 0 ? timeline.scenes[idx - 1] : null;
         const next = idx + 1 < timeline.scenes.length ? timeline.scenes[idx + 1] : null;
+        const premountFor = scene.videoSrc ? videoScenePremountFrames : 0;
 
         const transitionFromPrev = idx > 0 ? (cutTransitions[idx] ?? 'none') : 'none';
         const transitionToNext =
@@ -382,6 +441,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={scene.index}
             from={scene.startFrame}
             durationInFrames={scene.durationFrames}
+            premountFor={premountFor}
           >
             <Scene
               scene={scene}
@@ -395,6 +455,42 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
               whipDirFromPrev={whipDirFromPrev}
               whipDirToNext={whipDirToNext}
             />
+          </Sequence>
+        );
+      })}
+
+      {recurringSubscribeOverlayStartFrames.map((startFrame, idx) => {
+        if (!recurringSubscribeOverlaySrc || !recurringSubscribeOverlayDurationFrames) {
+          return null;
+        }
+
+        const remainingFrames = timeline.durationInFrames - startFrame;
+        if (remainingFrames <= 0) return null;
+
+        return (
+          <Sequence
+            key={`long-form-subscribe-overlay-${idx}`}
+            from={startFrame}
+            durationInFrames={Math.min(
+              recurringSubscribeOverlayDurationFrames,
+              remainingFrames,
+            )}
+          >
+            <AbsoluteFill style={{ pointerEvents: 'none' }}>
+              <OffthreadVideo
+                src={recurringSubscribeOverlaySrc}
+                muted
+                pauseWhenBuffering
+                style={{
+                  position: 'absolute',
+                  top: recurringSubscribeOverlayInset,
+                  left: recurringSubscribeOverlayInset,
+                  width: recurringSubscribeOverlayWidth,
+                  height: 'auto',
+                  objectFit: 'contain',
+                }}
+              />
+            </AbsoluteFill>
           </Sequence>
         );
       })}

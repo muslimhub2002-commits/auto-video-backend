@@ -48,6 +48,10 @@ export class CreateRenderVideoDto {
   @IsString()
   enableZoomRotateTransitions?: string;
 
+  @IsOptional()
+  @IsString()
+  enableLongFormSubscribeOverlay?: string;
+
   // Optional background soundtrack override.
   // - omit => use default soundtrack
   // - "__none__" => mute background music

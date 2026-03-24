@@ -50,8 +50,11 @@ export const buildTimeline = (params: {
   useLowerResolution?: boolean;
   addSubtitles?: boolean;
   enableGlitchTransitions?: boolean;
+  enableLongFormSubscribeOverlay?: boolean;
   backgroundMusicSrc?: string | null;
   backgroundMusicVolume?: number;
+  longFormSubscribeOverlaySrc?: string | null;
+  longFormSubscribeOverlayDurationSeconds?: number | null;
   useRemoteAssets?: boolean;
 }) => {
   const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
@@ -350,6 +353,12 @@ export const buildTimeline = (params: {
     cameraClickSfxSrc?: string;
     chromaLeakSfxSrc?: string;
     suspenseGlitchSfxSrc?: string;
+    recurringSubscribeOverlay?: {
+      videoSrc: string;
+      intervalSeconds: number;
+      durationSeconds: number;
+      position: 'topLeft';
+    };
   } = {};
 
   if (typeof params.backgroundMusicSrc !== 'undefined') {
@@ -370,6 +379,23 @@ export const buildTimeline = (params: {
     assets.cameraClickSfxSrc = CAMERA_CLICK_CLOUDINARY_URL;
     // Leave unset (or empty) to let the composition fall back to local `staticFile()`.
     assets.suspenseGlitchSfxSrc = '';
+  }
+
+  if (
+    !isShort &&
+    params.enableLongFormSubscribeOverlay !== false &&
+    params.longFormSubscribeOverlaySrc
+  ) {
+    assets.recurringSubscribeOverlay = {
+      videoSrc: params.longFormSubscribeOverlaySrc,
+      intervalSeconds: 150,
+      durationSeconds:
+        params.longFormSubscribeOverlayDurationSeconds &&
+        Number.isFinite(params.longFormSubscribeOverlayDurationSeconds)
+          ? Math.max(0.1, params.longFormSubscribeOverlayDurationSeconds)
+          : 6.36,
+      position: 'topLeft',
+    };
   }
 
   return {

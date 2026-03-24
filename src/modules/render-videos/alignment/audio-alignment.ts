@@ -411,72 +411,103 @@ const buildSentenceTimingsFromWordTimeline = (params: {
     return best;
   };
 
-  for (let index = 0; index < cleaned.length; index += 1) {
-    const text = cleaned[index];
-
-    if (!text) {
-      const prevEnd = index > 0 ? timings[index - 1].endSeconds : 0;
-      const endSeconds = Math.min(totalDuration, prevEnd + 0.1);
-      timings.push({
-        index,
-        text,
-        startSeconds: prevEnd,
-        endSeconds,
-        words: [],
-      });
-      continue;
-    }
-
+  const sentenceMatches = cleaned.map((text, index) => {
     const rawWords = splitSubtitleWords(text);
     const normalizedWords = rawWords
       .map((rawWord) => ({ text: rawWord, token: normalizeWord(rawWord) }))
       .filter((word) => !!word.token);
     const sentenceTokens = normalizedWords.map((word) => word.token);
 
-    if (!sentenceTokens.length) {
-      const prevEnd = index > 0 ? timings[index - 1].endSeconds : 0;
-      const endSeconds = Math.min(totalDuration, prevEnd + 0.1);
-      timings.push({
+    if (!text) {
+      return {
         index,
         text,
-        startSeconds: prevEnd,
-        endSeconds,
-        words: buildSyntheticWordTimings(text, prevEnd, endSeconds),
-      });
-      continue;
+        normalizedWords,
+        match: null as { start: number; end: number } | null,
+        kind: 'empty' as const,
+      };
+    }
+
+    if (!sentenceTokens.length) {
+      return {
+        index,
+        text,
+        normalizedWords,
+        match: null as { start: number; end: number } | null,
+        kind: 'synthetic' as const,
+      };
     }
 
     const match = findBestMatch(wordIndex, sentenceTokens);
-
-    if (!match) {
-      const prevEnd = timings.length
-        ? timings[timings.length - 1].endSeconds
-        : 0;
-      const remainingDuration = Math.max(0.1, totalDuration - prevEnd);
-      const remaining = alignByWordCount(
-        params.sentences.slice(index),
-        remainingDuration,
-      );
-
-      for (const timing of remaining) {
-        timings.push({
-          index: index + timing.index,
-          text: timing.text,
-          startSeconds: prevEnd + timing.startSeconds,
-          endSeconds: prevEnd + timing.endSeconds,
-          words: (timing.words ?? []).map((word) => ({
-            ...word,
-            startSeconds: prevEnd + word.startSeconds,
-            endSeconds: prevEnd + word.endSeconds,
-          })),
-        });
-      }
-
-      break;
+    if (match) {
+      wordIndex = match.end + 1;
     }
 
-    const firstWord = params.wordsTimeline[match.start];
-    const lastWord = params.wordsTimeline[match.end];
+    return {
+      index,
+      text,
+      normalizedWords,
+      match,
+      kind: match ? ('matched' as const) : ('synthetic' as const),
+    };
+  });
+
+  const pushSyntheticBlock = (startIndex: number, endIndexExclusive: number) => {
+    if (startIndex >= endIndexExclusive) return;
+
+    const prevEnd = timings.length ? timings[timings.length - 1].endSeconds : 0;
+    const nextMatched = sentenceMatches
+      .slice(endIndexExclusive)
+      .find((entry) => entry.match);
+
+    const nextMatchedStart = nextMatched?.match
+      ? params.wordsTimeline[nextMatched.match.start]?.startSeconds
+      : null;
+
+    const blockSpan =
+      nextMatchedStart !== null && Number.isFinite(nextMatchedStart)
+        ? Math.max(0.1, nextMatchedStart - prevEnd)
+        : Math.max(0.1, totalDuration - prevEnd);
+
+    const synthetic = alignByWordCount(
+      params.sentences.slice(startIndex, endIndexExclusive),
+      blockSpan,
+    );
+
+    for (const timing of synthetic) {
+      timings.push({
+        index: startIndex + timing.index,
+        text: timing.text,
+        startSeconds: prevEnd + timing.startSeconds,
+        endSeconds: prevEnd + timing.endSeconds,
+        words: (timing.words ?? []).map((word) => ({
+          ...word,
+          startSeconds: prevEnd + word.startSeconds,
+          endSeconds: prevEnd + word.endSeconds,
+        })),
+      });
+    }
+  };
+
+  let syntheticBlockStart: number | null = null;
+
+  for (let index = 0; index < sentenceMatches.length; index += 1) {
+    const entry = sentenceMatches[index];
+
+    if (!entry.match) {
+      if (syntheticBlockStart === null) {
+        syntheticBlockStart = index;
+      }
+      continue;
+    }
+
+    if (syntheticBlockStart !== null) {
+      pushSyntheticBlock(syntheticBlockStart, index);
+      syntheticBlockStart = null;
+    }
+
+    const firstWord = params.wordsTimeline[entry.match.start];
+    const lastWord = params.wordsTimeline[entry.match.end];
     let startSeconds = firstWord.startSeconds;
     let endSeconds = lastWord.endSeconds;
 
@@ -491,8 +522,8 @@ const buildSentenceTimingsFromWordTimeline = (params: {
       Math.min(endSeconds, totalDuration),
     );
 
-    const words = normalizedWords.map((word, offset) => {
-      const matchedWord = params.wordsTimeline[match.start + offset];
+    const words = entry.normalizedWords.map((word, offset) => {
+      const matchedWord = params.wordsTimeline[entry.match!.start + offset];
       return {
         text: word.text,
         startSeconds: matchedWord.startSeconds,
@@ -507,13 +538,16 @@ const buildSentenceTimingsFromWordTimeline = (params: {
     });
 
     timings.push({
-      index,
-      text,
+      index: entry.index,
+      text: entry.text,
       startSeconds,
       endSeconds,
       words,
     });
-    wordIndex = match.end + 1;
+  }
+
+  if (syntheticBlockStart !== null) {
+    pushSyntheticBlock(syntheticBlockStart, sentenceMatches.length);
   }
 
   if (timings.length) {

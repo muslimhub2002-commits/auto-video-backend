@@ -1059,7 +1059,7 @@ export class AiImageService {
     // It is intentionally large and will be further split later if desired.
 
     const style =
-      dto.style?.trim() || 'Anime style, 4K QUALITY DETAILED, vibrant';
+      dto.style?.trim() || 'Modern Anime style, 4K QUALITY DETAILED, vibrant';
 
     const fullScriptContext = dto.script?.trim();
 
@@ -1152,43 +1152,29 @@ export class AiImageService {
         characterBible,
       });
 
-    // const blockHumans = mentionResult.blockHumans;
-    const forceBackView = mentionResult.forceBackView;
     const referencedCharacterKeys = mentionResult.characterKeys;
     const referencedCanonicalCharacters = (canonicalCharacters ?? []).filter(
       (character) => referencedCharacterKeys.includes(character.key),
     );
     const hasMultipleReferencedCharacters = referencedCharacterKeys.length > 1;
-    const backViewCharacters = referencedCanonicalCharacters.filter(
+    const protectedCharacters = referencedCanonicalCharacters.filter(
       (character) => character.isSahaba || character.isProphet,
     );
-    const lightAroundBodyCharacters = referencedCanonicalCharacters.filter(
-      (character) => character.isProphet,
+    const notProtectedCharacters = referencedCanonicalCharacters.filter(
+      (character) => !character.isSahaba && !character.isProphet && !character.isWoman,
     );
-    // const focusMaleCharacter =
-    //   !blockHumans &&
-    //   (this.sentenceContainsMaleCharacter(sentenceText) ||
-    //     referencedCharacterKeys.length > 0);
 
-    const noHumanFiguresRule =
-      'ABSOLUTE RULE: Do NOT depict any humans or human-like figures. ' +
-      'NO people, NO faces, NO heads, NO hands, NO bodies, NO skin, NO silhouettes, NO characters, NO crowds, NO humanoid statues.';
+    const noHumanFiguresRule = 'Do NOT show any character, person, or humanoid figure. ' +
+      'Symbolize the sentence through environmental storytelling, meaningful objects, action traces, lighting, atmosphere, and aftermath details.';
+    const protectedCharactersRole = protectedCharacters.length === 1 && !hasMultipleReferencedCharacters ?
+      noHumanFiguresRule :
+      hasMultipleReferencedCharacters && protectedCharacters.length > 1 ?
+        noHumanFiguresRule :
+        referencedCharacterKeys.length && protectedCharacters.length && referencedCharacterKeys.length !== protectedCharacters.length ?
+          `Don't Show the protected character(s) (${protectedCharacters.map((c) => c.name).join(', ')}) at all, Only Show ${notProtectedCharacters.map((c: any) => c.name).join(', ')} as If there's no other character(s) with it/them on the scene.` :
+          '';
 
-    const backViewOnlyRule =
-      'show the person as a small, distant figure VERY FAR from the camera and ONLY from behind (back view), while still being relatable to the sentence scene. ' +
-      'He can be lying down, sitting, fallen on the ground, walking away, etc., but you MUST keep the shot wide and distant and you MUST NOT show any face or facial details. ';
-    const lightAroundBodyRule =
-      'Surround the full body with a strong, radiant light aura/glow from all sides, clearly wrapping around the body outline.';
-    const targetedBackViewRule = hasMultipleReferencedCharacters
-      ? backViewCharacters
-        .map(
-          (character) =>
-            `${character.name} must be shown ONLY from behind (back view), and you MUST NOT show ${character.name}'s face or facial details.`,
-        )
-        .join(' ')
-      : forceBackView
-        ? backViewOnlyRule.trim()
-        : '';
+    console.log(referencedCharacterKeys.length, protectedCharacters.length, 'targetedBackViewRule');
     try {
       let prompt = (dto.prompt ?? '').trim();
       if (!prompt) {
@@ -1208,8 +1194,8 @@ export class AiImageService {
         const characterRefsBlock = referencedCharacterKeys.length
           ? (() => {
             const resolveDescription = (key: string): string | null => {
-              if (canonicalCharacters?.length) {
-                const c = canonicalCharacters.find((cc) => cc.key === key);
+              if (notProtectedCharacters?.length) {
+                const c = notProtectedCharacters.find((cc) => cc.key === key);
                 return c ? `${c.name}: ${c.description}` : null;
               }
               if (characterBible) {
@@ -1253,28 +1239,18 @@ export class AiImageService {
                   {
                     role: 'system',
                     content: (() => {
-                      const humanDepictionRule = [
-                        targetedBackViewRule,
-                        // referencedCharacterKeys.length
-                        //   ? forceBackView
-                        //     ? 'You MUST keep physique/clothing consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s), and if any referenced character is Prophet/Sahaba they must appear as a small, distant rear-view figure very far from the camera.'
-                        //     : 'You MUST keep character appearance consistent with the provided CHARACTER CONSISTENCY block. Include ONLY the referenced character(s) and explicitly include their facial/physical attributes in the prompt.'
-                        //   : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ');
-
                       return (
                         'You are a visual prompt engineer for image generation models. ' +
-                        'Your prompt MUST visually express the exact sentence that is happening in the context of the script' +
-                        'If there are more than one character or group of people you need to define what is the position of these character(s) or group of people related to each other(Looking at each other,Confronting,Fighting,etc...)' +
-                        'Don\'t leave any important visual detail out, and be sure to include any important visual element that is implied by the sentence. ' +
-                        'Don\'t mention the characters names' +
-                        'Use reasoning to highlight the important objects and actions and stress on it in the prompt.' +
-                        'ABSOLUTE RULE: The prompt must be 4 lines max with great detail' +
-                        AiImageService.NO_TEXT_PROMPT_SUFFIX +
-                        (frameBlock ? frameBlock + '\n' : '') +
-                        humanDepictionRule
+                          'Your prompt MUST visually express the exact sentence that is happening in the context of the script' +
+                          'If there are more than one character or group of people you need to define what is the position of these character(s) or group of people related to each other(Looking at each other,Confronting,Fighting,etc...)' +
+                          'Don\'t leave any important visual detail out, and be sure to include any important visual element that is implied by the sentence. ' +
+                          'Don\'t mention the characters names' +
+                          'Use reasoning to highlight the important objects and actions and stress on it in the prompt.' +
+                          'ABSOLUTE RULE: The prompt must be 4 lines max with great detail' +
+                          AiImageService.NO_TEXT_PROMPT_SUFFIX +
+                          (frameBlock ? frameBlock + '\n' : '') +
+                          protectedCharactersRole +
+                          !referencedCharacterKeys.length && dto.sentence.toLowerCase().includes('prophet') ? noHumanFiguresRule : ''
                       );
                     })(),
                   },

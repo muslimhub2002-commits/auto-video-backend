@@ -156,4 +156,35 @@ describe('alignByWordCount', () => {
     expect(createTranscription).toHaveBeenCalledTimes(1);
     expect(timings[0].text).toBe('OpenAI transcript');
   });
+
+  it('keeps later matched sentences aligned when one middle sentence does not match', async () => {
+    mockedIsReplicateWhisperXEnabled.mockReturnValue(true);
+    mockedIsAssemblyAiEnabled.mockReturnValue(false);
+    mockedAlignWithReplicateWhisperX.mockResolvedValue([
+      { text: 'Alpha', startSeconds: 0, endSeconds: 0.3 },
+      { text: 'beta', startSeconds: 0.3, endSeconds: 0.7 },
+      { text: 'Gamma', startSeconds: 1.5, endSeconds: 1.8 },
+      { text: 'delta', startSeconds: 1.8, endSeconds: 2.2 },
+    ]);
+
+    const timings = await alignAudioToSentences({
+      openai: null,
+      audioPath: 'unused.mp3',
+      sentences: [
+        { text: 'Alpha beta' },
+        { text: 'This sentence is missing' },
+        { text: 'Gamma delta' },
+      ],
+      audioDurationSeconds: 3,
+      withTimeout: async (promise) => promise,
+      disableRenderer: true,
+    });
+
+    expect(timings).toHaveLength(3);
+    expect(timings[0].words?.map((word) => word.text)).toEqual(['Alpha', 'beta']);
+    expect(timings[1].words?.length).toBeGreaterThan(0);
+    expect(timings[2].words?.map((word) => word.text)).toEqual(['Gamma', 'delta']);
+    expect(timings[2].startSeconds).toBeCloseTo(1.5, 5);
+    expect(timings[2].words?.[0].startSeconds).toBeCloseTo(1.5, 5);
+  });
 });

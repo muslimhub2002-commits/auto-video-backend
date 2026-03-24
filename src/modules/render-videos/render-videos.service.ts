@@ -12,6 +12,7 @@ import { join, extname } from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import OpenAI from 'openai';
+import { getVideoMetadata } from '@remotion/renderer';
 
 import type {
   SentenceInput,
@@ -46,6 +47,7 @@ import {
   REMOTION_CAMERA_CLICK_SFX_REL,
   REMOTION_CHROMA_LEAK_SFX_REL,
   REMOTION_GLITCH_SFX_REL,
+  REMOTION_SUBSCRIBE_LONG_FORM_VIDEO_REL,
   REMOTION_SUBSCRIBE_VIDEO_REL,
   REMOTION_SUSPENSE_GLITCH_SFX_REL,
   REMOTION_VOICEOVER_REL,
@@ -61,6 +63,7 @@ import {
 @Injectable()
 export class RenderVideosService implements OnModuleInit {
   private readonly openai: OpenAI | null;
+  private longFormSubscribeOverlayDurationSeconds: number | null = null;
 
   constructor(
     @InjectDataSource()
@@ -181,6 +184,7 @@ export class RenderVideosService implements OnModuleInit {
     useLowerResolution?: boolean;
     addSubtitles?: boolean;
     enableGlitchTransitions?: boolean;
+    enableLongFormSubscribeOverlay?: boolean;
     backgroundMusicSrc?: string | null;
     backgroundMusicVolume?: number;
   }) {
@@ -275,11 +279,38 @@ export class RenderVideosService implements OnModuleInit {
     useLowerResolution?: boolean;
     addSubtitles?: boolean;
     enableGlitchTransitions?: boolean;
+    enableLongFormSubscribeOverlay?: boolean;
     backgroundMusicSrc?: string | null;
     backgroundMusicVolume?: number;
     useRemoteAssets?: boolean;
+    longFormSubscribeOverlaySrc?: string | null;
+    longFormSubscribeOverlayDurationSeconds?: number | null;
   }) {
     return buildTimelineExternal(params);
+  }
+
+  private async getLongFormSubscribeOverlayDurationSeconds() {
+    if (this.longFormSubscribeOverlayDurationSeconds !== null) {
+      return this.longFormSubscribeOverlayDurationSeconds;
+    }
+
+    const assetPath = join(
+      this.getRemotionPublicAssetsDir(),
+      'subscribe_long_form.mp4',
+    );
+
+    try {
+      const metadata = await getVideoMetadata(assetPath);
+      const durationSeconds = Number(metadata.durationInSeconds);
+      this.longFormSubscribeOverlayDurationSeconds =
+        Number.isFinite(durationSeconds) && durationSeconds > 0
+          ? durationSeconds
+          : 6.36;
+    } catch {
+      this.longFormSubscribeOverlayDurationSeconds = 6.36;
+    }
+
+    return this.longFormSubscribeOverlayDurationSeconds;
   }
 
   private getStorageRoot() {
@@ -495,6 +526,7 @@ export class RenderVideosService implements OnModuleInit {
       useLowerResolution?: boolean;
       addSubtitles?: boolean;
       enableGlitchTransitions?: boolean;
+      enableLongFormSubscribeOverlay?: boolean;
       backgroundMusicSrc?: string | null;
       backgroundMusicVolume?: number;
     },
@@ -569,6 +601,15 @@ export class RenderVideosService implements OnModuleInit {
           : this.estimateDurationSecondsForSilentRender(params.sentences);
 
       const useLambdaTestMode = this.useLambdaTestMode();
+      const wantsLongFormSubscribeOverlay =
+        params.enableLongFormSubscribeOverlay !== false &&
+        !this.isShort(params.scriptLength);
+      const longFormSubscribeOverlaySrc = wantsLongFormSubscribeOverlay
+        ? REMOTION_SUBSCRIBE_LONG_FORM_VIDEO_REL
+        : null;
+      const longFormSubscribeOverlayDurationSeconds = wantsLongFormSubscribeOverlay
+        ? await this.getLongFormSubscribeOverlayDurationSeconds()
+        : null;
 
       // In Lambda test-mode, we must use public URLs (Lambda can't access our local filesystem).
       // In local mode, we keep the job-scoped publicDir approach.
@@ -707,6 +748,13 @@ export class RenderVideosService implements OnModuleInit {
             // to a remote URL because that can fail in restricted/offline environments.
             subscribeVideoSrc = null;
           }
+        }
+
+        if (wantsLongFormSubscribeOverlay) {
+          this.safeCopyFile(
+            join(remotionAssetsDir, 'subscribe_long_form.mp4'),
+            join(jobDir, REMOTION_SUBSCRIBE_LONG_FORM_VIDEO_REL),
+          );
         }
 
         // If a custom background soundtrack URL was provided, download it into the job-scoped
@@ -902,8 +950,11 @@ export class RenderVideosService implements OnModuleInit {
         useLowerResolution: params.useLowerResolution,
         addSubtitles: params.addSubtitles,
         enableGlitchTransitions: params.enableGlitchTransitions,
+        enableLongFormSubscribeOverlay: params.enableLongFormSubscribeOverlay,
         backgroundMusicSrc: params.backgroundMusicSrc,
         backgroundMusicVolume: params.backgroundMusicVolume,
+        longFormSubscribeOverlaySrc,
+        longFormSubscribeOverlayDurationSeconds,
         useRemoteAssets: useLambdaTestMode,
       });
 

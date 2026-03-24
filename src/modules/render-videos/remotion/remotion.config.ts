@@ -33,11 +33,11 @@ export const REMOTION_WHOOSH_SFX_REL = 'sfx/whoosh.mp3';
 export const REMOTION_CAMERA_CLICK_SFX_REL = 'sfx/camera_click.mp3';
 export const REMOTION_CHROMA_LEAK_SFX_REL = 'sfx/whoosh-end.mp3';
 export const REMOTION_SUSPENSE_GLITCH_SFX_REL = 'sfx/suspense-glitch.mp3';
+export const REMOTION_SUBSCRIBE_LONG_FORM_VIDEO_REL =
+  'subscribe_long_form.mp4';
 // Keep this aligned with the actual asset in remotion/public.
-// On Windows, trying to read a non-existent/incorrect nested path can surface as EPERM.
-// NOTE: Source asset lives at `remotion/public/subscribe.mp4`.
-// We copy it into the job-scoped publicDir under `videos/` for consistency.
-export const REMOTION_SUBSCRIBE_VIDEO_REL = 'videos/subscribe.mp4';
+// NOTE: The source file lives at `remotion/public/subscribe.mp4`.
+export const REMOTION_SUBSCRIBE_VIDEO_REL = 'subscribe.mp4';
 
 export const shouldUseRemotionLambda = () => {
   if (process.env.REMOTION_LAMBDA_TEST_MODE === 'true') return true;

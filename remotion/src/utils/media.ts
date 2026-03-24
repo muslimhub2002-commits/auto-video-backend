@@ -1,5 +1,18 @@
 import { staticFile } from 'remotion';
 
+const normalizeStaticAssetSrc = (src: string) => {
+  const normalized = src.replace(/^\/+/, '');
+
+  if (
+    normalized === 'videos/subscribe.mp4' ||
+    normalized === 'subscribe.mp4'
+  ) {
+    return 'subscribe.mp4';
+  }
+
+  return normalized;
+};
+
 export const preloadImage = (src: string) =>
   new Promise<void>((resolve) => {
     const img = new Image();
@@ -33,6 +46,20 @@ export const preloadVideo = (src: string) =>
     video.load();
   });
 
+export const getVideoDurationSeconds = (src: string) =>
+  new Promise<number | null>((resolve) => {
+    const video = document.createElement('video');
+    const done = (value: number | null) => resolve(value);
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      const duration = Number(video.duration);
+      done(Number.isFinite(duration) && duration > 0 ? duration : null);
+    };
+    video.onerror = () => done(null);
+    video.src = src;
+    video.load();
+  });
+
 export type MediaKind = 'audio' | 'video' | 'image';
 
 export const guessMediaKind = (src: string): MediaKind => {
@@ -57,5 +84,5 @@ export const resolveMediaSrc = (src: string) => {
   if (!src) return src;
   // If we already have an absolute URL (e.g. Cloudinary), use it as-is.
   if (/^https?:\/\//i.test(src)) return src;
-  return staticFile(src.replace(/^\/+/, ''));
+  return staticFile(normalizeStaticAssetSrc(src));
 };

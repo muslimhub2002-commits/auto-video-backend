@@ -437,6 +437,10 @@ export class RenderVideosController {
     const useLowerFps = body.useLowerFps === 'true';
     const useLowerResolution = body.useLowerResolution === 'true';
     const enableGlitchTransitions = body.enableGlitchTransitions === 'true';
+    const enableLongFormSubscribeOverlay =
+      typeof body.enableLongFormSubscribeOverlay === 'string'
+        ? body.enableLongFormSubscribeOverlay === 'true'
+        : undefined;
     const addSubtitles =
       typeof body.addSubtitles === 'string'
         ? body.addSubtitles === 'true'
@@ -467,6 +471,7 @@ export class RenderVideosController {
       useLowerFps,
       useLowerResolution,
       enableGlitchTransitions,
+      enableLongFormSubscribeOverlay,
       addSubtitles,
       isShort,
       backgroundMusicSrc,
@@ -644,6 +649,7 @@ export class RenderVideosController {
       useLowerResolution: !!body.useLowerResolution,
       addSubtitles: body.addSubtitles,
       enableGlitchTransitions: !!body.enableGlitchTransitions,
+      enableLongFormSubscribeOverlay: body.enableLongFormSubscribeOverlay,
       backgroundMusicSrc:
         typeof body.backgroundMusicSrc === 'string'
           ? body.backgroundMusicSrc
@@ -704,6 +710,7 @@ export class RenderVideosController {
       useLowerFps,
       useLowerResolution,
       enableGlitchTransitions,
+      enableLongFormSubscribeOverlay,
       addSubtitles,
       isShort,
       backgroundMusicSrc,
@@ -737,6 +744,7 @@ export class RenderVideosController {
       useLowerResolution,
       addSubtitles,
       enableGlitchTransitions,
+      enableLongFormSubscribeOverlay,
       backgroundMusicSrc,
       backgroundMusicVolume,
     });
@@ -792,6 +800,7 @@ export class RenderVideosController {
       useLowerFps,
       useLowerResolution,
       enableGlitchTransitions,
+      enableLongFormSubscribeOverlay,
       addSubtitles,
       isShort,
       backgroundMusicSrc,
@@ -826,6 +835,7 @@ export class RenderVideosController {
       useLowerResolution,
       addSubtitles,
       enableGlitchTransitions,
+      enableLongFormSubscribeOverlay,
       backgroundMusicSrc,
       backgroundMusicVolume,
     });

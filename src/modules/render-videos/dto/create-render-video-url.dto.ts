@@ -205,6 +205,10 @@ export class CreateRenderVideoUrlDto {
   enableZoomRotateTransitions?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  enableLongFormSubscribeOverlay?: boolean;
+
+  @IsOptional()
   addSubtitles?: boolean;
 
   @IsOptional()

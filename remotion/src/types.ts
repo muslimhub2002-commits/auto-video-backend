@@ -75,6 +75,12 @@ export type Timeline = {
     chromaLeakSfxSrc?: string | null;
     suspenseGlitchSfxSrc?: string;
     subscribeVideoSrc?: string;
+    recurringSubscribeOverlay?: {
+      videoSrc: string;
+      intervalSeconds: number;
+      durationSeconds: number;
+      position: 'topLeft';
+    };
   };
   // Optional render/transition configuration from the backend
   enableGlitchTransitions?: boolean;
