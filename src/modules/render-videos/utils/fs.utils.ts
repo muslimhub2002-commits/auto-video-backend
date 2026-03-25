@@ -1,4 +1,4 @@
-import { dirname } from 'path';
+import { dirname, join } from 'path';
 import * as fs from 'fs';
 
 export const ensureDir = (dir: string) => {
@@ -16,4 +16,22 @@ export const safeRmDir = (dir: string) => {
 export const safeCopyFile = (src: string, dest: string) => {
   ensureDir(dirname(dest));
   fs.copyFileSync(src, dest);
+};
+
+export const safeCopyDirContents = (srcDir: string, destDir: string) => {
+  ensureDir(destDir);
+
+  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    const srcPath = join(srcDir, entry.name);
+    const destPath = join(destDir, entry.name);
+
+    if (entry.isDirectory()) {
+      safeCopyDirContents(srcPath, destPath);
+      continue;
+    }
+
+    if (entry.isFile()) {
+      safeCopyFile(srcPath, destPath);
+    }
+  }
 };

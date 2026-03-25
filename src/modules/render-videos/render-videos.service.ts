@@ -38,6 +38,7 @@ import {
 import { withTimeout as withTimeoutExternal } from './utils/promise.utils';
 import {
   ensureDir as ensureDirExternal,
+  safeCopyDirContents as safeCopyDirContentsExternal,
   safeCopyFile as safeCopyFileExternal,
   safeRmDir as safeRmDirExternal,
 } from './utils/fs.utils';
@@ -427,6 +428,10 @@ export class RenderVideosService implements OnModuleInit {
     safeCopyFileExternal(src, dest);
   }
 
+  private safeCopyDirContents(srcDir: string, destDir: string) {
+    safeCopyDirContentsExternal(srcDir, destDir);
+  }
+
   private getRemotionPublicAssetsDir() {
     return join(process.cwd(), 'remotion', 'public');
   }
@@ -747,6 +752,8 @@ export class RenderVideosService implements OnModuleInit {
         const prepared = this.prepareRemotionPublicDir(jobId);
         const jobDir = prepared.jobDir;
         publicDir = prepared.publicDir;
+        const remotionAssetsDir = this.getRemotionPublicAssetsDir();
+        this.safeCopyDirContents(remotionAssetsDir, jobDir);
         // Prefer local assets in local rendering (avoids network/proxy failures).
         // If copying the subscribe clip fails on Windows (rare EPERM cases), fall back to CDN.
         subscribeVideoSrc = hasSubscribeSentence
@@ -758,8 +765,6 @@ export class RenderVideosService implements OnModuleInit {
         if (audioBuffer) {
           fs.writeFileSync(join(jobDir, REMOTION_VOICEOVER_REL), audioBuffer);
         }
-
-        const remotionAssetsDir = this.getRemotionPublicAssetsDir();
         this.safeCopyFile(
           join(remotionAssetsDir, 'background_3.mp3'),
           join(jobDir, REMOTION_BACKGROUND_REL),
