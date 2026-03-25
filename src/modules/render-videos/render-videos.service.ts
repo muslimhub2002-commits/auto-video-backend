@@ -625,6 +625,53 @@ export class RenderVideosService implements OnModuleInit {
         throw new Error('imageUrls length must match sentences length');
       }
 
+      const stageSecondaryImageForSentence = async (
+        index: number,
+        localJobDir?: string,
+      ) => {
+        const current = String(params.sentences[index]?.secondaryImageUrl ?? '').trim();
+        if (!current) return;
+
+        if (useLambdaTestMode) {
+          if (this.isCloudinaryUrl(current)) return;
+
+          const downloaded = await this.downloadUrlToBuffer({
+            url: current,
+            maxBytes: 12 * 1024 * 1024,
+            label: `secondary image for sentence ${index + 1}`,
+          });
+
+          const uploaded = await this.uploadBufferToCloudinary({
+            buffer: downloaded.buffer,
+            folder: 'auto-video-generator/render-inputs/images',
+            resource_type: 'image',
+          });
+
+          params.sentences[index].secondaryImageUrl = uploaded.secure_url;
+          return;
+        }
+
+        const downloaded = await this.downloadUrlToBuffer({
+          url: current,
+          maxBytes: 12 * 1024 * 1024,
+          label: `secondary image for sentence ${index + 1}`,
+        });
+
+        const ext = this.inferExt({
+          originalName: current,
+          mimeType: downloaded.mimeType,
+          fallback: '.png',
+        });
+
+        const rel = `images/scene-${String(index + 1).padStart(3, '0')}-secondary${ext}`;
+        if (!localJobDir) {
+          throw new Error('Missing local job directory for staging secondary images');
+        }
+
+        fs.writeFileSync(join(localJobDir, rel), downloaded.buffer);
+        params.sentences[index].secondaryImageUrl = rel;
+      };
+
       const hasSubscribeSentence = params.sentences.some((s) =>
         this.isSubscribeLikeSentence(s?.text || ''),
       );
@@ -653,6 +700,8 @@ export class RenderVideosService implements OnModuleInit {
             imageSrcs.push('');
             continue;
           }
+
+          await stageSecondaryImageForSentence(i);
 
           const url = providedUrls ? providedUrls[i] : null;
           if (url) {
@@ -882,6 +931,8 @@ export class RenderVideosService implements OnModuleInit {
             imageSrcs.push('');
             continue;
           }
+
+          await stageSecondaryImageForSentence(i, jobDir);
 
           const url = providedUrls ? providedUrls[i] : null;
           const relBase = `images/scene-${String(i + 1).padStart(3, '0')}`;

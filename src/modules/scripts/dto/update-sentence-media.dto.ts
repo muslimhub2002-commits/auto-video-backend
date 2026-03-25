@@ -3,6 +3,10 @@ import { IsOptional, IsUUID } from 'class-validator';
 export class UpdateSentenceMediaDto {
   @IsOptional()
   @IsUUID()
+  secondary_image_id?: string | null;
+
+  @IsOptional()
+  @IsUUID()
   start_frame_image_id?: string | null;
 
   @IsOptional()

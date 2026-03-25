@@ -1067,6 +1067,8 @@ export class AiImageService {
       dto.frameType === 'start' || dto.frameType === 'end'
         ? dto.frameType
         : 'single';
+    const imageVariant: 'primary' | 'secondary' =
+      dto.imageVariant === 'secondary' ? 'secondary' : 'primary';
     const continuityPrompt = dto.continuityPrompt?.trim();
 
     const sentenceText = (dto.sentence ?? '').trim();
@@ -1190,6 +1192,10 @@ export class AiImageService {
             (continuityPrompt
               ? `\nCONTINUITY (must match exactly): ${continuityPrompt}`
               : '');
+        const secondaryVariantBlock =
+          imageVariant === 'secondary'
+            ? 'VARIATION MODE: This image must be a complementary second still for the exact same sentence. Preserve the same environment, location, lighting, wardrobe, props, atmosphere, and the same character identities from the continuity prompt. Only vary the shot slightly through camera angle, framing, pose, body position, facial expression, or micro-action. Do not change the setting, cast, time of day, or art direction.'
+            : '';
 
         const characterRefsBlock = referencedCharacterKeys.length
           ? (() => {
@@ -1228,6 +1234,63 @@ export class AiImageService {
         }
 
         try {
+          const promptMessages: LlmMessage[] =
+            imageVariant === 'secondary' && continuityPrompt
+              ? [
+                {
+                  role: 'user',
+                  content:
+                    `Primary image prompt:\n${continuityPrompt}\n\n` +
+                    'Slightly modify this prompt for a second image from the same extended scene. ' +
+                    'Keep the same environment, location, lighting, props, wardrobe, atmosphere, art direction, and character identities. ' +
+                    'Treat it as the next beat of the same moment. Only change the framing slightly and vary pose, micro-action, and especially facial expressions while preserving continuity. ' +
+                    'Return only the revised image prompt text, with no quotation marks.',
+                },
+              ]
+              : [
+                {
+                  role: 'system',
+                  content: (() => {
+                    return (
+                      'You are a visual prompt engineer for image generation models. ' +
+                        'Your prompt MUST visually express the exact sentence that is happening in the context of the script' +
+                        'If there are more than one character or group of people you need to define what is the position of these character(s) or group of people related to each other(Looking at each other,Confronting,Fighting,etc...)' +
+                        'Don\'t leave any important visual detail out, and be sure to include any important visual element that is implied by the sentence. ' +
+                        'Don\'t mention the characters names' +
+                        'Use reasoning to highlight the important objects and actions and stress on it in the prompt.' +
+                        'ABSOLUTE RULE: The prompt must be 4 lines max with great detail' +
+                        AiImageService.NO_TEXT_PROMPT_SUFFIX +
+                        (frameBlock ? frameBlock + '\n' : '') +
+                          (secondaryVariantBlock
+                            ? secondaryVariantBlock + '\n'
+                            : '') +
+                        protectedCharactersRole +
+                        (!referencedCharacterKeys.length && dto.sentence.toLowerCase().includes('prophet')
+                          ? noHumanFiguresRule
+                          : '')
+                    );
+                  })(),
+                },
+                {
+                  role: 'user',
+                  content:
+                    (effectiveLocationLine
+                      ? `SCRIPT LOCATION (use ONLY for environment structure, time of day):\n${effectiveLocationLine}\n\n`
+                      : '') +
+                    characterRefsBlock +
+                    (secondaryVariantBlock
+                      ? `${secondaryVariantBlock}\n\n`
+                      : '') +
+                    (frameBlock ? `${frameBlock}\n\n` : '') +
+                    `Sentence: "${dto.sentence}"\n` +
+                    `Desired style: ${style}.\n\n` +
+                    'Important constraints:\n' +
+                    'Do not depict women/females.\n' +
+                    'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.' +
+                    'The prompt should be on point and concise to best capture the scene for image generation. ',
+                },
+              ];
+
           prompt =
             (
               await this.llm.completeText({
@@ -1235,41 +1298,7 @@ export class AiImageService {
                 maxTokens: 250,
                 temperature: 0.8,
                 retries: 2,
-                messages: [
-                  {
-                    role: 'system',
-                    content: (() => {
-                      return (
-                        'You are a visual prompt engineer for image generation models. ' +
-                          'Your prompt MUST visually express the exact sentence that is happening in the context of the script' +
-                          'If there are more than one character or group of people you need to define what is the position of these character(s) or group of people related to each other(Looking at each other,Confronting,Fighting,etc...)' +
-                          'Don\'t leave any important visual detail out, and be sure to include any important visual element that is implied by the sentence. ' +
-                          'Don\'t mention the characters names' +
-                          'Use reasoning to highlight the important objects and actions and stress on it in the prompt.' +
-                          'ABSOLUTE RULE: The prompt must be 4 lines max with great detail' +
-                          AiImageService.NO_TEXT_PROMPT_SUFFIX +
-                          (frameBlock ? frameBlock + '\n' : '') +
-                          protectedCharactersRole +
-                          !referencedCharacterKeys.length && dto.sentence.toLowerCase().includes('prophet') ? noHumanFiguresRule : ''
-                      );
-                    })(),
-                  },
-                  {
-                    role: 'user',
-                    content:
-                      (effectiveLocationLine
-                        ? `SCRIPT LOCATION (use ONLY for environment structure, time of day):\n${effectiveLocationLine}\n\n`
-                        : '') +
-                      characterRefsBlock +
-                      (frameBlock ? `${frameBlock}\n\n` : '') +
-                      `Sentence: "${dto.sentence}"\n` +
-                      `Desired style: ${style}.\n\n` +
-                      'Important constraints:\n' +
-                      'Do not depict women/females.\n' +
-                      'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.' +
-                      'The prompt should be on point and concise to best capture the scene for image generation. ',
-                  },
-                ],
+                messages: promptMessages,
               })
             )?.trim() || dto.sentence;
         } catch (error: any) {

@@ -111,6 +111,10 @@ class CreateSentenceInput {
 
   @IsUUID()
   @IsOptional()
+  secondary_image_id?: string;
+
+  @IsUUID()
+  @IsOptional()
   start_frame_image_id?: string;
 
   @IsUUID()

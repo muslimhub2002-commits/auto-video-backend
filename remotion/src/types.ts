@@ -13,6 +13,7 @@ export type TimelineScene = {
   motionEffectId?: string | null;
   imageMotionSettings?: Record<string, unknown> | null;
   imageSrc?: string; // static file path (publicDir) or absolute URL
+  secondaryImageSrc?: string;
   videoSrc?: string; // static file path (publicDir) or absolute URL
   soundEffects?: Array<{
     src: string; // static file path (publicDir) or absolute URL

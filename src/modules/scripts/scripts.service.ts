@@ -592,6 +592,9 @@ export class ScriptsService implements OnModuleInit {
       await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS forced_location_key TEXT NULL',
       );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS secondary_image_id UUID NULL',
+      );
 
       await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS video_prompt TEXT NULL',
@@ -704,6 +707,9 @@ export class ScriptsService implements OnModuleInit {
     await tryIndex(
       'CREATE INDEX IF NOT EXISTS idx_sentences_script_image_id ON sentences (script_id, image_id)',
     );
+    await tryIndex(
+      'CREATE INDEX IF NOT EXISTS idx_sentences_script_secondary_image_id ON sentences (script_id, secondary_image_id)',
+    );
   }
 
   private async loadShortScriptsForParent(params: {
@@ -722,11 +728,13 @@ export class ScriptsService implements OnModuleInit {
       .createQueryBuilder('script')
       .leftJoinAndSelect('script.sentences', 'sentence')
       .leftJoinAndSelect('sentence.image', 'image')
+      .leftJoinAndSelect('sentence.secondaryImage', 'secondary_image')
       .leftJoinAndSelect('sentence.startFrameImage', 'start_frame_image')
       .leftJoinAndSelect('sentence.endFrameImage', 'end_frame_image')
       .leftJoinAndSelect('sentence.video', 'sentence_video')
       .leftJoinAndSelect('script.voice', 'voice')
       .addSelect('image.prompt')
+      .addSelect('secondary_image.prompt')
       .addSelect('start_frame_image.prompt')
       .addSelect('end_frame_image.prompt')
       .where('script.user_id = :userId', { userId })
@@ -1097,6 +1105,7 @@ export class ScriptsService implements OnModuleInit {
                   s.align_sound_effects_to_scene_end,
                 ),
                 image_id: s.image_id ?? null,
+                secondary_image_id: s.secondary_image_id ?? null,
                 start_frame_image_id: s.start_frame_image_id ?? null,
                 end_frame_image_id: s.end_frame_image_id ?? null,
                 video_id: s.video_id ?? null,
@@ -1452,9 +1461,20 @@ export class ScriptsService implements OnModuleInit {
       throw new NotFoundException('Sentence not found');
     }
 
+    const secondaryIdProvided = dto.secondary_image_id !== undefined;
     const startIdProvided = dto.start_frame_image_id !== undefined;
     const endIdProvided = dto.end_frame_image_id !== undefined;
     const videoIdProvided = dto.video_id !== undefined;
+
+    if (secondaryIdProvided && dto.secondary_image_id) {
+      const image = await this.imageRepository.findOne({
+        where: { id: dto.secondary_image_id, user_id: userId },
+        select: { id: true },
+      });
+      if (!image) {
+        throw new NotFoundException('Secondary image not found');
+      }
+    }
 
     if (startIdProvided && dto.start_frame_image_id) {
       const image = await this.imageRepository.findOne({
@@ -1486,6 +1506,9 @@ export class ScriptsService implements OnModuleInit {
       }
     }
 
+    if (secondaryIdProvided) {
+      sentence.secondary_image_id = dto.secondary_image_id ?? null;
+    }
     if (startIdProvided) {
       sentence.start_frame_image_id = dto.start_frame_image_id ?? null;
     }
@@ -1668,6 +1691,7 @@ export class ScriptsService implements OnModuleInit {
               (s as any).align_sound_effects_to_scene_end,
             ),
             image_id: s.image_id ?? null,
+            secondary_image_id: s.secondary_image_id ?? null,
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
@@ -1802,6 +1826,7 @@ export class ScriptsService implements OnModuleInit {
             (s as any).align_sound_effects_to_scene_end,
           ),
           image_id: s.image_id ?? null,
+          secondary_image_id: s.secondary_image_id ?? null,
           start_frame_image_id: s.start_frame_image_id ?? null,
           end_frame_image_id: s.end_frame_image_id ?? null,
           video_id: s.video_id ?? null,
@@ -2041,12 +2066,14 @@ export class ScriptsService implements OnModuleInit {
       .leftJoinAndSelect('sentence.sound_effects', 'sentence_sound_effect')
       .leftJoinAndSelect('sentence_sound_effect.sound_effect', 'sound_effect')
       .leftJoinAndSelect('sentence.image', 'image')
+      .leftJoinAndSelect('sentence.secondaryImage', 'secondary_image')
       .leftJoinAndSelect('sentence.startFrameImage', 'start_frame_image')
       .leftJoinAndSelect('sentence.endFrameImage', 'end_frame_image')
       .leftJoinAndSelect('sentence.video', 'sentence_video')
       .leftJoinAndSelect('script.voice', 'voice')
       .leftJoinAndSelect('script.reference_scripts', 'reference_script')
       .addSelect('image.prompt')
+      .addSelect('secondary_image.prompt')
       .addSelect('start_frame_image.prompt')
       .addSelect('end_frame_image.prompt')
       .where('script.id = :id', { id })
@@ -2211,6 +2238,7 @@ export class ScriptsService implements OnModuleInit {
               (s as any).align_sound_effects_to_scene_end,
             ),
             image_id: s.image_id ?? null,
+            secondary_image_id: s.secondary_image_id ?? null,
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
@@ -2417,6 +2445,7 @@ export class ScriptsService implements OnModuleInit {
               (s as any).align_sound_effects_to_scene_end,
             ),
             image_id: s.image_id ?? null,
+            secondary_image_id: s.secondary_image_id ?? null,
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,

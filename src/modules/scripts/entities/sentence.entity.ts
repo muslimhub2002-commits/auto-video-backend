@@ -29,6 +29,9 @@ export class Sentence {
   image_id: string | null;
 
   @Column({ type: 'uuid', nullable: true })
+  secondary_image_id: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
   start_frame_image_id: string | null;
 
   @Column({ type: 'uuid', nullable: true })
@@ -117,6 +120,10 @@ export class Sentence {
   @ManyToOne(() => Image, { nullable: true })
   @JoinColumn({ name: 'image_id' })
   image: Image | null;
+
+  @ManyToOne(() => Image, { nullable: true })
+  @JoinColumn({ name: 'secondary_image_id' })
+  secondaryImage: Image | null;
 
   @ManyToOne(() => Image, { nullable: true })
   @JoinColumn({ name: 'start_frame_image_id' })

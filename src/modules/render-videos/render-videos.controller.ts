@@ -37,11 +37,12 @@ import type { SentenceInput } from './render-videos.types';
 export class RenderVideosController {
   constructor(private readonly renderVideosService: RenderVideosService) {}
 
-  private parseMultipartSentences(body: { sentences: string }) {
+  private parseMultipartSentences(body: { sentences: string }): SentenceInput[] {
     let sentences: Array<{
       text: string;
       isSuspense?: boolean;
       soundEffectsAlignToSceneEnd?: boolean;
+      secondaryImageUrl?: string | null;
       mediaType?: 'image' | 'video';
       videoUrl?: string;
       soundEffects?: Array<{
@@ -97,7 +98,28 @@ export class RenderVideosController {
       throw new BadRequestException('Invalid `sentences` JSON');
     }
 
-    return sentences;
+    return sentences.map((sentence) => {
+      const secondaryImageUrl =
+        typeof sentence.secondaryImageUrl === 'string' &&
+        sentence.secondaryImageUrl.trim().length > 0
+          ? sentence.secondaryImageUrl.trim()
+          : undefined;
+      const videoUrl =
+        typeof sentence.videoUrl === 'string' && sentence.videoUrl.trim().length > 0
+          ? sentence.videoUrl.trim()
+          : undefined;
+      const {
+        secondaryImageUrl: _secondaryImageUrl,
+        videoUrl: _videoUrl,
+        ...rest
+      } = sentence;
+
+      return {
+        ...rest,
+        ...(secondaryImageUrl ? { secondaryImageUrl } : {}),
+        ...(videoUrl ? { videoUrl } : {}),
+      };
+    });
   }
 
   private validateMultipartSentences(
@@ -105,6 +127,7 @@ export class RenderVideosController {
       text: string;
       isSuspense?: boolean;
       soundEffectsAlignToSceneEnd?: boolean;
+      secondaryImageUrl?: string | null;
       mediaType?: 'image' | 'video';
       videoUrl?: string;
       soundEffects?: Array<{
@@ -584,43 +607,54 @@ export class RenderVideosController {
       throw new BadRequestException('`sentences` must be a non-empty array');
     }
 
-    const sentences: SentenceInput[] = urlSentences.map((s) => ({
-      text: s.text,
-      isSuspense: s.isSuspense,
-      soundEffectsAlignToSceneEnd: s.soundEffectsAlignToSceneEnd,
-      mediaType: s.mediaType === 'video' ? 'video' : 'image',
-      ...(typeof (s as any).videoUrl === 'string' &&
-      String((s as any).videoUrl).trim()
-        ? { videoUrl: String((s as any).videoUrl).trim() }
-        : {}),
-      ...(Array.isArray((s as any).soundEffects)
-        ? { soundEffects: (s as any).soundEffects }
-        : {}),
-      ...(Array.isArray((s as any).transitionSoundEffects)
-        ? { transitionSoundEffects: (s as any).transitionSoundEffects }
-        : {}),
-      ...(s.transitionToNext != null
-        ? { transitionToNext: s.transitionToNext }
-        : {}),
-      ...(s.visualEffect != null ? { visualEffect: s.visualEffect } : {}),
-      ...(s.imageMotionEffect != null
-        ? { imageMotionEffect: s.imageMotionEffect }
-        : {}),
-      ...(s.imageMotionSpeed != null
-        ? { imageMotionSpeed: s.imageMotionSpeed }
-        : {}),
-      ...(s.imageEffectsMode != null
-        ? { imageEffectsMode: s.imageEffectsMode }
-        : {}),
-      ...(s.imageFilterId != null ? { imageFilterId: s.imageFilterId } : {}),
-      ...(s.imageFilterSettings != null
-        ? { imageFilterSettings: s.imageFilterSettings }
-        : {}),
-      ...(s.motionEffectId != null ? { motionEffectId: s.motionEffectId } : {}),
-      ...(s.imageMotionSettings != null
-        ? { imageMotionSettings: s.imageMotionSettings }
-        : {}),
-    }));
+    const sentences: SentenceInput[] = urlSentences.map((s) => {
+      const secondaryImageUrl =
+        typeof (s as any).secondaryImageUrl === 'string' &&
+        String((s as any).secondaryImageUrl).trim()
+          ? String((s as any).secondaryImageUrl).trim()
+          : undefined;
+      const videoUrl =
+        typeof (s as any).videoUrl === 'string' &&
+        String((s as any).videoUrl).trim()
+          ? String((s as any).videoUrl).trim()
+          : undefined;
+
+      return {
+        text: s.text,
+        isSuspense: s.isSuspense,
+        soundEffectsAlignToSceneEnd: s.soundEffectsAlignToSceneEnd,
+        ...(secondaryImageUrl ? { secondaryImageUrl } : {}),
+        mediaType: s.mediaType === 'video' ? 'video' : 'image',
+        ...(videoUrl ? { videoUrl } : {}),
+        ...(Array.isArray((s as any).soundEffects)
+          ? { soundEffects: (s as any).soundEffects }
+          : {}),
+        ...(Array.isArray((s as any).transitionSoundEffects)
+          ? { transitionSoundEffects: (s as any).transitionSoundEffects }
+          : {}),
+        ...(s.transitionToNext != null
+          ? { transitionToNext: s.transitionToNext }
+          : {}),
+        ...(s.visualEffect != null ? { visualEffect: s.visualEffect } : {}),
+        ...(s.imageMotionEffect != null
+          ? { imageMotionEffect: s.imageMotionEffect }
+          : {}),
+        ...(s.imageMotionSpeed != null
+          ? { imageMotionSpeed: s.imageMotionSpeed }
+          : {}),
+        ...(s.imageEffectsMode != null
+          ? { imageEffectsMode: s.imageEffectsMode }
+          : {}),
+        ...(s.imageFilterId != null ? { imageFilterId: s.imageFilterId } : {}),
+        ...(s.imageFilterSettings != null
+          ? { imageFilterSettings: s.imageFilterSettings }
+          : {}),
+        ...(s.motionEffectId != null ? { motionEffectId: s.motionEffectId } : {}),
+        ...(s.imageMotionSettings != null
+          ? { imageMotionSettings: s.imageMotionSettings }
+          : {}),
+      };
+    });
 
     const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls : [];
     if (imageUrls.length !== sentences.length) {
@@ -628,6 +662,31 @@ export class RenderVideosController {
         '`imageUrls` must have the same length as `sentences`',
       );
     }
+
+    const secondaryImageUrls = Array.isArray(body.secondaryImageUrls)
+      ? body.secondaryImageUrls
+      : [];
+    if (
+      secondaryImageUrls.length > 0 &&
+      secondaryImageUrls.length !== sentences.length
+    ) {
+      throw new BadRequestException(
+        '`secondaryImageUrls` must have the same length as `sentences` when provided',
+      );
+    }
+
+    const hydratedSentences: SentenceInput[] = sentences.map((sentence, index) => {
+      const secondaryImageUrl =
+        typeof secondaryImageUrls[index] === 'string' &&
+        String(secondaryImageUrls[index]).trim()
+          ? String(secondaryImageUrls[index]).trim()
+          : undefined;
+
+      return {
+        ...sentence,
+        ...(secondaryImageUrl ? { secondaryImageUrl } : {}),
+      };
+    });
 
     const backgroundMusicVolume =
       typeof body.backgroundMusicVolume === 'number'
@@ -639,7 +698,7 @@ export class RenderVideosController {
         typeof body.language === 'string' ? body.language.trim() : undefined,
       audioFile: null,
       audioUrl: body.audioUrl,
-      sentences,
+      sentences: hydratedSentences,
       imageFiles: new Array(sentences.length).fill(null),
       imageUrls,
       scriptLength: body.scriptLength,

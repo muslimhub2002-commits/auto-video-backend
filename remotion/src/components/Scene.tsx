@@ -734,17 +734,41 @@ export const Scene: React.FC<{
       </>
     ) : null;
 
-    const mediaContent = scene.videoSrc ? (
-      <OffthreadVideo
-        src={resolveMediaSrc(scene.videoSrc)}
-        muted
-        pauseWhenBuffering
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-      />
-    ) : scene.imageSrc ? (
-      <>
+    const resolvedPrimaryImageSrc = scene.imageSrc
+      ? resolveMediaSrc(scene.imageSrc)
+      : null;
+    const resolvedSecondaryImageSrc = scene.secondaryImageSrc
+      ? resolveMediaSrc(scene.secondaryImageSrc)
+      : null;
+    const halfSceneFrame = Math.max(0, scene.durationFrames / 2);
+    const imageCrossfadeFrames = resolvedSecondaryImageSrc
+      ? Math.max(
+          8,
+          Math.min(27, Math.floor(Math.max(1, scene.durationFrames) * 0.3)),
+        )
+      : 0;
+    const crossfadeStartFrame = halfSceneFrame - imageCrossfadeFrames / 2;
+    const crossfadeEndFrame = halfSceneFrame + imageCrossfadeFrames / 2;
+    const secondaryImageOpacity = resolvedSecondaryImageSrc
+      ? interpolate(
+          frame,
+          [crossfadeStartFrame, crossfadeEndFrame],
+          [0, 1],
+          {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+            easing: Easing.inOut(Easing.ease),
+          },
+        )
+      : 0;
+    const primaryImageOpacity = resolvedSecondaryImageSrc
+      ? 1 - secondaryImageOpacity
+      : 1;
+
+    const renderImageLayer = (src: string, opacity: number) => (
+      <AbsoluteFill style={{ opacity }}>
         <GlitchImage
-          src={resolveMediaSrc(scene.imageSrc)}
+          src={src}
           style={imageStyle}
           frame={frame}
           durationFrames={scene.durationFrames}
@@ -754,14 +778,13 @@ export const Scene: React.FC<{
           enableEnd={transitionToNext === 'glitch'}
         />
 
-        {/* Chroma leak overlays */}
         {chroma && chromaAlpha > 0.001 ? (
           <>
             <AbsoluteFill
               style={{ opacity: 0.6 * chromaAlpha, mixBlendMode: 'screen' }}
             >
               <Img
-                src={resolveMediaSrc(scene.imageSrc)}
+                src={src}
                 style={{
                   ...imageStyle,
                   transform: `translate(${(
@@ -780,7 +803,7 @@ export const Scene: React.FC<{
               style={{ opacity: 0.5 * chromaAlpha, mixBlendMode: 'screen' }}
             >
               <Img
-                src={resolveMediaSrc(scene.imageSrc)}
+                src={src}
                 style={{
                   ...imageStyle,
                   transform: `translate(${(
@@ -796,6 +819,22 @@ export const Scene: React.FC<{
             </AbsoluteFill>
           </>
         ) : null}
+      </AbsoluteFill>
+    );
+
+    const mediaContent = scene.videoSrc ? (
+      <OffthreadVideo
+        src={resolveMediaSrc(scene.videoSrc)}
+        muted
+        pauseWhenBuffering
+        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+      />
+    ) : resolvedPrimaryImageSrc ? (
+      <>
+        {renderImageLayer(resolvedPrimaryImageSrc, primaryImageOpacity)}
+        {resolvedSecondaryImageSrc
+          ? renderImageLayer(resolvedSecondaryImageSrc, secondaryImageOpacity)
+          : null}
       </>
     ) : null;
 

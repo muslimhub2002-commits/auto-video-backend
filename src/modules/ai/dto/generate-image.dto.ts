@@ -74,6 +74,11 @@ export class GenerateImageDto {
 
   @IsString()
   @IsOptional()
+  @IsIn(['primary', 'secondary'])
+  imageVariant?: 'primary' | 'secondary';
+
+  @IsString()
+  @IsOptional()
   @MaxLength(4000)
   continuityPrompt?: string;
 

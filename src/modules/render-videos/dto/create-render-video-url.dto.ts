@@ -63,6 +63,10 @@ class SentenceDto {
   text: string;
 
   @IsOptional()
+  @IsString()
+  secondaryImageUrl?: string | null;
+
+  @IsOptional()
   @IsIn(['image', 'video'])
   mediaType?: 'image' | 'video';
 
@@ -232,4 +236,8 @@ export class CreateRenderVideoUrlDto {
 
   @IsArray()
   imageUrls: Array<string | null>;
+
+  @IsOptional()
+  @IsArray()
+  secondaryImageUrls?: Array<string | null>;
 }

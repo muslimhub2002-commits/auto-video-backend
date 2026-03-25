@@ -1,6 +1,7 @@
 export type SentenceInput = {
   text: string;
   isSuspense?: boolean;
+  secondaryImageUrl?: string;
   imageEffectsMode?: 'quick' | 'detailed' | null;
   imageFilterId?: string | null;
   imageFilterSettings?: Record<string, unknown> | null;

@@ -320,6 +320,10 @@ export const buildTimeline = (params: {
         isSubscribeLike || wantsSentenceVideo
           ? undefined
           : params.imagePaths[index],
+      secondaryImageSrc:
+        isImageScene && typeof s.secondaryImageUrl === 'string'
+          ? s.secondaryImageUrl
+          : undefined,
       videoSrc: isSubscribeLike
         ? params.subscribeVideoSrc
         : wantsSentenceVideo
