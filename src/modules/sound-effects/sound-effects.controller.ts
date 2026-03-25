@@ -177,7 +177,20 @@ export class SoundEffectsController {
       user_id,
       soundEffectId,
       isTransitionSound: Boolean(body?.isTransitionSound),
+      volumePercent: body?.volumePercent,
     });
+  }
+
+  @Patch('favorite/:soundEffectId')
+  async toggleFavorite(
+    @Req() req: Request,
+    @Param('soundEffectId') soundEffectId: string,
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+    if (!user_id) throw new UnauthorizedException('User not found in request');
+
+    return this.service.toggleFavoriteById({ user_id, soundEffectId });
   }
 
   @Patch(':soundEffectId')

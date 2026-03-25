@@ -67,6 +67,7 @@ export class SoundEffectsService implements OnModuleInit {
 
     const queries = [
       'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS is_transition_sound BOOLEAN NOT NULL DEFAULT false',
+      'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS from_favorites BOOLEAN NOT NULL DEFAULT false',
       'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS duration_seconds DOUBLE PRECISION NULL',
       'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS audio_settings JSONB NULL',
       'ALTER TABLE sound_effects ADD COLUMN IF NOT EXISTS is_preset BOOLEAN NOT NULL DEFAULT false',
@@ -93,6 +94,7 @@ export class SoundEffectsService implements OnModuleInit {
     entity.audio_settings = normalizeSoundEffectAudioSettings(
       entity.audio_settings ?? DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
     );
+    entity.fromFavorites = Boolean(entity.fromFavorites);
     const name =
       String(entity?.name ?? '').trim() ||
       String(entity?.title ?? '').trim() ||
@@ -271,7 +273,7 @@ export class SoundEffectsService implements OnModuleInit {
 
     const [items, total] = await this.repo.findAndCount({
       where,
-      order: { created_at: 'DESC' },
+      order: { fromFavorites: 'DESC', created_at: 'DESC' },
       skip: (safePage - 1) * safeLimit,
       take: safeLimit,
     });
@@ -319,7 +321,7 @@ export class SoundEffectsService implements OnModuleInit {
 
     const [items, total] = await this.repo.findAndCount({
       where,
-      order: { created_at: 'DESC' },
+      order: { fromFavorites: 'DESC', created_at: 'DESC' },
       skip: (safePage - 1) * safeLimit,
       take: safeLimit,
     });
@@ -367,6 +369,7 @@ export class SoundEffectsService implements OnModuleInit {
     user_id: string;
     soundEffectId: string;
     isTransitionSound: boolean;
+    volumePercent?: number;
   }): Promise<SoundEffect> {
     const soundEffectId = String(params.soundEffectId ?? '').trim();
     if (!soundEffectId) throw new NotFoundException('Sound effect not found');
@@ -378,7 +381,21 @@ export class SoundEffectsService implements OnModuleInit {
     if (!target) throw new NotFoundException('Sound effect not found');
 
     target.is_transition_sound = Boolean(params.isTransitionSound);
-    return this.repo.save(target);
+    const rawVolume = Number(params.volumePercent);
+    if (Number.isFinite(rawVolume)) {
+      target.volume_percent = clampPercent(rawVolume);
+    }
+
+    return this.normalizeStoredSoundEffect(await this.repo.save(target));
+  }
+
+  async toggleFavoriteById(params: {
+    user_id: string;
+    soundEffectId: string;
+  }): Promise<SoundEffect> {
+    const target = await this.findOwnedSoundEffectOrThrow(params);
+    target.fromFavorites = !Boolean(target.fromFavorites);
+    return this.normalizeStoredSoundEffect(await this.repo.save(target));
   }
 
   async updateById(params: {
@@ -452,6 +469,7 @@ export class SoundEffectsService implements OnModuleInit {
           DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
       ),
       is_transition_sound: source.is_transition_sound,
+      fromFavorites: false,
       is_merged: false,
       is_preset: true,
       source_sound_effect_id: source.id,
@@ -611,6 +629,7 @@ export class SoundEffectsService implements OnModuleInit {
         volume_percent: volumePercent,
         duration_seconds: durationSeconds,
         audio_settings: audioSettings,
+        fromFavorites: false,
       });
 
       return this.normalizeStoredSoundEffect(await this.repo.save(entity));
@@ -962,6 +981,7 @@ export class SoundEffectsService implements OnModuleInit {
       audio_settings: normalizeSoundEffectAudioSettings(
         params.audioSettings ?? DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
       ),
+      fromFavorites: false,
       is_merged: true,
       is_preset: params.isPreset === true,
       merged_from: rendered.mergedFrom,

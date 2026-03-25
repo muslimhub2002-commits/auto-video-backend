@@ -49,6 +49,9 @@ export class SoundEffect {
   @Column({ type: 'boolean', default: false })
   is_transition_sound: boolean;
 
+  @Column({ name: 'from_favorites', type: 'boolean', default: false })
+  fromFavorites: boolean;
+
   @Column({ type: 'boolean', default: false })
   is_merged: boolean;
 
