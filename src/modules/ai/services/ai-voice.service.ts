@@ -359,7 +359,7 @@ export class AiVoiceService {
                     if (!style) return params.text;
 
                     return (
-                      `Style instructions (do NOT speak these instructions): ${style}\n\n` +
+                      `Style Instructions (do NOT speak these instructions): ${style}\n\n` +
                       `Read the following script exactly as written:\n${params.text}`
                     );
                   })(),

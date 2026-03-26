@@ -83,6 +83,18 @@ export class AiTextService {
           '- Keep cadence unpredictable; avoid runs of many long sentences.\n' +
           '- Prefer one sentence per line so rhythm is visible when read.'
         );
+      case 'Curiousity Loop':
+        return (
+          'TECHNIQUE: Curiousity Loop\n' +
+          '- Open by immediately naming the location in plain words so the viewer can picture where this is happening. Keep it simple, like classroom, office, street, desert.\n' +
+          '- Right after the location, show the action happening in that moment so the scene feels alive.\n' +
+          '- Express thoughts as natural inner dialogue or immediate reactions, not abstract summaries.\n' +
+          '- Show emotions through observable behavior and sensory detail, not labels like anxious, sad, or disappointed.\n' +
+          '- Give immediate context for what the video is about, then keep a curiosity loop alive so each line pulls the viewer into the next one.\n' +
+          '- Re-hook between major beats by extending, clashing with, or reframing the previous idea so the viewer feels there is always another layer coming.\n' +
+          '- End with a concise payoff or summary when it helps the viewer feel the full rabbit-hole journey was worth following.\n'+
+          '- Use you instead of I to keep the viewer in the scene and make it feel more like an experience than a story about someone else.'
+        );
       case 'Confrontation Technique':
         return (
           'TECHNIQUE: Confrontation Technique\n' +
@@ -1308,9 +1320,9 @@ export class AiTextService {
         '- If the army is the Muslim Army make sure to make their faces covered with cloth (e.g. keffiyeh) to avoid any depiction of facial features for the soldiers, to keep it respectful and in line with common Islamic art conventions.\n' +
         '- Do NOT include Allah/God as a character.\n' +
         '- If the script mentions Sahaba (companions of Prophet Muhammad), still extract them but set the boolean flags accordingly.\n' +
-        '- Each character.description MUST be only two lines max & include facial + physical attributes for consistency.\n' +
-        '- For any character with isProphet=true: DO NOT describe face details. Write the description to be safe for a BACK VIEW depiction only using only physique + clothing and skin color.\n' +
-        '- For any character with isSahaba=true (except an Army): DO NOT describe face details (no eyes/nose/mouth). Write the description to be safe for a BACK VIEW depiction only using physique + clothing and skin color.\n' +
+        '- Each character.description MUST be only two lines max & include detailed facial + physical + clothing attributes.\n' +
+        '- DO NOT INCLUDE ANYTHING BESIDE FACIAL, PHYSICAL & CLOTHING ATTRIBUTES'
+        '- For any character with isProphet=true or isSahaba=true: DO NOT describe face details.\n' +
         '- Character keys must be short like C1, C2, C3... in first-appearance order.\n' +
         '- If unsure about any boolean flag, set it to false.\n' +
         '- Each description needs to be one line max\n' +
