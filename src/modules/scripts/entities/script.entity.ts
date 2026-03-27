@@ -95,6 +95,14 @@ export class Script {
   @Column({ type: 'varchar', length: 2048, nullable: true })
   youtube_url: string | null;
 
+  // Optional Facebook URL for the uploaded video.
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  facebook_url: string | null;
+
+  // Optional Instagram URL for the uploaded video.
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  instagram_url: string | null;
+
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
 

@@ -27,6 +27,8 @@ import { MessagesModule } from './modules/messages/messages.module';
 import { ChatsModule } from './modules/chats/chats.module';
 import { RenderJob } from './modules/render-videos/entities/render-job.entity';
 import { YoutubeModule } from './modules/youtube/youtube.module';
+import { MetaModule } from './modules/meta/meta.module';
+import { MetaCredential } from './modules/meta/entities/meta-credential.entity';
 import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/background-soundtrack.entity';
 import { ImageFilter } from './modules/image-filters/entities/image-filter.entity';
 import { MotionEffect } from './modules/motion-effects/entities/motion-effect.entity';
@@ -69,6 +71,7 @@ import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entit
         MotionEffect,
         BackgroundSoundtrack,
         SoundEffect,
+        MetaCredential,
         VoiceOver,
         Video,
         Chat,
@@ -97,6 +100,7 @@ import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entit
     MessagesModule,
     ChatsModule,
     YoutubeModule,
+    MetaModule,
   ],
 })
 export class AppModule {}

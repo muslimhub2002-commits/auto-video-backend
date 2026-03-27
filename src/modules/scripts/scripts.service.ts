@@ -365,6 +365,8 @@ export class ScriptsService implements OnModuleInit {
       const hasIsShortScript = await this.scriptsColumnExists('isShortScript');
       const hasShortsScripts = await this.scriptsColumnExists('shorts_scripts');
       const hasYoutubeUrl = await this.scriptsColumnExists('youtube_url');
+      const hasFacebookUrl = await this.scriptsColumnExists('facebook_url');
+      const hasInstagramUrl = await this.scriptsColumnExists('instagram_url');
       const hasLocations = await this.scriptsColumnExists('locations');
       const hasLanguage = await this.scriptsColumnExists('language');
 
@@ -400,6 +402,8 @@ export class ScriptsService implements OnModuleInit {
         !hasIsShortScript ||
         !hasShortsScripts ||
         !hasYoutubeUrl ||
+        !hasFacebookUrl ||
+        !hasInstagramUrl ||
         !hasLocations ||
         !hasLanguage ||
         !hasSentenceCharacterKeys ||
@@ -418,6 +422,12 @@ export class ScriptsService implements OnModuleInit {
       const finalHasShortsScripts =
         await this.scriptsColumnExists('shorts_scripts');
       const finalHasYoutubeUrl = await this.scriptsColumnExists('youtube_url');
+      const finalHasFacebookUrl = await this.scriptsColumnExists(
+        'facebook_url',
+      );
+      const finalHasInstagramUrl = await this.scriptsColumnExists(
+        'instagram_url',
+      );
       const finalHasLocations = await this.scriptsColumnExists('locations');
       const finalHasLanguage = await this.scriptsColumnExists('language');
 
@@ -455,6 +465,8 @@ export class ScriptsService implements OnModuleInit {
         !finalHasIsShortScript ||
         !finalHasShortsScripts ||
         !finalHasYoutubeUrl ||
+        !finalHasFacebookUrl ||
+        !finalHasInstagramUrl ||
         !finalHasLocations ||
         !finalHasLanguage ||
         !finalHasSentenceCharacterKeys ||
@@ -466,7 +478,7 @@ export class ScriptsService implements OnModuleInit {
         !finalHasSentenceSoundEffectAudioSettingsOverride
       ) {
         throw new InternalServerErrorException(
-          'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, locations, language, and sentences.character_keys/location_key/forced_location_key). ' +
+          'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, facebook_url, instagram_url, locations, language, and sentences.character_keys/location_key/forced_location_key). ' +
             'Ensure your DB user has ALTER permissions, or apply the schema update SQL in `ScriptsService.ensureScriptsSchema()`.',
         );
       }
@@ -521,6 +533,36 @@ export class ScriptsService implements OnModuleInit {
     try {
       await this.dataSource.query(
         'ALTER TABLE scripts ADD COLUMN IF NOT EXISTS youtube_url VARCHAR(2048) NULL',
+      );
+    } catch (err: any) {
+      const message = String(err?.message || '');
+      if (
+        message.includes('does not exist') ||
+        message.includes('permission denied')
+      ) {
+        return;
+      }
+      throw err;
+    }
+
+    try {
+      await this.dataSource.query(
+        'ALTER TABLE scripts ADD COLUMN IF NOT EXISTS facebook_url VARCHAR(2048) NULL',
+      );
+    } catch (err: any) {
+      const message = String(err?.message || '');
+      if (
+        message.includes('does not exist') ||
+        message.includes('permission denied')
+      ) {
+        return;
+      }
+      throw err;
+    }
+
+    try {
+      await this.dataSource.query(
+        'ALTER TABLE scripts ADD COLUMN IF NOT EXISTS instagram_url VARCHAR(2048) NULL',
       );
     } catch (err: any) {
       const message = String(err?.message || '');
@@ -1557,6 +1599,8 @@ export class ScriptsService implements OnModuleInit {
       voice_id,
       video_url,
       youtube_url,
+      facebook_url,
+      instagram_url,
       sentences,
       characters,
       locations,
@@ -1590,6 +1634,16 @@ export class ScriptsService implements OnModuleInit {
       youtube_url === undefined
         ? undefined
         : (youtube_url ?? '').trim() || null;
+
+    const cleanedFacebookUrl =
+      facebook_url === undefined
+        ? undefined
+        : (facebook_url ?? '').trim() || null;
+
+    const cleanedInstagramUrl =
+      instagram_url === undefined
+        ? undefined
+        : (instagram_url ?? '').trim() || null;
 
     const cleanedReferenceIds =
       reference_script_ids === undefined
@@ -1638,6 +1692,14 @@ export class ScriptsService implements OnModuleInit {
 
       if (cleanedYoutubeUrl !== undefined) {
         existingScript.youtube_url = cleanedYoutubeUrl;
+      }
+
+      if (cleanedFacebookUrl !== undefined) {
+        existingScript.facebook_url = cleanedFacebookUrl;
+      }
+
+      if (cleanedInstagramUrl !== undefined) {
+        existingScript.instagram_url = cleanedInstagramUrl;
       }
 
       if (cleanedSubject !== undefined) existingScript.subject = cleanedSubject;
@@ -1792,6 +1854,8 @@ export class ScriptsService implements OnModuleInit {
       voice_id: voice_id ?? null,
       video_url: cleanedVideoUrl ?? null,
       youtube_url: cleanedYoutubeUrl ?? null,
+      facebook_url: cleanedFacebookUrl ?? null,
+      instagram_url: cleanedInstagramUrl ?? null,
       title: title || null,
       language: cleanedLanguage ?? 'en',
       subject: cleanedSubject ?? null,
@@ -2218,6 +2282,16 @@ export class ScriptsService implements OnModuleInit {
       script.youtube_url = cleanedYoutubeUrl ? cleanedYoutubeUrl : null;
     }
 
+    if ((dto as any).facebook_url !== undefined) {
+      const cleanedFacebookUrl = String((dto as any).facebook_url ?? '').trim();
+      script.facebook_url = cleanedFacebookUrl ? cleanedFacebookUrl : null;
+    }
+
+    if ((dto as any).instagram_url !== undefined) {
+      const cleanedInstagramUrl = String((dto as any).instagram_url ?? '').trim();
+      script.instagram_url = cleanedInstagramUrl ? cleanedInstagramUrl : null;
+    }
+
     await this.scriptRepository.save(script);
 
     if (dto.sentences !== undefined) {
@@ -2426,6 +2500,8 @@ export class ScriptsService implements OnModuleInit {
         voice_id: null,
         video_url: null,
         youtube_url: null,
+        facebook_url: null,
+        instagram_url: null,
       });
 
       const saved = await scriptRepo.save(draft);

@@ -1,0 +1,39 @@
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { User } from '../users/entities/user.entity';
+import { MetaUploadDto } from './dto/meta-upload.dto';
+import { UpsertMetaCredentialsDto } from './dto/upsert-meta-credentials.dto';
+import { MetaService } from './meta.service';
+
+@Controller('meta')
+export class MetaController {
+  constructor(private readonly metaService: MetaService) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Get('credentials')
+  async getCredentials() {
+    return this.metaService.getSharedCredentialsStatus();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('credentials')
+  async upsertCredentials(
+    @GetUser() user: User,
+    @Body() body: UpsertMetaCredentialsDto,
+  ) {
+    return this.metaService.upsertSharedCredentials(user, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('credentials/refresh')
+  async refreshCredentials(@GetUser() user: User) {
+    return this.metaService.refreshSharedCredentials(user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('upload')
+  async upload(@GetUser() user: User, @Body() body: MetaUploadDto) {
+    return this.metaService.uploadVideo(user, body);
+  }
+}

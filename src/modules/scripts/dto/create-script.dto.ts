@@ -330,6 +330,14 @@ export class CreateScriptDto {
   @IsOptional()
   youtube_url?: string | null;
 
+  @IsString()
+  @IsOptional()
+  facebook_url?: string | null;
+
+  @IsString()
+  @IsOptional()
+  instagram_url?: string | null;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateSentenceInput)
