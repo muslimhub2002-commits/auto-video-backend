@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -9,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { Readable } from 'stream';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
@@ -18,6 +20,54 @@ import { TiktokService } from './tiktok.service';
 @Controller('tiktok')
 export class TiktokController {
   constructor(private readonly tiktokService: TiktokService) {}
+
+  @Get('pull')
+  async pull(
+    @Query('source') source?: string,
+    @Query('expires') expires?: string,
+    @Query('sig') sig?: string,
+    @Res() res?: Response,
+  ) {
+    const response = res;
+    if (!response) {
+      throw new BadRequestException('Missing response object.');
+    }
+
+    const { upstream } = await this.tiktokService.proxyPullSource({
+      sourceUrl: source,
+      expires,
+      signature: sig,
+    });
+
+    response.status(upstream.status);
+    const contentType = upstream.headers.get('content-type');
+    const contentLength = upstream.headers.get('content-length');
+    const contentDisposition = upstream.headers.get('content-disposition');
+
+    if (contentType) response.setHeader('Content-Type', contentType);
+    if (contentLength) response.setHeader('Content-Length', contentLength);
+    if (contentDisposition) {
+      response.setHeader('Content-Disposition', contentDisposition);
+    }
+    response.setHeader('Cache-Control', 'private, max-age=300');
+
+    const body: any = (upstream as any).body;
+    if (!body) {
+      return response.end();
+    }
+
+    if (typeof body.pipe === 'function') {
+      return body.pipe(response);
+    }
+
+    const fromWeb = (Readable as any).fromWeb;
+    if (typeof fromWeb === 'function') {
+      return fromWeb(body).pipe(response);
+    }
+
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    return response.end(buffer);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get('auth-url')

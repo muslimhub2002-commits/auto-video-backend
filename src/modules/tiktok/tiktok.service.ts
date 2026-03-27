@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { Readable } from 'stream';
 import { Repository } from 'typeorm';
 import { ScriptsService } from '../scripts/scripts.service';
 import { User } from '../users/entities/user.entity';
@@ -106,6 +107,27 @@ function createCodeChallenge(codeVerifier: string): string {
   return toBase64Url(createHash('sha256').update(codeVerifier).digest());
 }
 
+async function responseBodyToNodeReadable(
+  res: Response,
+): Promise<NodeJS.ReadableStream> {
+  const body: any = (res as any).body;
+  if (!body) {
+    throw new BadRequestException('TikTok pull proxy received an empty body');
+  }
+
+  if (typeof body.pipe === 'function') {
+    return body as NodeJS.ReadableStream;
+  }
+
+  const fromWeb = (Readable as any).fromWeb;
+  if (typeof fromWeb === 'function') {
+    return fromWeb(body);
+  }
+
+  const arrayBuffer = await (res as any).arrayBuffer();
+  return Readable.from(Buffer.from(arrayBuffer));
+}
+
 @Injectable()
 export class TiktokService {
   constructor(
@@ -135,6 +157,112 @@ export class TiktokService {
     return normalizeRedirectUri(
       redirectUriOverride ?? this.configService.get<string>('TIKTOK_REDIRECT_URI'),
     );
+  }
+
+  private getPublicBaseUrl(): string {
+    const assetBaseUrl = String(
+      this.configService.get<string>('REMOTION_ASSET_BASE_URL') ?? '',
+    ).trim();
+    if (assetBaseUrl) {
+      return assetBaseUrl.replace(/\/+$/, '');
+    }
+
+    const redirectUri = this.getRedirectUri();
+    try {
+      return new URL(redirectUri).origin;
+    } catch {
+      throw new BadRequestException(
+        'Unable to determine a public backend base URL for TikTok pull-from-url.',
+      );
+    }
+  }
+
+  private getPullProxySignature(sourceUrl: string, expiresAt: string): string {
+    return createHmac('sha256', this.getClientSecret())
+      .update(`${sourceUrl}|${expiresAt}`)
+      .digest('hex');
+  }
+
+  private buildSignedPullProxyUrl(sourceUrl: string): string {
+    const expiresAt = String(Date.now() + 30 * 60 * 1000);
+    const signature = this.getPullProxySignature(sourceUrl, expiresAt);
+    const params = new URLSearchParams({
+      source: sourceUrl,
+      expires: expiresAt,
+      sig: signature,
+    });
+    return `${this.getPublicBaseUrl()}/tiktok/pull?${params.toString()}`;
+  }
+
+  private isVerifiedBackendHost(videoUrl: string): boolean {
+    try {
+      const videoHost = new URL(videoUrl).hostname.toLowerCase();
+      const backendHost = new URL(this.getPublicBaseUrl()).hostname.toLowerCase();
+      return videoHost === backendHost;
+    } catch {
+      return false;
+    }
+  }
+
+  private resolvePullFromUrl(videoUrl: string): string {
+    assertVideoUrlIsPubliclyReachable(videoUrl);
+    if (this.isVerifiedBackendHost(videoUrl)) {
+      return videoUrl;
+    }
+    return this.buildSignedPullProxyUrl(videoUrl);
+  }
+
+  async proxyPullSource(params: {
+    sourceUrl?: string;
+    expires?: string;
+    signature?: string;
+  }): Promise<{
+    upstream: Response;
+  }> {
+    const sourceUrl = String(params.sourceUrl ?? '').trim();
+    const expires = String(params.expires ?? '').trim();
+    const signature = String(params.signature ?? '').trim();
+
+    if (!sourceUrl || !expires || !signature) {
+      throw new BadRequestException('Missing TikTok pull proxy parameters.');
+    }
+
+    const expiresAt = Number(expires);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      throw new BadRequestException('TikTok pull proxy link expired. Start the upload again.');
+    }
+
+    const expectedSignature = this.getPullProxySignature(sourceUrl, expires);
+    const signatureMatches =
+      expectedSignature.length === signature.length &&
+      timingSafeEqual(
+        Buffer.from(expectedSignature, 'utf8'),
+        Buffer.from(signature, 'utf8'),
+      );
+
+    if (!signatureMatches) {
+      throw new BadRequestException('Invalid TikTok pull proxy signature.');
+    }
+
+    assertVideoUrlIsPubliclyReachable(sourceUrl);
+
+    let upstream: Response;
+    try {
+      upstream = await fetch(sourceUrl, { redirect: 'follow' } as any);
+    } catch (error: any) {
+      const details = error?.cause?.message || error?.message || 'fetch failed';
+      throw new BadRequestException(
+        `Unable to fetch source video for TikTok pull proxy. Details: ${details}`,
+      );
+    }
+
+    if (!upstream.ok) {
+      throw new BadRequestException(
+        `TikTok pull proxy could not fetch source video (status ${upstream.status}).`,
+      );
+    }
+
+    return { upstream };
   }
 
   private async exchangeToken(params: URLSearchParams): Promise<{
@@ -344,61 +472,6 @@ export class TiktokService {
     return this.fetchCreatorInfoWithAccessToken(accessToken);
   }
 
-  private async downloadVideo(videoUrl: string): Promise<{ buffer: Buffer; contentType: string }> {
-    assertVideoUrlIsPubliclyReachable(videoUrl);
-
-    let response: Response;
-    try {
-      response = await fetch(videoUrl, { redirect: 'follow' } as any);
-    } catch (error: any) {
-      const details = error?.cause?.message || error?.message || 'fetch failed';
-      throw new BadRequestException(
-        `Unable to download video from videoUrl. Ensure it is a public https URL reachable from Vercel. Details: ${details}`,
-      );
-    }
-
-    if (!response.ok) {
-      throw new BadRequestException(
-        `Failed to download video from videoUrl (status ${response.status})`,
-      );
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    if (!buffer.length) {
-      throw new BadRequestException('Downloaded video is empty.');
-    }
-
-    const rawContentType = String(response.headers.get('content-type') || 'video/mp4').trim();
-    const contentType =
-      rawContentType === 'video/mp4' ||
-      rawContentType === 'video/quicktime' ||
-      rawContentType === 'video/webm'
-        ? rawContentType
-        : 'video/mp4';
-
-    return { buffer, contentType };
-  }
-
-  private async uploadVideoBytes(uploadUrl: string, buffer: Buffer, contentType: string): Promise<void> {
-    const response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': String(buffer.length),
-        'Content-Range': `bytes 0-${buffer.length - 1}/${buffer.length}`,
-      },
-      body: buffer as any,
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new BadRequestException(
-        `TikTok upload transfer failed (${response.status}). ${text || ''}`.trim(),
-      );
-    }
-  }
-
   private async pollPublishResult(accessToken: string, publishId: string): Promise<{
     status: string;
     fail_reason?: string;
@@ -517,8 +590,9 @@ export class TiktokService {
       throw new BadRequestException('TikTok caption must be 2200 characters or fewer.');
     }
 
-    const { buffer, contentType } = await this.downloadVideo(dto.videoUrl);
-    const initData = await this.requestTikTok<{ publish_id: string; upload_url: string }>({
+    const pullFromUrl = this.resolvePullFromUrl(dto.videoUrl);
+
+    const initData = await this.requestTikTok<{ publish_id: string }>({
       accessToken,
       path: '/v2/post/publish/video/init/',
       body: {
@@ -533,19 +607,16 @@ export class TiktokService {
           is_aigc: true,
         },
         source_info: {
-          source: 'FILE_UPLOAD',
-          video_size: buffer.length,
-          chunk_size: buffer.length,
-          total_chunk_count: 1,
+          source: 'PULL_FROM_URL',
+          video_url: pullFromUrl,
         },
       },
     });
 
-    if (!initData.publish_id || !initData.upload_url) {
-      throw new InternalServerErrorException('TikTok did not return an upload URL.');
+    if (!initData.publish_id) {
+      throw new InternalServerErrorException('TikTok did not return a publish id.');
     }
 
-    await this.uploadVideoBytes(initData.upload_url, buffer, contentType);
     const publishResult = await this.pollPublishResult(accessToken, initData.publish_id);
 
     if (publishResult.status === 'FAILED') {
