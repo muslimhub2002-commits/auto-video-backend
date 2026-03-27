@@ -69,8 +69,8 @@ function assertVideoUrlIsPubliclyReachable(videoUrl: string): void {
     throw new BadRequestException('videoUrl must be a valid absolute URL');
   }
 
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new BadRequestException('videoUrl must use http or https');
+  if (parsed.protocol !== 'https:') {
+    throw new BadRequestException('videoUrl must use https');
   }
 
   if (isPrivateOrLocalHost(parsed.hostname)) {
@@ -184,7 +184,7 @@ export class TiktokService {
   }
 
   private buildSignedPullProxyUrl(sourceUrl: string): string {
-    const expiresAt = String(Date.now() + 30 * 60 * 1000);
+    const expiresAt = String(Date.now() + 65 * 60 * 1000);
     const signature = this.getPullProxySignature(sourceUrl, expiresAt);
     const params = new URLSearchParams({
       source: sourceUrl,
@@ -194,21 +194,8 @@ export class TiktokService {
     return `${this.getPublicBaseUrl()}/tiktok/pull?${params.toString()}`;
   }
 
-  private isVerifiedBackendHost(videoUrl: string): boolean {
-    try {
-      const videoHost = new URL(videoUrl).hostname.toLowerCase();
-      const backendHost = new URL(this.getPublicBaseUrl()).hostname.toLowerCase();
-      return videoHost === backendHost;
-    } catch {
-      return false;
-    }
-  }
-
   private resolvePullFromUrl(videoUrl: string): string {
     assertVideoUrlIsPubliclyReachable(videoUrl);
-    if (this.isVerifiedBackendHost(videoUrl)) {
-      return videoUrl;
-    }
     return this.buildSignedPullProxyUrl(videoUrl);
   }
 
