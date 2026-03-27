@@ -486,6 +486,25 @@ export class TiktokService {
     const { accessToken } = await this.getValidAccessToken(user);
     const creatorInfo = await this.fetchCreatorInfoWithAccessToken(accessToken);
 
+    if (!dto.consentConfirmed) {
+      throw new BadRequestException(
+        'You must confirm TikTok\'s publishing declaration before posting.',
+      );
+    }
+
+    if (!dto.privacyLevel) {
+      throw new BadRequestException('Select a TikTok privacy setting before posting.');
+    }
+
+    if (
+      (dto.brandContentToggle || dto.brandOrganicToggle) &&
+      dto.privacyLevel === 'SELF_ONLY'
+    ) {
+      throw new BadRequestException(
+        'Commercial content cannot be posted with Only me visibility.',
+      );
+    }
+
     const privacyOptions = Array.isArray(creatorInfo.privacy_level_options)
       ? creatorInfo.privacy_level_options.map((value) => String(value || '').trim())
       : [];
@@ -509,6 +528,9 @@ export class TiktokService {
           disable_comment: creatorInfo.comment_disabled ? true : Boolean(dto.disableComment),
           disable_duet: creatorInfo.duet_disabled ? true : Boolean(dto.disableDuet),
           disable_stitch: creatorInfo.stitch_disabled ? true : Boolean(dto.disableStitch),
+          brand_content_toggle: Boolean(dto.brandContentToggle),
+          brand_organic_toggle: Boolean(dto.brandOrganicToggle),
+          is_aigc: true,
         },
         source_info: {
           source: 'FILE_UPLOAD',

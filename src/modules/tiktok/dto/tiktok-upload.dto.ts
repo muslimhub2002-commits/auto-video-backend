@@ -10,13 +10,14 @@ export class TiktokUploadDto {
   caption?: string;
 
   @IsString()
+  @IsOptional()
   @IsIn([
     'PUBLIC_TO_EVERYONE',
     'MUTUAL_FOLLOW_FRIENDS',
     'FOLLOWER_OF_CREATOR',
     'SELF_ONLY',
   ])
-  privacyLevel!: string;
+  privacyLevel?: string;
 
   @IsBoolean()
   @IsOptional()
@@ -29,6 +30,17 @@ export class TiktokUploadDto {
   @IsBoolean()
   @IsOptional()
   disableStitch?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  brandOrganicToggle?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  brandContentToggle?: boolean;
+
+  @IsBoolean()
+  consentConfirmed!: boolean;
 
   @IsUUID()
   @IsOptional()
