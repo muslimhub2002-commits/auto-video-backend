@@ -334,6 +334,10 @@ export class UpdateScriptDto {
   @IsOptional()
   instagram_url?: string | null;
 
+  @IsString()
+  @IsOptional()
+  tiktok_url?: string | null;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => UpdateSentenceInput)

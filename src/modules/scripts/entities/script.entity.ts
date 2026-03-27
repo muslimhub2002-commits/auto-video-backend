@@ -103,6 +103,10 @@ export class Script {
   @Column({ type: 'varchar', length: 2048, nullable: true })
   instagram_url: string | null;
 
+  // Optional TikTok URL for the uploaded video.
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  tiktok_url: string | null;
+
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
 

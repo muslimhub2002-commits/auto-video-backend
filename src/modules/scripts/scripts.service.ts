@@ -367,6 +367,7 @@ export class ScriptsService implements OnModuleInit {
       const hasYoutubeUrl = await this.scriptsColumnExists('youtube_url');
       const hasFacebookUrl = await this.scriptsColumnExists('facebook_url');
       const hasInstagramUrl = await this.scriptsColumnExists('instagram_url');
+      const hasTiktokUrl = await this.scriptsColumnExists('tiktok_url');
       const hasLocations = await this.scriptsColumnExists('locations');
       const hasLanguage = await this.scriptsColumnExists('language');
 
@@ -404,6 +405,7 @@ export class ScriptsService implements OnModuleInit {
         !hasYoutubeUrl ||
         !hasFacebookUrl ||
         !hasInstagramUrl ||
+        !hasTiktokUrl ||
         !hasLocations ||
         !hasLanguage ||
         !hasSentenceCharacterKeys ||
@@ -428,6 +430,7 @@ export class ScriptsService implements OnModuleInit {
       const finalHasInstagramUrl = await this.scriptsColumnExists(
         'instagram_url',
       );
+      const finalHasTiktokUrl = await this.scriptsColumnExists('tiktok_url');
       const finalHasLocations = await this.scriptsColumnExists('locations');
       const finalHasLanguage = await this.scriptsColumnExists('language');
 
@@ -467,6 +470,7 @@ export class ScriptsService implements OnModuleInit {
         !finalHasYoutubeUrl ||
         !finalHasFacebookUrl ||
         !finalHasInstagramUrl ||
+        !finalHasTiktokUrl ||
         !finalHasLocations ||
         !finalHasLanguage ||
         !finalHasSentenceCharacterKeys ||
@@ -478,7 +482,7 @@ export class ScriptsService implements OnModuleInit {
         !finalHasSentenceSoundEffectAudioSettingsOverride
       ) {
         throw new InternalServerErrorException(
-          'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, facebook_url, instagram_url, locations, language, and sentences.character_keys/location_key/forced_location_key). ' +
+          'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, facebook_url, instagram_url, tiktok_url, locations, language, and sentences.character_keys/location_key/forced_location_key). ' +
             'Ensure your DB user has ALTER permissions, or apply the schema update SQL in `ScriptsService.ensureScriptsSchema()`.',
         );
       }
@@ -563,6 +567,21 @@ export class ScriptsService implements OnModuleInit {
     try {
       await this.dataSource.query(
         'ALTER TABLE scripts ADD COLUMN IF NOT EXISTS instagram_url VARCHAR(2048) NULL',
+      );
+    } catch (err: any) {
+      const message = String(err?.message || '');
+      if (
+        message.includes('does not exist') ||
+        message.includes('permission denied')
+      ) {
+        return;
+      }
+      throw err;
+    }
+
+    try {
+      await this.dataSource.query(
+        'ALTER TABLE scripts ADD COLUMN IF NOT EXISTS tiktok_url VARCHAR(2048) NULL',
       );
     } catch (err: any) {
       const message = String(err?.message || '');
@@ -1601,6 +1620,7 @@ export class ScriptsService implements OnModuleInit {
       youtube_url,
       facebook_url,
       instagram_url,
+      tiktok_url,
       sentences,
       characters,
       locations,
@@ -1644,6 +1664,9 @@ export class ScriptsService implements OnModuleInit {
       instagram_url === undefined
         ? undefined
         : (instagram_url ?? '').trim() || null;
+
+    const cleanedTiktokUrl =
+      tiktok_url === undefined ? undefined : (tiktok_url ?? '').trim() || null;
 
     const cleanedReferenceIds =
       reference_script_ids === undefined
@@ -1700,6 +1723,10 @@ export class ScriptsService implements OnModuleInit {
 
       if (cleanedInstagramUrl !== undefined) {
         existingScript.instagram_url = cleanedInstagramUrl;
+      }
+
+      if (cleanedTiktokUrl !== undefined) {
+        existingScript.tiktok_url = cleanedTiktokUrl;
       }
 
       if (cleanedSubject !== undefined) existingScript.subject = cleanedSubject;
@@ -1856,6 +1883,7 @@ export class ScriptsService implements OnModuleInit {
       youtube_url: cleanedYoutubeUrl ?? null,
       facebook_url: cleanedFacebookUrl ?? null,
       instagram_url: cleanedInstagramUrl ?? null,
+      tiktok_url: cleanedTiktokUrl ?? null,
       title: title || null,
       language: cleanedLanguage ?? 'en',
       subject: cleanedSubject ?? null,
@@ -2292,6 +2320,11 @@ export class ScriptsService implements OnModuleInit {
       script.instagram_url = cleanedInstagramUrl ? cleanedInstagramUrl : null;
     }
 
+    if ((dto as any).tiktok_url !== undefined) {
+      const cleanedTiktokUrl = String((dto as any).tiktok_url ?? '').trim();
+      script.tiktok_url = cleanedTiktokUrl ? cleanedTiktokUrl : null;
+    }
+
     await this.scriptRepository.save(script);
 
     if (dto.sentences !== undefined) {
@@ -2502,6 +2535,7 @@ export class ScriptsService implements OnModuleInit {
         youtube_url: null,
         facebook_url: null,
         instagram_url: null,
+        tiktok_url: null,
       });
 
       const saved = await scriptRepo.save(draft);

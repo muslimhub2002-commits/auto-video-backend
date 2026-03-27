@@ -16,6 +16,7 @@ import { MessagesModule } from './modules/messages/messages.module';
 import { ChatsModule } from './modules/chats/chats.module';
 import { YoutubeModule } from './modules/youtube/youtube.module';
 import { MetaModule } from './modules/meta/meta.module';
+import { TiktokModule } from './modules/tiktok/tiktok.module';
 
 /**
  * Vercel deployment module.
@@ -61,6 +62,7 @@ import { MetaModule } from './modules/meta/meta.module';
     ChatsModule,
     YoutubeModule,
     MetaModule,
+    TiktokModule,
   ],
 })
 export class AppVercelModule {}

@@ -51,6 +51,36 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   youtube_connected_at: Date | null;
 
+  @Column({ type: 'text', nullable: true })
+  tiktok_access_token: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  tiktok_refresh_token: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  tiktok_token_expiry: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  tiktok_refresh_token_expiry: Date | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  tiktok_open_id: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  tiktok_scope: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  tiktok_connected_at: Date | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  tiktok_oauth_state: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  tiktok_code_verifier: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  tiktok_oauth_started_at: Date | null;
+
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
 
