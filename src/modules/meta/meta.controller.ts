@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
+import { ExchangeMetaTokenDto } from './dto/exchange-meta-token.dto';
 import { MetaUploadDto } from './dto/meta-upload.dto';
 import { UpsertMetaCredentialsDto } from './dto/upsert-meta-credentials.dto';
 import { MetaService } from './meta.service';
@@ -29,6 +30,12 @@ export class MetaController {
   @Post('credentials/refresh')
   async refreshCredentials(@GetUser() user: User) {
     return this.metaService.refreshSharedCredentials(user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('credentials/exchange-token')
+  async exchangeToken(@GetUser() user: User, @Body() body: ExchangeMetaTokenDto) {
+    return this.metaService.exchangeToken(user, body);
   }
 
   @UseGuards(JwtAuthGuard)

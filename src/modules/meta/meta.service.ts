@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { MessagesService } from '../messages/messages.service';
 import { ScriptsService } from '../scripts/scripts.service';
 import { User } from '../users/entities/user.entity';
+import { ExchangeMetaTokenDto } from './dto/exchange-meta-token.dto';
 import { MetaUploadDto } from './dto/meta-upload.dto';
 import { UpsertMetaCredentialsDto } from './dto/upsert-meta-credentials.dto';
 import { MetaCredential } from './entities/meta-credential.entity';
@@ -175,6 +176,74 @@ export class MetaService {
       refreshed: true,
       updatedByUserId: user.id,
       status: await this.serializeCredentialStatus(refreshed),
+    };
+  }
+
+  async exchangeToken(user: User, dto: ExchangeMetaTokenDto) {
+    const appId = this.getRequiredConfig('META_APP_ID');
+    const appSecret = this.getRequiredConfig('META_APP_SECRET');
+    const version = this.getApiVersion();
+
+    const shortLivedToken = String(dto.shortLivedToken ?? '').trim();
+    if (!shortLivedToken) {
+      throw new BadRequestException('shortLivedToken is required.');
+    }
+
+    const result = await this.fetchJson<{
+      access_token?: string;
+      token_type?: string;
+      expires_in?: number;
+    }>(
+      `https://graph.facebook.com/${version}/oauth/access_token?${new URLSearchParams({
+        grant_type: 'fb_exchange_token',
+        client_id: appId,
+        client_secret: appSecret,
+        fb_exchange_token: shortLivedToken,
+      }).toString()}`,
+      { method: 'GET' },
+      'Failed to exchange Meta access token. Verify the short-lived token is valid and not already expired.',
+    );
+
+    const longLivedToken = this.normalizeNullableString(result.access_token);
+    if (!longLivedToken) {
+      throw new BadRequestException('Meta did not return a long-lived access token.');
+    }
+
+    const existing = await this.getOrCreateSharedCredentials(true);
+    const next = existing ?? this.metaCredentialRepository.create({ scope: 'shared' });
+
+    next.meta_access_token = longLivedToken;
+    next.meta_token_type =
+      this.normalizeNullableString(result.token_type) ?? next.meta_token_type;
+    if (Number.isFinite(result.expires_in)) {
+      next.meta_token_expires_at = new Date(
+        Date.now() + Number(result.expires_in) * 1000,
+      );
+    }
+    next.last_refreshed_at = new Date();
+    next.connected_at = next.connected_at ?? new Date();
+    next.last_error = null;
+
+    const pageId =
+      this.normalizeNullableString(next.facebook_page_id) ??
+      this.getOptionalConfig('META_FACEBOOK_PAGE_ID');
+    if (pageId) {
+      try {
+        next.facebook_page_access_token =
+          await this.resolveFacebookPageAccessToken({
+            pageId,
+            userAccessToken: longLivedToken,
+          });
+      } catch (error: unknown) {
+        next.last_error = this.getErrorMessage(error);
+      }
+    }
+
+    const saved = await this.metaCredentialRepository.save(next);
+    return {
+      exchanged: true,
+      updatedByUserId: user.id,
+      status: await this.serializeCredentialStatus(saved),
     };
   }
 
