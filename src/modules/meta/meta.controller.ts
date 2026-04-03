@@ -5,16 +5,20 @@ import { User } from '../users/entities/user.entity';
 import { ExchangeMetaTokenDto } from './dto/exchange-meta-token.dto';
 import { MetaUploadDto } from './dto/meta-upload.dto';
 import { UpsertMetaCredentialsDto } from './dto/upsert-meta-credentials.dto';
+import { MetaCredentialsService } from './meta-credentials.service';
 import { MetaService } from './meta.service';
 
 @Controller('meta')
 export class MetaController {
-  constructor(private readonly metaService: MetaService) {}
+  constructor(
+    private readonly metaCredentialsService: MetaCredentialsService,
+    private readonly metaService: MetaService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get('credentials')
   async getCredentials() {
-    return this.metaService.getSharedCredentialsStatus();
+    return this.metaCredentialsService.getSharedCredentialsStatus();
   }
 
   @UseGuards(JwtAuthGuard)
@@ -23,19 +27,19 @@ export class MetaController {
     @GetUser() user: User,
     @Body() body: UpsertMetaCredentialsDto,
   ) {
-    return this.metaService.upsertSharedCredentials(user, body);
+    return this.metaCredentialsService.upsertSharedCredentials(user, body);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('credentials/refresh')
   async refreshCredentials(@GetUser() user: User) {
-    return this.metaService.refreshSharedCredentials(user);
+    return this.metaCredentialsService.refreshSharedCredentials(user);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('credentials/exchange-token')
   async exchangeToken(@GetUser() user: User, @Body() body: ExchangeMetaTokenDto) {
-    return this.metaService.exchangeToken(user, body);
+    return this.metaCredentialsService.exchangeToken(user, body);
   }
 
   @UseGuards(JwtAuthGuard)

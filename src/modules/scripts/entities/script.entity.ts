@@ -77,6 +77,22 @@ export class Script {
     description?: string;
   }> | null;
 
+  // Ordered source chunks for long voice-over generation.
+  // When present, the client rebuilds the merged voice from these chunks.
+  @Column({ type: 'jsonb', nullable: true })
+  voice_over_chunks: Array<{
+    index: number;
+    text: string;
+    sentences: string[];
+    provider: string | null;
+    mimeType: string | null;
+    durationSeconds: number | null;
+    estimatedSeconds: number | null;
+    url: string;
+    fileName?: string | null;
+    createdAt?: string | null;
+  }> | null;
+
   @Column({ type: 'uuid', nullable: false })
   user_id: string;
 

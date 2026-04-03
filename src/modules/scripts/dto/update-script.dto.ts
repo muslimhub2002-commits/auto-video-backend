@@ -242,6 +242,54 @@ class ScriptLocationInput {
   description?: string;
 }
 
+class VoiceOverChunkInput {
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  index: number;
+
+  @IsString()
+  @IsNotEmpty()
+  text: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  sentences?: string[];
+
+  @IsString()
+  @IsOptional()
+  provider?: string | null;
+
+  @IsString()
+  @IsOptional()
+  mimeType?: string | null;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  durationSeconds?: number | null;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  estimatedSeconds?: number | null;
+
+  @IsString()
+  @IsOptional()
+  fileName?: string | null;
+
+  @IsString()
+  @IsOptional()
+  createdAt?: string | null;
+
+  @IsString()
+  @IsNotEmpty()
+  url: string;
+}
+
 class ShortScriptInput {
   @IsString()
   @IsNotEmpty()
@@ -317,6 +365,12 @@ export class UpdateScriptDto {
   @IsUUID()
   @IsOptional()
   voice_id?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => VoiceOverChunkInput)
+  @IsOptional()
+  voice_over_chunks?: VoiceOverChunkInput[] | null;
 
   @IsString()
   @IsOptional()

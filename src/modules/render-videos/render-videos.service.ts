@@ -4,7 +4,7 @@ import {
   OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { RenderJob } from './entities/render-job.entity';
@@ -437,19 +437,62 @@ export class RenderVideosService implements OnModuleInit {
   }
 
   private getPublicVideoUrl(jobId: string) {
+    const fileName = `${jobId}.mp4`;
+    return this.getPublicStorageUrl(`videos/${fileName}`);
+  }
+
+  private getPublicStorageUrl(relPath: string) {
     const baseUrl =
       process.env.REMOTION_ASSET_BASE_URL ??
       `http://127.0.0.1:${process.env.PORT ?? 3000}`;
-    const fileName = `${jobId}.mp4`;
-    return `${baseUrl}/static/videos/${fileName}`;
+    const normalized = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    return `${baseUrl}/static/${normalized}`;
+  }
+
+  private tryResolveLocalStaticFsPath(url: string): string | null {
+    const trimmed = String(url ?? '').trim();
+    if (!trimmed) return null;
+
+    const baseUrl =
+      process.env.REMOTION_ASSET_BASE_URL ??
+      `http://127.0.0.1:${process.env.PORT ?? 3000}`;
+    const normalizedBaseUrl = baseUrl.replace(/\/+$/u, '');
+
+    let staticPath = '';
+    if (trimmed.startsWith('/static/')) {
+      staticPath = trimmed.slice('/static/'.length);
+    } else if (trimmed.startsWith(`${normalizedBaseUrl}/static/`)) {
+      staticPath = trimmed.slice(`${normalizedBaseUrl}/static/`.length);
+    } else {
+      return null;
+    }
+
+    const normalizedPath = staticPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (!normalizedPath || normalizedPath.includes('..')) {
+      return null;
+    }
+
+    return join(this.getStorageRoot(), normalizedPath);
+  }
+
+  private readLocalStaticFileToBuffer(url: string): {
+    buffer: Buffer;
+    fileName: string;
+  } | null {
+    const fsPath = this.tryResolveLocalStaticFsPath(url);
+    if (!fsPath || !fs.existsSync(fsPath)) {
+      return null;
+    }
+
+    return {
+      buffer: fs.readFileSync(fsPath),
+      fileName: fsPath.split(/[\\/]/u).pop() || 'audio.mp3',
+    };
   }
 
   private getPublicAudioUrl(params: { jobId: string; ext: string }) {
-    const baseUrl =
-      process.env.REMOTION_ASSET_BASE_URL ??
-      `http://127.0.0.1:${process.env.PORT ?? 3000}`;
     const safeExt = params.ext.startsWith('.') ? params.ext : `.${params.ext}`;
-    return `${baseUrl}/static/render-inputs/audio/${params.jobId}${safeExt}`;
+    return this.getPublicStorageUrl(`render-inputs/audio/${params.jobId}${safeExt}`);
   }
 
   private getAudioFsPath(params: { jobId: string; ext: string }) {
@@ -464,6 +507,34 @@ export class RenderVideosService implements OnModuleInit {
     const root = this.getStorageRoot();
     this.ensureDir(join(root, 'videos'));
     return join(root, 'videos', `${jobId}.mp4`);
+  }
+
+  async stageLocalRenderAsset(params: {
+    file: UploadedAsset;
+    kind: 'audio' | 'image';
+  }) {
+    if (this.isServerlessRuntime()) {
+      throw new ServiceUnavailableException(
+        'Local render asset staging is not supported on serverless runtimes.',
+      );
+    }
+
+    const root = this.getStorageRoot();
+    const dir = join(root, 'render-inputs', 'staged', params.kind);
+    this.ensureDir(dir);
+
+    const ext = this.inferExt({
+      originalName: params.file.originalName,
+      mimeType: params.file.mimeType,
+      fallback: params.kind === 'audio' ? '.mp3' : '.png',
+    });
+
+    const fileName = `${randomUUID()}${ext}`;
+    fs.writeFileSync(join(dir, fileName), params.file.buffer);
+
+    return {
+      url: this.getPublicStorageUrl(`render-inputs/staged/${params.kind}/${fileName}`),
+    };
   }
 
   private async renderWithRemotion(params: {
@@ -572,14 +643,20 @@ export class RenderVideosService implements OnModuleInit {
         job.audioPath = this.getPublicAudioUrl({ jobId, ext });
         await this.jobsRepo.save(job);
       } else if (hasAudioUrl) {
-        const downloaded = await this.downloadUrlToBuffer({
-          url: normalizedAudioUrl,
-          maxBytes: 30 * 1024 * 1024,
-          label: 'voiceOver audioUrl',
-        });
-        audioBuffer = downloaded.buffer;
-        audioMimeType = downloaded.mimeType;
-        audioName = 'audio.mp3';
+        const localAudio = this.readLocalStaticFileToBuffer(normalizedAudioUrl);
+        if (localAudio) {
+          audioBuffer = localAudio.buffer;
+          audioName = localAudio.fileName;
+        } else {
+          const downloaded = await this.downloadUrlToBuffer({
+            url: normalizedAudioUrl,
+            maxBytes: 30 * 1024 * 1024,
+            label: 'voiceOver audioUrl',
+          });
+          audioBuffer = downloaded.buffer;
+          audioMimeType = downloaded.mimeType;
+          audioName = 'audio.mp3';
+        }
 
         // Use the provided URL directly (must be publicly accessible).
         // Cloudinary re-hosting is intentionally disabled.

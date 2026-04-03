@@ -92,7 +92,7 @@ export class AiTextService {
           '- Show emotions through observable behavior and sensory detail, not labels like anxious, sad, or disappointed.\n' +
           '- Give immediate context for what the video is about, then keep a curiosity loop alive so each line pulls the viewer into the next one.\n' +
           '- Re-hook between major beats by extending, clashing with, or reframing the previous idea so the viewer feels there is always another layer coming.\n' +
-          '- End with a concise payoff or summary when it helps the viewer feel the full rabbit-hole journey was worth following.\n'+
+          '- End with a concise payoff or summary when it helps the viewer feel the full rabbit-hole journey was worth following.\n' +
           '- Use you instead of I to keep the viewer in the scene and make it feel more like an experience than a story about someone else.'
         );
       case 'Confrontation Technique':
@@ -246,30 +246,30 @@ export class AiTextService {
       sentenceId: string;
       index: number;
       visualEffect:
-        | 'colorGrading'
-        | 'animatedLighting'
-        | 'glassSubtle'
-        | 'glassReflections'
-        | 'glassStrong';
+      | 'colorGrading'
+      | 'animatedLighting'
+      | 'glassSubtle'
+      | 'glassReflections'
+      | 'glassStrong';
       imageFilterSettings: Record<string, unknown>;
     }>;
   }> {
     const sentences = Array.isArray(dto?.sentences)
       ? dto.sentences
-          .map((item) => ({
-            index: Number(item?.index),
-            sentenceId: String(item?.sentenceId ?? '').trim(),
-            imagePrompt: String(item?.imagePrompt ?? '').trim(),
-            visualEffect: item?.visualEffect ?? null,
-            imageFilterSettings:
-              item?.imageFilterSettings && typeof item.imageFilterSettings === 'object'
-                ? item.imageFilterSettings
-                : null,
-          }))
-          .filter(
-            (item) =>
-              Number.isFinite(item.index) && item.sentenceId.length > 0 && item.imagePrompt.length > 0,
-          )
+        .map((item) => ({
+          index: Number(item?.index),
+          sentenceId: String(item?.sentenceId ?? '').trim(),
+          imagePrompt: String(item?.imagePrompt ?? '').trim(),
+          visualEffect: item?.visualEffect ?? null,
+          imageFilterSettings:
+            item?.imageFilterSettings && typeof item.imageFilterSettings === 'object'
+              ? item.imageFilterSettings
+              : null,
+        }))
+        .filter(
+          (item) =>
+            Number.isFinite(item.index) && item.sentenceId.length > 0 && item.imagePrompt.length > 0,
+        )
       : [];
 
     if (!sentences.length) {
@@ -356,16 +356,16 @@ export class AiTextService {
                 };
               })
               .filter(Boolean) as Array<{
-              sentenceId: string;
-              index: number;
-              visualEffect:
+                sentenceId: string;
+                index: number;
+                visualEffect:
                 | 'colorGrading'
                 | 'animatedLighting'
                 | 'glassSubtle'
                 | 'glassReflections'
                 | 'glassStrong';
-              imageFilterSettings: Record<string, unknown>;
-            }>;
+                imageFilterSettings: Record<string, unknown>;
+              }>;
           } catch (error) {
             console.warn('generateBulkLookEffects chunk fallback:', error);
             return [];
@@ -387,35 +387,35 @@ export class AiTextService {
       sentenceId: string;
       index: number;
       imageMotionEffect:
-        | 'slowZoomIn'
-        | 'slowZoomOut'
-        | 'diagonalDrift'
-        | 'cinematicPan'
-        | 'focusShift'
-        | 'parallaxMotion'
-        | 'shakeMicroMotion'
-        | 'splitMotion'
-        | 'rotationDrift';
+      | 'slowZoomIn'
+      | 'slowZoomOut'
+      | 'diagonalDrift'
+      | 'cinematicPan'
+      | 'focusShift'
+      | 'parallaxMotion'
+      | 'shakeMicroMotion'
+      | 'splitMotion'
+      | 'rotationDrift';
       imageMotionSettings: Record<string, unknown>;
     }>;
   }> {
     const sentences = Array.isArray(dto?.sentences)
       ? dto.sentences
-          .map((item) => ({
-            index: Number(item?.index),
-            sentenceId: String(item?.sentenceId ?? '').trim(),
-            imagePrompt: String(item?.imagePrompt ?? '').trim(),
-            imageMotionEffect: item?.imageMotionEffect ?? null,
-            imageMotionSpeed: this.clampNumber(item?.imageMotionSpeed, 0.5, 2.5, 1.2),
-            imageMotionSettings:
-              item?.imageMotionSettings && typeof item.imageMotionSettings === 'object'
-                ? item.imageMotionSettings
-                : null,
-          }))
-          .filter(
-            (item) =>
-              Number.isFinite(item.index) && item.sentenceId.length > 0 && item.imagePrompt.length > 0,
-          )
+        .map((item) => ({
+          index: Number(item?.index),
+          sentenceId: String(item?.sentenceId ?? '').trim(),
+          imagePrompt: String(item?.imagePrompt ?? '').trim(),
+          imageMotionEffect: item?.imageMotionEffect ?? null,
+          imageMotionSpeed: this.clampNumber(item?.imageMotionSpeed, 0.5, 2.5, 1.2),
+          imageMotionSettings:
+            item?.imageMotionSettings && typeof item.imageMotionSettings === 'object'
+              ? item.imageMotionSettings
+              : null,
+        }))
+        .filter(
+          (item) =>
+            Number.isFinite(item.index) && item.sentenceId.length > 0 && item.imagePrompt.length > 0,
+        )
       : [];
 
     if (!sentences.length) {
@@ -502,9 +502,9 @@ export class AiTextService {
                 };
               })
               .filter(Boolean) as Array<{
-              sentenceId: string;
-              index: number;
-              imageMotionEffect:
+                sentenceId: string;
+                index: number;
+                imageMotionEffect:
                 | 'slowZoomIn'
                 | 'slowZoomOut'
                 | 'diagonalDrift'
@@ -514,8 +514,8 @@ export class AiTextService {
                 | 'shakeMicroMotion'
                 | 'splitMotion'
                 | 'rotationDrift';
-              imageMotionSettings: Record<string, unknown>;
-            }>;
+                imageMotionSettings: Record<string, unknown>;
+              }>;
           } catch (error) {
             console.warn('generateBulkMotionEffects chunk fallback:', error);
             return [];
@@ -1322,7 +1322,7 @@ export class AiTextService {
         '- If the script mentions Sahaba (companions of Prophet Muhammad), still extract them but set the boolean flags accordingly.\n' +
         '- Each character.description MUST be only two lines max & include detailed facial + physical + clothing attributes.\n' +
         '- DO NOT INCLUDE ANYTHING BESIDE FACIAL, PHYSICAL & CLOTHING ATTRIBUTES'
-        '- For any character with isProphet=true or isSahaba=true: DO NOT describe face details.\n' +
+      '- For any character with isProphet=true or isSahaba=true: DO NOT describe face details.\n' +
         '- Character keys must be short like C1, C2, C3... in first-appearance order.\n' +
         '- If unsure about any boolean flag, set it to false.\n' +
         '- Each description needs to be one line max\n' +
@@ -2208,8 +2208,9 @@ export class AiTextService {
       'Given a SCRIPT, you produce detailed style instructions for AI Studio / TTS.\n' +
       'Respond with ONLY the style instructions text (no headings, no markdown, no quotes).\n\n' +
       'Requirements:\n' +
-      '- Be specific and actionable: tone, emotion, pace, pauses, emphasis, energy, smile/brightness, seriousness, cadence.\n' +
-      '- Mention any tricky pronunciations ONLY if the script implies them.\n' +
+      '- Tone and Speed should differ depending on the sentence\n' +
+      '- Pause on important points to make the message more impactful.\n' +
+      '- Emphasizing important words in script\n' +
       '- Keep it concise but detailed: 4-10 short lines max.\n' +
       '- Do NOT repeat the script. Do NOT add meta commentary.';
 

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Get,
   UseInterceptors,
@@ -12,7 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { AiService } from './ai.service';
 import { GenerateScriptDto } from './dto/generate-script.dto';
 import { SplitScriptDto } from './dto/split-script.dto';
@@ -352,6 +353,57 @@ export class AiController {
           body.voiceId,
           body.styleInstructions,
         );
+
+    res.setHeader('Content-Type', result.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${result.filename}"`,
+    );
+    res.send(result.buffer);
+  }
+
+  @Post('merge-voice-chunks')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FilesInterceptor('audioChunks', 24, {
+      limits: {
+        files: 24,
+        fileSize: 25 * 1024 * 1024,
+      },
+    }),
+  )
+  async mergeVoiceChunks(
+    @UploadedFiles() files: any[],
+    @Body('outputFormat') outputFormat: string | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    const audioFiles = Array.isArray(files) ? files : [];
+    if (audioFiles.length === 0) {
+      throw new BadRequestException('No audio chunks uploaded');
+    }
+
+    for (const file of audioFiles) {
+      if (!file?.buffer) {
+        throw new BadRequestException('Invalid audio chunk upload');
+      }
+
+      const mimetype = String(file?.mimetype ?? '');
+      if (mimetype && !mimetype.startsWith('audio/')) {
+        throw new BadRequestException(
+          `Invalid file type for voice chunk merge: ${mimetype}`,
+        );
+      }
+    }
+
+    const preferredOutput = String(outputFormat ?? '').trim().toLowerCase();
+    const result = await this.aiService.mergeVoiceAudioChunks({
+      chunks: audioFiles.map((file) => ({
+        buffer: file.buffer,
+        mimeType: file.mimetype,
+        filename: file.originalname,
+      })),
+      outputFormat: preferredOutput === 'wav' ? 'wav' : 'mp3',
+    });
 
     res.setHeader('Content-Type', result.mimeType);
     res.setHeader(

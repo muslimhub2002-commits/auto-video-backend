@@ -284,4 +284,15 @@ export class AiService {
       styleInstructions,
     );
   }
+
+  mergeVoiceAudioChunks(params: {
+    chunks: Array<{
+      buffer: Buffer;
+      mimeType?: string | null;
+      filename?: string | null;
+    }>;
+    outputFormat?: 'mp3' | 'wav';
+  }): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
+    return this.voiceService.mergeVoiceAudioChunks(params);
+  }
 }

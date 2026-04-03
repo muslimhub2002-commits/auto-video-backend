@@ -41,6 +41,24 @@ export class MetaCredential {
   @Column({ type: 'timestamp', nullable: true })
   last_refreshed_at: Date | null;
 
+  @Column({ type: 'timestamp', nullable: true })
+  last_refresh_attempt_at: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  last_refresh_success_at: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  last_refresh_error_at: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  next_refresh_due_at: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  requires_reconnect_at: Date | null;
+
+  @Column({ type: 'varchar', length: 32, default: 'not_connected' })
+  connection_status: string;
+
   @Column({ type: 'text', nullable: true })
   last_error: string | null;
 

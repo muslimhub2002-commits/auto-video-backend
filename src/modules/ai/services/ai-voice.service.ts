@@ -4,11 +4,66 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { AiRuntimeService } from './ai-runtime.service';
+import { withTimeout } from '../../render-videos/utils/promise.utils';
+
+type VoiceProvider = 'google' | 'elevenlabs';
 
 @Injectable()
 export class AiVoiceService {
+  private readonly narrationWpm = 150;
+
   constructor(private readonly runtime: AiRuntimeService) {}
+
+  private estimateScriptSeconds(value: string): number {
+    const wordCount = String(value ?? '')
+      .trim()
+      .split(/\s+/u)
+      .filter(Boolean).length;
+    return Math.max(1, Math.round((wordCount * 60) / this.narrationWpm));
+  }
+
+  private getProviderTimeoutMs(provider: VoiceProvider): number {
+    const raw =
+      provider === 'google'
+        ? process.env.GEMINI_TTS_TIMEOUT_MS
+        : process.env.ELEVENLABS_TTS_TIMEOUT_MS;
+    const fallback = provider === 'google' ? 240_000 : 180_000;
+    const value = Number(raw ?? fallback);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  }
+
+  private getMergeTimeoutMs(): number {
+    const value = Number(process.env.AI_VOICE_MERGE_TIMEOUT_MS ?? 120_000);
+    return Number.isFinite(value) && value > 0 ? value : 120_000;
+  }
+
+  private isTimeoutError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return /timed out after/i.test(error.message);
+  }
+
+  private async runWithAbortableTimeout<T>(params: {
+    label: string;
+    timeoutMs: number;
+    run: (signal: AbortSignal) => Promise<T>;
+  }): Promise<T> {
+    const controller = new AbortController();
+    try {
+      return await withTimeout(
+        params.run(controller.signal),
+        params.timeoutMs,
+        params.label,
+      );
+    } catch (error) {
+      controller.abort();
+      throw error;
+    }
+  }
 
   private parseMimeType(raw: string): {
     base: string;
@@ -118,6 +173,40 @@ export class AiVoiceService {
     }
   }
 
+  private inferExtFromFilename(filenameRaw?: string | null): string {
+    const ext = path.extname(String(filenameRaw ?? '').trim()).toLowerCase();
+    switch (ext) {
+      case '.mp3':
+      case '.wav':
+      case '.ogg':
+      case '.webm':
+      case '.flac':
+      case '.aac':
+      case '.m4a':
+        return ext;
+      default:
+        return '';
+    }
+  }
+
+  private async callFfmpeg(args: string[]): Promise<void> {
+    const renderer: any = await import('@remotion/renderer');
+    const task = renderer?.RenderInternals?.callFf?.({
+      bin: 'ffmpeg',
+      indent: false,
+      logLevel: 'warn',
+      binariesDirectory: null,
+      cancelSignal: undefined,
+      args,
+    });
+
+    if (!task || typeof task.then !== 'function') {
+      throw new Error('Remotion ffmpeg helper not available');
+    }
+
+    await task;
+  }
+
   private get geminiApiKey() {
     return this.runtime.geminiApiKey;
   }
@@ -221,6 +310,128 @@ export class AiVoiceService {
     return { buffer, mimeType: 'audio/mpeg', filename: 'voice-over.mp3' };
   }
 
+  async mergeVoiceAudioChunks(params: {
+    chunks: Array<{
+      buffer: Buffer;
+      mimeType?: string | null;
+      filename?: string | null;
+    }>;
+    outputFormat?: 'mp3' | 'wav';
+  }): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
+    const chunks = Array.isArray(params.chunks) ? params.chunks : [];
+    if (chunks.length === 0) {
+      throw new BadRequestException('No audio chunks were provided for merge');
+    }
+
+    if (chunks.length === 1) {
+      const only = chunks[0];
+      const mimeType = this.normalizeMimeType(String(only.mimeType ?? '')) || 'audio/mpeg';
+      const ext = this.extensionFromMimeType(mimeType) || 'mp3';
+      return {
+        buffer: only.buffer,
+        mimeType,
+        filename: `voice-over.${ext}`,
+      };
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `auto-video-voice-merge-${randomUUID()}`);
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    try {
+      const inputPaths = chunks.map((chunk, index) => {
+        const mimeExt = this.extensionFromMimeType(String(chunk.mimeType ?? ''));
+        const nameExt = this.inferExtFromFilename(chunk.filename);
+        const ext = mimeExt || nameExt.replace(/^\./u, '') || 'mp3';
+        const filePath = path.join(
+          tmpDir,
+          `chunk-${String(index + 1).padStart(2, '0')}.${ext}`,
+        );
+        fs.writeFileSync(filePath, chunk.buffer);
+        return filePath;
+      });
+
+      const filterParts: string[] = [];
+      const labels: string[] = [];
+      for (let index = 0; index < inputPaths.length; index += 1) {
+        const label = `a${index}`;
+        filterParts.push(
+          `[${index}:a]aresample=44100,aformat=sample_fmts=s16:channel_layouts=stereo,asetpts=PTS-STARTPTS[${label}]`,
+        );
+        labels.push(`[${label}]`);
+      }
+
+      filterParts.push(
+        `${labels.join('')}concat=n=${inputPaths.length}:v=0:a=1[outa]`,
+      );
+
+      const preferWav = params.outputFormat === 'wav';
+      const outMp3 = path.join(tmpDir, 'merged.mp3');
+      const outWav = path.join(tmpDir, 'merged.wav');
+      const baseArgs = [
+        '-y',
+        ...inputPaths.flatMap((inputPath) => ['-i', inputPath]),
+        '-filter_complex',
+        filterParts.join(';'),
+        '-map',
+        '[outa]',
+        '-vn',
+        '-ar',
+        '44100',
+        '-ac',
+        '2',
+      ];
+
+      if (preferWav) {
+        await withTimeout(
+          this.callFfmpeg([...baseArgs, '-c:a', 'pcm_s16le', outWav]),
+          this.getMergeTimeoutMs(),
+          'Voice chunk merge',
+        );
+      } else {
+        try {
+          await withTimeout(
+            this.callFfmpeg([
+              ...baseArgs,
+              '-c:a',
+              'libmp3lame',
+              '-q:a',
+              '4',
+              outMp3,
+            ]),
+            this.getMergeTimeoutMs(),
+            'Voice chunk merge',
+          );
+        } catch {
+          await withTimeout(
+            this.callFfmpeg([...baseArgs, '-c:a', 'pcm_s16le', outWav]),
+            this.getMergeTimeoutMs(),
+            'Voice chunk merge fallback',
+          );
+        }
+      }
+
+      const outputPath = fs.existsSync(outMp3) ? outMp3 : outWav;
+      const buffer = fs.readFileSync(outputPath);
+      const isWav = outputPath.toLowerCase().endsWith('.wav');
+      return {
+        buffer,
+        mimeType: isWav ? 'audio/wav' : 'audio/mpeg',
+        filename: isWav ? 'voice-over-merged.wav' : 'voice-over-merged.mp3',
+      };
+    } catch (error) {
+      if (this.isTimeoutError(error)) {
+        throw new InternalServerErrorException('Voice chunk merge timed out');
+      }
+      throw new InternalServerErrorException('Failed to merge generated voice chunks');
+    } finally {
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup errors
+      }
+    }
+  }
+
   private async generateVoiceWithElevenLabs(params: {
     text: string;
     voiceId: string;
@@ -232,21 +443,28 @@ export class AiVoiceService {
     }
 
     try {
-      const response = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${params.voiceId}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'audio/mpeg',
-            'xi-api-key': this.elevenApiKey,
-          },
-          body: JSON.stringify({
-            text: params.text,
-            model_id: 'eleven_multilingual_v2',
-          }),
-        } as any,
-      );
+      const timeoutMs = this.getProviderTimeoutMs('elevenlabs');
+      const response = await this.runWithAbortableTimeout({
+        label: 'ElevenLabs voice generation',
+        timeoutMs,
+        run: async (signal) =>
+          fetch(
+            `https://api.elevenlabs.io/v1/text-to-speech/${params.voiceId}`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'audio/mpeg',
+                'xi-api-key': this.elevenApiKey,
+              },
+              body: JSON.stringify({
+                text: params.text,
+                model_id: 'eleven_multilingual_v2',
+              }),
+              signal,
+            } as any,
+          ),
+      });
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => '');
@@ -288,6 +506,11 @@ export class AiVoiceService {
         err instanceof UnauthorizedException
       ) {
         throw err;
+      }
+      if (err?.name === 'AbortError' || this.isTimeoutError(err)) {
+        throw new InternalServerErrorException(
+          'ElevenLabs voice generation timed out',
+        );
       }
       throw new InternalServerErrorException(
         'Unexpected error while generating voice with ElevenLabs',
@@ -335,6 +558,7 @@ export class AiVoiceService {
     }
 
     try {
+      const timeoutMs = this.getProviderTimeoutMs('google');
       const url = new URL(
         `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           this.geminiTtsModel,
@@ -342,42 +566,48 @@ export class AiVoiceService {
       );
       url.searchParams.set('key', this.geminiApiKey);
 
-      const response = await fetch(url.toString(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [
+      const response = await this.runWithAbortableTimeout({
+        label: 'Gemini voice generation',
+        timeoutMs,
+        run: async (signal) =>
+          fetch(url.toString(), {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [
                 {
-                  text: (() => {
-                    const style = String(params.styleInstructions ?? '').trim();
-                    if (!style) return params.text;
+                  role: 'user',
+                  parts: [
+                    {
+                      text: (() => {
+                        const style = String(params.styleInstructions ?? '').trim();
+                        if (!style) return params.text;
 
-                    return (
-                      `Style Instructions (do NOT speak these instructions): ${style}\n\n` +
-                      `Read the following script exactly as written:\n${params.text}`
-                    );
-                  })(),
+                        return (
+                          `Style Instructions (do NOT speak these instructions): ${style}\n\n` +
+                          `Read the following script exactly as written:\n${params.text}`
+                        );
+                      })(),
+                    },
+                  ],
                 },
               ],
-            },
-          ],
-          generationConfig: {
-            responseModalities: ['AUDIO'],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: {
-                  voiceName: params.voiceName,
+              generationConfig: {
+                responseModalities: ['AUDIO'],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: {
+                      voiceName: params.voiceName,
+                    },
+                  },
                 },
               },
-            },
-          },
-        }),
+            }),
+            signal,
+          }),
       });
 
       if (!response.ok) {
@@ -517,6 +747,11 @@ export class AiVoiceService {
         err instanceof UnauthorizedException
       ) {
         throw err;
+      }
+      if (err?.name === 'AbortError' || this.isTimeoutError(err)) {
+        throw new InternalServerErrorException(
+          'Gemini voice generation timed out',
+        );
       }
 
       throw new InternalServerErrorException(

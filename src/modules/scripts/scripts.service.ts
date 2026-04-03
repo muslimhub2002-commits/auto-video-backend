@@ -47,6 +47,19 @@ type UploadedVideoFile = {
   size?: number;
 };
 
+type NormalizedVoiceOverChunk = {
+  index: number;
+  text: string;
+  sentences: string[];
+  provider: string | null;
+  mimeType: string | null;
+  durationSeconds: number | null;
+  estimatedSeconds: number | null;
+  url: string;
+  fileName: string | null;
+  createdAt: string | null;
+};
+
 @Injectable()
 export class ScriptsService implements OnModuleInit {
   private scriptsSchemaEnsuring: Promise<void> | null = null;
@@ -75,6 +88,55 @@ export class ScriptsService implements OnModuleInit {
     const numeric = Number(value ?? 1);
     if (!Number.isFinite(numeric)) return 1;
     return Math.min(2.5, Math.max(0.5, numeric));
+  }
+
+  private normalizeOptionalNumber(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  private normalizeVoiceOverChunksInput(
+    value: unknown,
+  ): NormalizedVoiceOverChunk[] | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    if (!Array.isArray(value)) return null;
+
+    const normalized = value
+      .map((item, index) => {
+        const url = String((item as any)?.url ?? '').trim();
+        const text = String((item as any)?.text ?? '').trim();
+        if (!url || !text) return null;
+
+        const rawIndex = this.normalizeOptionalNumber((item as any)?.index);
+        const sentences = Array.isArray((item as any)?.sentences)
+          ? (item as any).sentences
+              .map((sentence: unknown) => String(sentence ?? '').trim())
+              .filter(Boolean)
+          : [];
+
+        return {
+          index:
+            rawIndex !== null && rawIndex >= 0 ? Math.floor(rawIndex) : index,
+          text,
+          sentences,
+          provider: String((item as any)?.provider ?? '').trim() || null,
+          mimeType: String((item as any)?.mimeType ?? '').trim() || null,
+          durationSeconds: this.normalizeOptionalNumber(
+            (item as any)?.durationSeconds,
+          ),
+          estimatedSeconds: this.normalizeOptionalNumber(
+            (item as any)?.estimatedSeconds,
+          ),
+          url,
+          fileName: String((item as any)?.fileName ?? '').trim() || null,
+          createdAt: String((item as any)?.createdAt ?? '').trim() || null,
+        } satisfies NormalizedVoiceOverChunk;
+      })
+      .filter(Boolean) as NormalizedVoiceOverChunk[];
+
+    return normalized.sort((left, right) => left.index - right.index);
   }
 
   constructor(
@@ -370,6 +432,9 @@ export class ScriptsService implements OnModuleInit {
       const hasTiktokUrl = await this.scriptsColumnExists('tiktok_url');
       const hasLocations = await this.scriptsColumnExists('locations');
       const hasLanguage = await this.scriptsColumnExists('language');
+      const hasVoiceOverChunks = await this.scriptsColumnExists(
+        'voice_over_chunks',
+      );
 
       const sentencesTableExists = await this.sentencesTableExists();
       const hasSentenceCharacterKeys = sentencesTableExists
@@ -408,6 +473,7 @@ export class ScriptsService implements OnModuleInit {
         !hasTiktokUrl ||
         !hasLocations ||
         !hasLanguage ||
+        !hasVoiceOverChunks ||
         !hasSentenceCharacterKeys ||
         !hasSentenceLocationKey ||
         !hasSentenceForcedLocationKey ||
@@ -433,6 +499,9 @@ export class ScriptsService implements OnModuleInit {
       const finalHasTiktokUrl = await this.scriptsColumnExists('tiktok_url');
       const finalHasLocations = await this.scriptsColumnExists('locations');
       const finalHasLanguage = await this.scriptsColumnExists('language');
+      const finalHasVoiceOverChunks = await this.scriptsColumnExists(
+        'voice_over_chunks',
+      );
 
       const finalSentencesTableExists = await this.sentencesTableExists();
       const finalHasSentenceCharacterKeys = finalSentencesTableExists
@@ -473,6 +542,7 @@ export class ScriptsService implements OnModuleInit {
         !finalHasTiktokUrl ||
         !finalHasLocations ||
         !finalHasLanguage ||
+        !finalHasVoiceOverChunks ||
         !finalHasSentenceCharacterKeys ||
         !finalHasSentenceLocationKey ||
         !finalHasSentenceForcedLocationKey ||
@@ -483,6 +553,7 @@ export class ScriptsService implements OnModuleInit {
       ) {
         throw new InternalServerErrorException(
           'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, facebook_url, instagram_url, tiktok_url, locations, language, and sentences.character_keys/location_key/forced_location_key). ' +
+            'This also includes scripts.voice_over_chunks. ' +
             'Ensure your DB user has ALTER permissions, or apply the schema update SQL in `ScriptsService.ensureScriptsSchema()`.',
         );
       }
@@ -614,6 +685,21 @@ export class ScriptsService implements OnModuleInit {
     try {
       await this.dataSource.query(
         "ALTER TABLE scripts ADD COLUMN IF NOT EXISTS language VARCHAR(20) NOT NULL DEFAULT 'en'",
+      );
+    } catch (err: any) {
+      const message = String(err?.message || '');
+      if (
+        message.includes('does not exist') ||
+        message.includes('permission denied')
+      ) {
+        return;
+      }
+      throw err;
+    }
+
+    try {
+      await this.dataSource.query(
+        'ALTER TABLE scripts ADD COLUMN IF NOT EXISTS voice_over_chunks JSONB NULL',
       );
     } catch (err: any) {
       const message = String(err?.message || '');
@@ -1624,6 +1710,7 @@ export class ScriptsService implements OnModuleInit {
       sentences,
       characters,
       locations,
+      voice_over_chunks,
       title: providedTitle,
       shorts_scripts,
       shorts_script_ids,
@@ -1646,6 +1733,9 @@ export class ScriptsService implements OnModuleInit {
       style === undefined ? undefined : (style ?? '').trim() || null;
     const cleanedTechnique =
       technique === undefined ? undefined : (technique ?? '').trim() || null;
+    const normalizedVoiceOverChunks = this.normalizeVoiceOverChunksInput(
+      voice_over_chunks,
+    );
 
     const cleanedVideoUrl =
       video_url === undefined ? undefined : (video_url ?? '').trim() || null;
@@ -1740,6 +1830,13 @@ export class ScriptsService implements OnModuleInit {
 
       if (cleanedLanguage !== undefined) {
         existingScript.language = cleanedLanguage;
+      }
+
+      if (normalizedVoiceOverChunks !== undefined) {
+        (existingScript as any).voice_over_chunks =
+          normalizedVoiceOverChunks && normalizedVoiceOverChunks.length > 0
+            ? normalizedVoiceOverChunks
+            : null;
       }
 
       if (referenceScripts !== undefined) {
@@ -1895,6 +1992,10 @@ export class ScriptsService implements OnModuleInit {
         characters && characters.length > 0 ? (characters as any) : null,
       locations:
         locations && (locations as any).length > 0 ? (locations as any) : null,
+      voice_over_chunks:
+        normalizedVoiceOverChunks && normalizedVoiceOverChunks.length > 0
+          ? normalizedVoiceOverChunks
+          : null,
     });
 
     if (referenceScripts !== undefined) {
@@ -2272,6 +2373,16 @@ export class ScriptsService implements OnModuleInit {
       (script as any).locations =
         (dto as any).locations && (dto as any).locations.length > 0
           ? (dto as any).locations
+          : null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(dto, 'voice_over_chunks')) {
+      const normalizedVoiceOverChunks = this.normalizeVoiceOverChunksInput(
+        (dto as any).voice_over_chunks,
+      );
+      (script as any).voice_over_chunks =
+        normalizedVoiceOverChunks && normalizedVoiceOverChunks.length > 0
+          ? normalizedVoiceOverChunks
           : null;
     }
 

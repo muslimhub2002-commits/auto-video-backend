@@ -7,7 +7,7 @@ import { AiRuntimeService } from './ai-runtime.service';
 
 @Injectable()
 export class AiYoutubeService {
-  constructor(private readonly runtime: AiRuntimeService) {}
+  constructor(private readonly runtime: AiRuntimeService) { }
 
   private describeLanguage(languageCode: string): string {
     switch (languageCode.toLowerCase()) {
@@ -65,7 +65,8 @@ export class AiYoutubeService {
     promptModel?: string;
     safeCharacters?: Array<{ key: string; name: string; description: string }>;
   }): Promise<{ headline: string; prompt: string; characterKeys: string[] }> {
-    const trimmed = String(params?.script ?? '').trim();
+    const script = String(params?.script ?? '').trim();
+    const trimmed = script.length > 3000 ? script.slice(0, 3000) : script;
     if (!trimmed) {
       throw new BadRequestException('Script is required');
     }
@@ -77,28 +78,26 @@ export class AiYoutubeService {
 
     const safeChars = Array.isArray(params?.safeCharacters)
       ? params.safeCharacters
-          .map((c) => ({
-            key: String(c?.key ?? '').trim(),
-            name: String(c?.name ?? '').trim(),
-            description: String(c?.description ?? '').trim(),
-          }))
-          .filter((c) => c.key && c.name && c.description)
-          .slice(0, 12)
+        .map((c) => ({
+          key: String(c?.key ?? '').trim(),
+          name: String(c?.name ?? '').trim(),
+          description: String(c?.description ?? '').trim(),
+        }))
+        .filter((c) => c.key && c.name && c.description)
+        .slice(0, 12)
       : [];
 
     const safeCharBlock = safeChars.length
       ? 'SAFE CHARACTERS (ONLY these may be depicted as humans):\n' +
-        safeChars
-          .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
-          .join('\n')
+      safeChars
+        .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
+        .join('\n')
       : 'SAFE CHARACTERS: (none provided)';
 
     let parsed: any;
     try {
       parsed = await this.llm.completeJson<any>({
         model,
-        temperature: 0.6,
-        maxTokens: 900,
         retries: 2,
         messages: [
           {
@@ -386,7 +385,7 @@ export class AiYoutubeService {
         attempt === 1
           ? baseSystem
           : baseSystem +
-            '\n\nIMPORTANT: Your previous response was invalid. Return ONLY valid JSON (no prose, no markdown, no code fences).';
+          '\n\nIMPORTANT: Your previous response was invalid. Return ONLY valid JSON (no prose, no markdown, no code fences).';
 
       try {
         const msg: any = await anthropic.messages.create({

@@ -12,6 +12,7 @@ import { User } from '../users/entities/user.entity';
 import { ExchangeMetaTokenDto } from './dto/exchange-meta-token.dto';
 import { MetaUploadDto } from './dto/meta-upload.dto';
 import { UpsertMetaCredentialsDto } from './dto/upsert-meta-credentials.dto';
+import { MetaCredentialsService } from './meta-credentials.service';
 import { MetaCredential } from './entities/meta-credential.entity';
 
 function isPrivateOrLocalHost(hostname: string): boolean {
@@ -77,15 +78,6 @@ type MetaUploadResponse = {
   };
 };
 
-type ActiveMetaCredentials = {
-  metaAccessToken: string;
-  metaTokenType: string | null;
-  metaTokenExpiresAt: Date | null;
-  facebookPageAccessToken: string | null;
-  facebookPageId: string | null;
-  instagramAccountId: string | null;
-};
-
 @Injectable()
 export class MetaService {
   constructor(
@@ -94,7 +86,8 @@ export class MetaService {
     private readonly metaCredentialRepository: Repository<MetaCredential>,
     private readonly messagesService: MessagesService,
     private readonly scriptsService: ScriptsService,
-  ) {}
+    private readonly metaCredentialsService: MetaCredentialsService,
+  ) { }
 
   async getSharedCredentialsStatus() {
     const credentials = await this.getOrCreateSharedCredentials();
@@ -259,7 +252,7 @@ export class MetaService {
     }
 
     assertVideoUrlIsPubliclyReachable(dto.videoUrl);
-    await this.getActiveMetaCredentials();
+    await this.metaCredentialsService.getActiveMetaCredentials();
 
     const requestedPlatforms = Array.from(new Set(dto.platforms ?? [])).filter(Boolean);
     if (requestedPlatforms.length === 0) {
@@ -335,7 +328,7 @@ export class MetaService {
       return this.publishFacebookReel(dto);
     }
 
-    const activeCredentials = await this.getActiveMetaCredentials();
+    const activeCredentials = await this.metaCredentialsService.getActiveMetaCredentials();
     const accessToken = activeCredentials.metaAccessToken;
     const appId = this.getRequiredConfig('META_APP_ID');
     const pageId = activeCredentials.facebookPageId;
@@ -344,11 +337,12 @@ export class MetaService {
     }
     const version = this.getApiVersion();
     const videoFile = await this.downloadVideo(dto.videoUrl);
-    const pageAccessToken = await this.resolveFacebookPageAccessToken({
-      pageId,
-      userAccessToken: accessToken,
-      configuredPageToken: activeCredentials.facebookPageAccessToken,
-    });
+    const pageAccessToken = String(activeCredentials.facebookPageAccessToken ?? '').trim();
+    if (!pageAccessToken) {
+      throw new BadRequestException(
+        'Missing Facebook Page access token for the shared Meta connection.',
+      );
+    }
 
     const session = await this.fetchJson<{
       id?: string;
@@ -423,10 +417,11 @@ export class MetaService {
       'Failed to fetch Facebook video permalink.',
     );
 
-    const url = this.extractFirstUrl(metadata, [
-      'permalink_url',
-      'link',
-    ]) || `https://www.facebook.com/watch/?v=${videoId}`;
+    const url = dto.isShortVideo ? `https://www.facebook/reel/${videoId}` :
+      this.extractFirstUrl(metadata, [
+        'permalink_url',
+        'link',
+      ]) || `https://www.facebook.com/watch/?v=${videoId}`;
 
     return { id: videoId, url };
   }
@@ -434,17 +429,18 @@ export class MetaService {
   private async publishFacebookReel(
     dto: MetaUploadDto,
   ): Promise<{ id: string; url: string }> {
-    const activeCredentials = await this.getActiveMetaCredentials();
+    const activeCredentials = await this.metaCredentialsService.getActiveMetaCredentials();
     const pageId = activeCredentials.facebookPageId;
     if (!pageId) {
       throw new BadRequestException('Missing META_FACEBOOK_PAGE_ID configuration.');
     }
 
-    const pageAccessToken = await this.resolveFacebookPageAccessToken({
-      pageId,
-      userAccessToken: activeCredentials.metaAccessToken,
-      configuredPageToken: activeCredentials.facebookPageAccessToken,
-    });
+    const pageAccessToken = String(activeCredentials.facebookPageAccessToken ?? '').trim();
+    if (!pageAccessToken) {
+      throw new BadRequestException(
+        'Missing Facebook Page access token for the shared Meta connection.',
+      );
+    }
     const version = this.getApiVersion();
 
     const startPayload = await this.fetchJson<{
@@ -528,8 +524,8 @@ export class MetaService {
   }): Promise<string> {
     const configuredPageToken = String(
       params.configuredPageToken ??
-        this.configService.get<string>('META_FACEBOOK_PAGE_ACCESS_TOKEN') ??
-        '',
+      this.configService.get<string>('META_FACEBOOK_PAGE_ACCESS_TOKEN') ??
+      '',
     ).trim();
     if (configuredPageToken) {
       return configuredPageToken;
@@ -560,8 +556,8 @@ export class MetaService {
 
     const pageRecord = Array.isArray(accountsPayload?.data)
       ? accountsPayload.data.find(
-          (item) => String(item?.id ?? '').trim() === pageId,
-        )
+        (item) => String(item?.id ?? '').trim() === pageId,
+      )
       : null;
 
     if (!pageRecord) {
@@ -572,8 +568,8 @@ export class MetaService {
 
     const tasks = Array.isArray(pageRecord.tasks)
       ? pageRecord.tasks
-          .map((task) => String(task ?? '').trim().toUpperCase())
-          .filter(Boolean)
+        .map((task) => String(task ?? '').trim().toUpperCase())
+        .filter(Boolean)
       : [];
     const requiredTasks = ['CREATE_CONTENT'];
     const missingTasks = requiredTasks.filter((task) => !tasks.includes(task));
@@ -598,7 +594,7 @@ export class MetaService {
   }
 
   private async publishToInstagram(dto: MetaUploadDto): Promise<{ id: string; url: string }> {
-    const activeCredentials = await this.getActiveMetaCredentials();
+    const activeCredentials = await this.metaCredentialsService.getActiveMetaCredentials();
     const accessToken = activeCredentials.metaAccessToken;
     const instagramAccountId = activeCredentials.instagramAccountId;
     if (!instagramAccountId) {
@@ -1005,41 +1001,6 @@ export class MetaService {
     return 'video.mp4';
   }
 
-  private async getActiveMetaCredentials(): Promise<ActiveMetaCredentials> {
-    const credentials = await this.getOrCreateSharedCredentials();
-    if (!credentials?.meta_access_token) {
-      throw new BadRequestException(
-        'Missing Meta credentials. Configure shared Meta credentials first.',
-      );
-    }
-
-    const refreshed = await this.refreshCredentialIfNeeded(credentials);
-    const metaAccessToken = this.normalizeNullableString(
-      refreshed.meta_access_token,
-    );
-    if (!metaAccessToken) {
-      throw new BadRequestException(
-        'Missing Meta credentials. Configure shared Meta credentials first.',
-      );
-    }
-
-    const facebookPageId =
-      this.normalizeNullableString(refreshed.facebook_page_id) ??
-      this.getOptionalConfig('META_FACEBOOK_PAGE_ID');
-    const instagramAccountId =
-      this.normalizeNullableString(refreshed.instagram_account_id) ??
-      this.getOptionalConfig('META_INSTAGRAM_ACCOUNT_ID');
-
-    return {
-      metaAccessToken,
-      metaTokenType: refreshed.meta_token_type,
-      metaTokenExpiresAt: refreshed.meta_token_expires_at,
-      facebookPageAccessToken: refreshed.facebook_page_access_token,
-      facebookPageId,
-      instagramAccountId,
-    };
-  }
-
   private async getOrCreateSharedCredentials(
     skipEnvBootstrap = false,
   ): Promise<MetaCredential | null> {
@@ -1061,32 +1022,33 @@ export class MetaService {
     });
     if (credentials) {
       if (!skipEnvBootstrap) {
-        const hasEnvOverride =
-          (envAccessToken && envAccessToken !== credentials.meta_access_token) ||
-          (envPageToken && envPageToken !== credentials.facebook_page_access_token) ||
-          (envFacebookPageId && envFacebookPageId !== credentials.facebook_page_id) ||
-          (envInstagramAccountId &&
-            envInstagramAccountId !== credentials.instagram_account_id) ||
-          (envAccessTokenExpiresAt?.getTime() ?? null) !==
-            (credentials.meta_token_expires_at?.getTime() ?? null) ||
-          (envPageTokenExpiresAt?.getTime() ?? null) !==
-            (credentials.facebook_page_token_expires_at?.getTime() ?? null);
+        let changed = false;
 
-        if (hasEnvOverride) {
-          credentials.meta_access_token = envAccessToken ?? credentials.meta_access_token;
-          credentials.facebook_page_access_token =
-            envPageToken ?? credentials.facebook_page_access_token;
-          credentials.facebook_page_id =
-            envFacebookPageId ?? credentials.facebook_page_id;
-          credentials.instagram_account_id =
-            envInstagramAccountId ?? credentials.instagram_account_id;
-          credentials.meta_token_expires_at =
-            envAccessTokenExpiresAt ?? credentials.meta_token_expires_at;
-          credentials.facebook_page_token_expires_at =
-            envPageTokenExpiresAt ?? credentials.facebook_page_token_expires_at;
+        if (!credentials.facebook_page_id && envFacebookPageId) {
+          credentials.facebook_page_id = envFacebookPageId;
+          changed = true;
+        }
+
+        if (!credentials.instagram_account_id && envInstagramAccountId) {
+          credentials.instagram_account_id = envInstagramAccountId;
+          changed = true;
+        }
+
+        if (!credentials.meta_access_token && envAccessToken) {
+          credentials.meta_access_token = envAccessToken;
+          credentials.meta_token_expires_at = envAccessTokenExpiresAt;
+          credentials.connected_at = credentials.connected_at ?? new Date();
           credentials.last_error = null;
-          credentials.last_refreshed_at = null;
-          credentials.connected_at = new Date();
+          changed = true;
+        }
+
+        if (!credentials.facebook_page_access_token && envPageToken) {
+          credentials.facebook_page_access_token = envPageToken;
+          credentials.facebook_page_token_expires_at = envPageTokenExpiresAt;
+          changed = true;
+        }
+
+        if (changed) {
           credentials = await this.metaCredentialRepository.save(credentials);
         }
       }

@@ -33,6 +33,12 @@ const normalizeVolume = (raw: number) => {
 };
 import type { SentenceInput } from './render-videos.types';
 
+const LOCAL_RENDER_ASSET_MAX_BYTES = Math.max(
+  100 * 1024 * 1024,
+  Number(process.env.LOCAL_RENDER_ASSET_MAX_BYTES ?? 512 * 1024 * 1024) ||
+    512 * 1024 * 1024,
+);
+
 @Controller('videos')
 export class RenderVideosController {
   constructor(private readonly renderVideosService: RenderVideosService) {}
@@ -588,6 +594,53 @@ export class RenderVideosController {
       status: job.status,
       videoUrl: job.videoPath,
     };
+  }
+
+  @Post('stage-local-asset')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: {
+        files: 1,
+        fileSize: LOCAL_RENDER_ASSET_MAX_BYTES,
+        fields: 4,
+      },
+    }),
+  )
+  async stageLocalAsset(
+    @UploadedFile() file?: Multer.File,
+    @Body('kind') kindRaw?: string,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Missing `file` upload');
+    }
+
+    const kind =
+      kindRaw === 'audio' || kindRaw === 'image' ? kindRaw : null;
+    if (!kind) {
+      throw new BadRequestException('`kind` must be either `audio` or `image`');
+    }
+
+    if (kind === 'image' && file.mimetype && !file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('Uploaded file must be an image');
+    }
+
+    if (
+      kind === 'audio' &&
+      file.mimetype &&
+      file.mimetype !== 'application/octet-stream' &&
+      !file.mimetype.startsWith('audio/')
+    ) {
+      throw new BadRequestException('Uploaded file must be audio');
+    }
+
+    return this.renderVideosService.stageLocalRenderAsset({
+      kind,
+      file: {
+        buffer: file.buffer,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+      },
+    });
   }
 
   @Post('url')
