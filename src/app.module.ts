@@ -37,6 +37,7 @@ import { MotionEffect } from './modules/motion-effects/entities/motion-effect.en
 import { VideosLibraryModule } from './modules/videos-library/videos-library.module';
 import { SoundEffectsModule } from './modules/sound-effects/sound-effects.module';
 import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entity';
+import { SoundEditPreset } from './modules/sound-effects/entities/sound-edit-preset.entity';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entit
         MotionEffect,
         BackgroundSoundtrack,
         SoundEffect,
+        SoundEditPreset,
         MetaCredential,
         VoiceOver,
         Video,

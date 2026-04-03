@@ -102,6 +102,23 @@ export class AiTextService {
           '- Make the idea visible and present; call out the tension plainly.\n' +
           '- Stay respectful (especially for religious subjects) but still decisive.'
         );
+      case "Hero's Journey":
+        return (
+          "TECHNIQUE: Hero's Journey\n" +
+          '- Structure the script as a progression arc from an ordinary beginning to a changed ending. This is a story-flow framework, not a requirement to focus on one named character.\n' +
+          '- Status Quo: Open with the normal state of the person, group, place, or situation before the disruption.\n' +
+          '- Call to Adventure: Introduce the event, invitation, pressure, or discovery that pushes the story into the unknown.\n' +
+          '- Assistance: Add guidance, support, or a helpful force that enables progress or understanding.\n' +
+          '- Departure: Show the point where the story fully leaves the old normal and commits to the new direction.\n' +
+          '- Trials: Show early attempts, friction, setbacks, and failed efforts to solve the problem or adapt to change.\n' +
+          '- Approach: Build tension as the story gets close to the main challenge or turning point.\n' +
+          '- Crisis: Hit the lowest point with maximum danger, doubt, or apparent failure before the recovery.\n' +
+          '- Treasure: Reveal the breakthrough, lesson, new skill, new idea, or key advantage that can overcome the obstacle.\n' +
+          '- Result: Show that the breakthrough works and changes the direction of the conflict.\n' +
+          '- Return: Bring the story back toward stability after the main obstacle has been overcome.\n' +
+          '- New Life: End by showing how the situation, world, group, or person is now different because of what happened.\n' +
+          '- Keep the pacing compact and natural; do not force headings or visibly label the stages in the output.'
+        );
       default:
         return `TECHNIQUE: ${technique}\n- Apply this technique consistently throughout.`;
     }
