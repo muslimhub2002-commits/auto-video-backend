@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
 import { VideoSize } from '../../videos/entities/video.entity';
 
 export class SaveSentenceVideoDto {
@@ -13,4 +13,8 @@ export class SaveSentenceVideoDto {
   @IsEnum(VideoSize)
   @IsOptional()
   video_size?: VideoSize;
+
+  @IsOptional()
+  @IsIn(['primary', 'textBackground'])
+  target?: 'primary' | 'textBackground';
 }

@@ -14,10 +14,11 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { TEXT_ANIMATION_EFFECT_VALUES } from '../render-videos.types';
 
 class SentenceSoundEffectDto {
   @IsUrl({ require_tld: false })
-  src: string;
+  src!: string;
 
   @IsOptional()
   @IsNumber()
@@ -43,7 +44,7 @@ class SentenceSoundEffectDto {
 
 class TransitionSoundEffectDto {
   @IsUrl({ require_tld: false })
-  src: string;
+  src!: string;
 
   @IsOptional()
   @IsNumber()
@@ -60,19 +61,35 @@ class TransitionSoundEffectDto {
 class SentenceDto {
   @IsString()
   @IsNotEmpty()
-  text: string;
+  text!: string;
 
   @IsOptional()
   @IsString()
   secondaryImageUrl?: string | null;
 
   @IsOptional()
-  @IsIn(['image', 'video'])
-  mediaType?: 'image' | 'video';
+  @IsIn(['image', 'video', 'text'])
+  mediaType?: 'image' | 'video' | 'text';
 
   @IsOptional()
   @IsString()
   videoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  textBackgroundVideoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  textAnimationText?: string | null;
+
+  @IsOptional()
+  @IsIn(TEXT_ANIMATION_EFFECT_VALUES)
+  textAnimationEffect?: (typeof TEXT_ANIMATION_EFFECT_VALUES)[number] | null;
+
+  @IsOptional()
+  @IsObject()
+  textAnimationSettings?: Record<string, unknown> | null;
 
   @IsOptional()
   @IsBoolean()
@@ -186,11 +203,11 @@ export class CreateRenderVideoUrlDto {
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => SentenceDto)
-  sentences: SentenceDto[];
+  sentences!: SentenceDto[];
 
   @IsString()
   @IsNotEmpty()
-  scriptLength: string;
+  scriptLength!: string;
 
   @IsOptional()
   @IsNumber()
@@ -232,10 +249,10 @@ export class CreateRenderVideoUrlDto {
   backgroundMusicVolume?: number;
 
   @IsUrl({ require_tld: false })
-  audioUrl: string;
+  audioUrl!: string;
 
   @IsArray()
-  imageUrls: Array<string | null>;
+  imageUrls!: Array<string | null>;
 
   @IsOptional()
   @IsArray()

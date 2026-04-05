@@ -1,5 +1,9 @@
 import type { SentenceInput, SentenceTiming } from './render-videos.types';
 import {
+  resolveTextSceneBackgroundMode,
+  sentenceUsesPrimaryImageTransport,
+} from './render-videos.types';
+import {
   CHROMA_LEAK_SFX_CLOUDINARY_URL,
   GLITCH_FX_CLOUDINARY_URL,
   WHOOSH_CLOUDINARY_URL,
@@ -134,7 +138,35 @@ export const buildTimeline = (params: {
       s.mediaType === 'video' &&
       !!String(s.videoUrl ?? '').trim();
 
-    const isImageScene = !isSubscribeLike && !wantsSentenceVideo;
+    const isTextScene = !isSubscribeLike && s.mediaType === 'text';
+    const isImageScene = !isSubscribeLike && !wantsSentenceVideo && !isTextScene;
+    const sceneMediaType = isSubscribeLike || wantsSentenceVideo
+      ? 'video'
+      : isTextScene
+        ? 'text'
+        : 'image';
+    const primaryImageSrc = sentenceUsesPrimaryImageTransport(s)
+      ? String(params.imagePaths[index] ?? '').trim() || undefined
+      : undefined;
+    const textAnimationText = String(s.textAnimationText ?? '').trim() || undefined;
+    const textBackgroundMode = isTextScene
+      ? resolveTextSceneBackgroundMode(s.textAnimationSettings)
+      : undefined;
+    const textAnimationSettings = isTextScene
+      ? {
+          ...(s.textAnimationSettings &&
+          typeof s.textAnimationSettings === 'object' &&
+          !Array.isArray(s.textAnimationSettings)
+            ? s.textAnimationSettings
+            : {}),
+          backgroundMode: textBackgroundMode ?? 'inheritImage',
+        }
+      : undefined;
+    const textBackgroundVideoSrc =
+      isTextScene &&
+      (textBackgroundMode === 'inheritVideo' || textBackgroundMode === 'video')
+        ? String(s.textBackgroundVideoUrl ?? '').trim() || undefined
+        : undefined;
 
     // Critical: ensure scenes are frame-contiguous.
     // Any gap from rounding would otherwise show as black in Remotion.
@@ -250,6 +282,7 @@ export const buildTimeline = (params: {
     return {
       index,
       text: s.text,
+      mediaType: sceneMediaType,
       isSuspense: !!s.isSuspense,
       ...(s.imageEffectsMode != null
         ? { imageEffectsMode: s.imageEffectsMode }
@@ -310,16 +343,23 @@ export const buildTimeline = (params: {
       ...(isImageScene && s.visualEffect != null
         ? { visualEffect: s.visualEffect }
         : {}),
+      ...(isTextScene && s.textAnimationEffect != null
+        ? { textAnimationEffect: s.textAnimationEffect }
+        : {}),
+      ...(isTextScene && textAnimationText ? { textAnimationText } : {}),
+      ...(isTextScene && textAnimationSettings
+        ? { textAnimationSettings }
+        : {}),
+      ...(isTextScene && textBackgroundVideoSrc
+        ? { textBackgroundVideoSrc }
+        : {}),
       ...(isImageScene
         ? { imageMotionEffect: s.imageMotionEffect ?? 'default' }
         : {}),
       ...(isImageScene
         ? { imageMotionSpeed: s.imageMotionSpeed ?? DEFAULT_IMAGE_MOTION_SPEED }
         : {}),
-      imageSrc:
-        isSubscribeLike || wantsSentenceVideo
-          ? undefined
-          : params.imagePaths[index],
+      imageSrc: primaryImageSrc,
       secondaryImageSrc:
         isImageScene && typeof s.secondaryImageUrl === 'string'
           ? s.secondaryImageUrl

@@ -10,6 +10,10 @@ export class CreateRenderVideoDto {
   @IsString()
   language?: string;
 
+  @IsOptional()
+  @IsString()
+  audioUrl?: string;
+
   @IsString()
   @IsNotEmpty()
   sentences: string;

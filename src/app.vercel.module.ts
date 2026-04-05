@@ -9,6 +9,7 @@ import { ImagesModule } from './modules/images/images.module';
 import { VoicesModule } from './modules/voices/voices.module';
 import { ImageFiltersModule } from './modules/image-filters/image-filters.module';
 import { MotionEffectsModule } from './modules/motion-effects/motion-effects.module';
+import { TextAnimationsModule } from './modules/text-animations/text-animations.module';
 import { BackgroundSoundtracksModule } from './modules/background-soundtracks/background-soundtracks.module';
 import { SoundEffectsModule } from './modules/sound-effects/sound-effects.module';
 import { ScriptsModule } from './modules/scripts/scripts.module';
@@ -55,6 +56,7 @@ import { TiktokModule } from './modules/tiktok/tiktok.module';
     VoicesModule,
     ImageFiltersModule,
     MotionEffectsModule,
+    TextAnimationsModule,
     BackgroundSoundtracksModule,
     SoundEffectsModule,
     ScriptsModule,

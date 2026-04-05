@@ -60,6 +60,15 @@ type NormalizedVoiceOverChunk = {
   createdAt: string | null;
 };
 
+const ALLOWED_TEXT_ANIMATION_EFFECTS = new Set([
+  'popInBounceHook',
+  'slideCutFast',
+  'scalePunchZoom',
+  'maskReveal',
+  'glitchFlashHook',
+  'kineticTypography',
+] as const);
+
 @Injectable()
 export class ScriptsService implements OnModuleInit {
   private scriptsSchemaEnsuring: Promise<void> | null = null;
@@ -67,6 +76,12 @@ export class ScriptsService implements OnModuleInit {
 
   private normalizeImageEffectsMode(value: unknown): 'quick' | 'detailed' {
     return value === 'detailed' ? 'detailed' : 'quick';
+  }
+
+  private normalizeSceneTab(value: unknown): 'image' | 'video' | 'text' | null {
+    return value === 'video' || value === 'text' || value === 'image'
+      ? value
+      : null;
   }
 
   private normalizeOptionalId(value: unknown): string | null {
@@ -88,6 +103,19 @@ export class ScriptsService implements OnModuleInit {
     const numeric = Number(value ?? 1);
     if (!Number.isFinite(numeric)) return 1;
     return Math.min(2.5, Math.max(0.5, numeric));
+  }
+
+  private normalizeTextAnimationEffect(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim();
+    return ALLOWED_TEXT_ANIMATION_EFFECTS.has(normalized as any)
+      ? normalized
+      : null;
+  }
+
+  private normalizeTextAnimationText(value: unknown): string | null {
+    const normalized = String(value ?? '').trim();
+    return normalized || null;
   }
 
   private normalizeOptionalNumber(value: unknown): number | null {
@@ -764,6 +792,27 @@ export class ScriptsService implements OnModuleInit {
       await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS image_motion_settings JSONB NULL',
       );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS scene_tab TEXT NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_animation_text TEXT NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_animation_effect TEXT NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_animation_id UUID NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_animation_settings JSONB NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_background_image_id UUID NULL',
+      );
+        await tryAlterSentences(
+          'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_background_video_id UUID NULL',
+        );
     }
 
     try {
@@ -875,12 +924,15 @@ export class ScriptsService implements OnModuleInit {
       .createQueryBuilder('script')
       .leftJoinAndSelect('script.sentences', 'sentence')
       .leftJoinAndSelect('sentence.image', 'image')
+      .leftJoinAndSelect('sentence.textBackgroundImage', 'text_background_image')
+      .leftJoinAndSelect('sentence.textBackgroundVideo', 'text_background_video')
       .leftJoinAndSelect('sentence.secondaryImage', 'secondary_image')
       .leftJoinAndSelect('sentence.startFrameImage', 'start_frame_image')
       .leftJoinAndSelect('sentence.endFrameImage', 'end_frame_image')
       .leftJoinAndSelect('sentence.video', 'sentence_video')
       .leftJoinAndSelect('script.voice', 'voice')
       .addSelect('image.prompt')
+      .addSelect('text_background_image.prompt')
       .addSelect('secondary_image.prompt')
       .addSelect('start_frame_image.prompt')
       .addSelect('end_frame_image.prompt')
@@ -1256,6 +1308,8 @@ export class ScriptsService implements OnModuleInit {
                 start_frame_image_id: s.start_frame_image_id ?? null,
                 end_frame_image_id: s.end_frame_image_id ?? null,
                 video_id: s.video_id ?? null,
+                text_background_image_id: s.text_background_image_id ?? null,
+                text_background_video_id: s.text_background_video_id ?? null,
                 video_prompt: String(s.video_prompt ?? '').trim() || null,
                 transition_to_next: s.transition_to_next ?? null,
                 visual_effect: s.visual_effect ?? null,
@@ -1266,6 +1320,7 @@ export class ScriptsService implements OnModuleInit {
                 image_effects_mode: this.normalizeImageEffectsMode(
                   s.image_effects_mode,
                 ),
+                scene_tab: this.normalizeSceneTab((s as any).scene_tab),
                 image_filter_id: this.normalizeOptionalId(s.image_filter_id),
                 image_filter_settings: this.normalizeSettingsObject(
                   s.image_filter_settings,
@@ -1273,6 +1328,18 @@ export class ScriptsService implements OnModuleInit {
                 motion_effect_id: this.normalizeOptionalId(s.motion_effect_id),
                 image_motion_settings: this.normalizeSettingsObject(
                   s.image_motion_settings,
+                ),
+                text_animation_text: this.normalizeTextAnimationText(
+                  (s as any).text_animation_text,
+                ),
+                text_animation_effect: this.normalizeTextAnimationEffect(
+                  (s as any).text_animation_effect,
+                ),
+                text_animation_id: this.normalizeOptionalId(
+                  (s as any).text_animation_id,
+                ),
+                text_animation_settings: this.normalizeSettingsObject(
+                  (s as any).text_animation_settings,
                 ),
                 transition_sound_effects:
                   this.normalizeTransitionSoundEffectsInput(
@@ -1328,6 +1395,8 @@ export class ScriptsService implements OnModuleInit {
     dto: SaveSentenceVideoDto,
     files?: { videoFile?: UploadedVideoFile },
   ): Promise<{ id: string; video: string }> {
+    const target = dto?.target === 'textBackground' ? 'textBackground' : 'primary';
+
     const script = await this.scriptRepository.findOne({
       where: { id: scriptId, user_id: userId },
       select: { id: true },
@@ -1423,9 +1492,14 @@ export class ScriptsService implements OnModuleInit {
     });
     const saved = await this.videoRepository.save(videoEntity);
 
+    const updatePayload =
+      target === 'textBackground'
+        ? { text_background_video_id: saved.id }
+        : { video_id: saved.id };
+
     await this.sentenceRepository.update(
       { id: sentenceId, script_id: scriptId },
-      { video_id: saved.id },
+      updatePayload,
     );
 
     return { id: saved.id, video: saved.video };
@@ -1881,6 +1955,9 @@ export class ScriptsService implements OnModuleInit {
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
+            text_background_image_id: (s as any).text_background_image_id ?? null,
+              text_background_video_id:
+                (s as any).text_background_video_id ?? null,
             video_prompt: String((s as any).video_prompt ?? '').trim() || null,
             transition_to_next: (s as any).transition_to_next ?? null,
             visual_effect: (s as any).visual_effect ?? null,
@@ -1891,6 +1968,7 @@ export class ScriptsService implements OnModuleInit {
             image_effects_mode: this.normalizeImageEffectsMode(
               (s as any).image_effects_mode,
             ),
+            scene_tab: this.normalizeSceneTab((s as any).scene_tab),
             image_filter_id: this.normalizeOptionalId(
               (s as any).image_filter_id,
             ),
@@ -1902,6 +1980,18 @@ export class ScriptsService implements OnModuleInit {
             ),
             image_motion_settings: this.normalizeSettingsObject(
               (s as any).image_motion_settings,
+            ),
+            text_animation_text: this.normalizeTextAnimationText(
+              (s as any).text_animation_text,
+            ),
+            text_animation_effect: this.normalizeTextAnimationEffect(
+              (s as any).text_animation_effect,
+            ),
+            text_animation_id: this.normalizeOptionalId(
+              (s as any).text_animation_id,
+            ),
+            text_animation_settings: this.normalizeSettingsObject(
+              (s as any).text_animation_settings,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,
@@ -2023,6 +2113,9 @@ export class ScriptsService implements OnModuleInit {
           start_frame_image_id: s.start_frame_image_id ?? null,
           end_frame_image_id: s.end_frame_image_id ?? null,
           video_id: s.video_id ?? null,
+          text_background_image_id: (s as any).text_background_image_id ?? null,
+            text_background_video_id:
+              (s as any).text_background_video_id ?? null,
           video_prompt: String((s as any).video_prompt ?? '').trim() || null,
           transition_to_next: (s as any).transition_to_next ?? null,
           visual_effect: (s as any).visual_effect ?? null,
@@ -2033,6 +2126,7 @@ export class ScriptsService implements OnModuleInit {
           image_effects_mode: this.normalizeImageEffectsMode(
             (s as any).image_effects_mode,
           ),
+          scene_tab: this.normalizeSceneTab((s as any).scene_tab),
           image_filter_id: this.normalizeOptionalId((s as any).image_filter_id),
           image_filter_settings: this.normalizeSettingsObject(
             (s as any).image_filter_settings,
@@ -2042,6 +2136,18 @@ export class ScriptsService implements OnModuleInit {
           ),
           image_motion_settings: this.normalizeSettingsObject(
             (s as any).image_motion_settings,
+          ),
+          text_animation_text: this.normalizeTextAnimationText(
+            (s as any).text_animation_text,
+          ),
+          text_animation_effect: this.normalizeTextAnimationEffect(
+            (s as any).text_animation_effect,
+          ),
+          text_animation_id: this.normalizeOptionalId(
+            (s as any).text_animation_id,
+          ),
+          text_animation_settings: this.normalizeSettingsObject(
+            (s as any).text_animation_settings,
           ),
           transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
             (s as any).transition_sound_effects,
@@ -2259,6 +2365,8 @@ export class ScriptsService implements OnModuleInit {
       .leftJoinAndSelect('sentence.sound_effects', 'sentence_sound_effect')
       .leftJoinAndSelect('sentence_sound_effect.sound_effect', 'sound_effect')
       .leftJoinAndSelect('sentence.image', 'image')
+      .leftJoinAndSelect('sentence.textBackgroundImage', 'text_background_image')
+      .leftJoinAndSelect('sentence.textBackgroundVideo', 'text_background_video')
       .leftJoinAndSelect('sentence.secondaryImage', 'secondary_image')
       .leftJoinAndSelect('sentence.startFrameImage', 'start_frame_image')
       .leftJoinAndSelect('sentence.endFrameImage', 'end_frame_image')
@@ -2266,6 +2374,7 @@ export class ScriptsService implements OnModuleInit {
       .leftJoinAndSelect('script.voice', 'voice')
       .leftJoinAndSelect('script.reference_scripts', 'reference_script')
       .addSelect('image.prompt')
+      .addSelect('text_background_image.prompt')
       .addSelect('secondary_image.prompt')
       .addSelect('start_frame_image.prompt')
       .addSelect('end_frame_image.prompt')
@@ -2460,6 +2569,9 @@ export class ScriptsService implements OnModuleInit {
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
+            text_background_image_id: (s as any).text_background_image_id ?? null,
+            text_background_video_id:
+              (s as any).text_background_video_id ?? null,
             video_prompt: String((s as any).video_prompt ?? '').trim() || null,
             transition_to_next: (s as any).transition_to_next ?? null,
             visual_effect: (s as any).visual_effect ?? null,
@@ -2470,6 +2582,7 @@ export class ScriptsService implements OnModuleInit {
             image_effects_mode: this.normalizeImageEffectsMode(
               (s as any).image_effects_mode,
             ),
+            scene_tab: this.normalizeSceneTab((s as any).scene_tab),
             image_filter_id: this.normalizeOptionalId(
               (s as any).image_filter_id,
             ),
@@ -2481,6 +2594,18 @@ export class ScriptsService implements OnModuleInit {
             ),
             image_motion_settings: this.normalizeSettingsObject(
               (s as any).image_motion_settings,
+            ),
+            text_animation_text: this.normalizeTextAnimationText(
+              (s as any).text_animation_text,
+            ),
+            text_animation_effect: this.normalizeTextAnimationEffect(
+              (s as any).text_animation_effect,
+            ),
+            text_animation_id: this.normalizeOptionalId(
+              (s as any).text_animation_id,
+            ),
+            text_animation_settings: this.normalizeSettingsObject(
+              (s as any).text_animation_settings,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,
@@ -2670,6 +2795,9 @@ export class ScriptsService implements OnModuleInit {
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
+            text_background_image_id: (s as any).text_background_image_id ?? null,
+            text_background_video_id:
+              (s as any).text_background_video_id ?? null,
             video_prompt: s.video_prompt ?? null,
             transition_to_next: s.transition_to_next ?? null,
             visual_effect: s.visual_effect ?? null,
@@ -2680,6 +2808,7 @@ export class ScriptsService implements OnModuleInit {
             image_effects_mode: this.normalizeImageEffectsMode(
               (s as any).image_effects_mode,
             ),
+            scene_tab: this.normalizeSceneTab((s as any).scene_tab),
             image_filter_id: this.normalizeOptionalId(
               (s as any).image_filter_id,
             ),
@@ -2691,6 +2820,18 @@ export class ScriptsService implements OnModuleInit {
             ),
             image_motion_settings: this.normalizeSettingsObject(
               (s as any).image_motion_settings,
+            ),
+            text_animation_text: this.normalizeTextAnimationText(
+              (s as any).text_animation_text,
+            ),
+            text_animation_effect: this.normalizeTextAnimationEffect(
+              (s as any).text_animation_effect,
+            ),
+            text_animation_id: this.normalizeOptionalId(
+              (s as any).text_animation_id,
+            ),
+            text_animation_settings: this.normalizeSettingsObject(
+              (s as any).text_animation_settings,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,

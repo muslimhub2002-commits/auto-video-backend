@@ -47,6 +47,15 @@ const ALLOWED_IMAGE_MOTION_EFFECTS = [
 ] as const;
 
 const ALLOWED_IMAGE_EFFECTS_MODES = ['quick', 'detailed'] as const;
+const ALLOWED_SCENE_TABS = ['image', 'video', 'text'] as const;
+const ALLOWED_TEXT_ANIMATION_EFFECTS = [
+  'popInBounceHook',
+  'slideCutFast',
+  'scalePunchZoom',
+  'maskReveal',
+  'glitchFlashHook',
+  'kineticTypography',
+] as const;
 
 class SentenceSoundEffectInput {
   @IsUUID()
@@ -125,6 +134,14 @@ class CreateSentenceInput {
   @IsOptional()
   video_id?: string;
 
+  @IsUUID()
+  @IsOptional()
+  text_background_image_id?: string;
+
+  @IsUUID()
+  @IsOptional()
+  text_background_video_id?: string;
+
   @IsString()
   @IsOptional()
   video_prompt?: string;
@@ -152,6 +169,10 @@ class CreateSentenceInput {
   @IsOptional()
   image_effects_mode?: (typeof ALLOWED_IMAGE_EFFECTS_MODES)[number] | null;
 
+  @IsIn(ALLOWED_SCENE_TABS)
+  @IsOptional()
+  scene_tab?: (typeof ALLOWED_SCENE_TABS)[number] | null;
+
   @IsUUID()
   @IsOptional()
   image_filter_id?: string | null;
@@ -167,6 +188,22 @@ class CreateSentenceInput {
   @IsObject()
   @IsOptional()
   image_motion_settings?: Record<string, unknown> | null;
+
+  @IsString()
+  @IsOptional()
+  text_animation_text?: string | null;
+
+  @IsIn(ALLOWED_TEXT_ANIMATION_EFFECTS)
+  @IsOptional()
+  text_animation_effect?: (typeof ALLOWED_TEXT_ANIMATION_EFFECTS)[number] | null;
+
+  @IsUUID()
+  @IsOptional()
+  text_animation_id?: string | null;
+
+  @IsObject()
+  @IsOptional()
+  text_animation_settings?: Record<string, unknown> | null;
 
   @IsBoolean()
   @IsOptional()

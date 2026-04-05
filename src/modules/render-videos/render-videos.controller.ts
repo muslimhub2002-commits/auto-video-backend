@@ -22,6 +22,11 @@ import { CreateTestRenderVideoDto } from './dto/create-test-render-video.dto';
 import { CreateRenderVideoUrlDto } from './dto/create-render-video-url.dto';
 import { RenderVideosService } from './render-videos.service';
 import { isSubscribeLikeSentence } from './render-videos.constants';
+import {
+  resolveTextSceneBackgroundMode,
+  sentenceUsesPrimaryImageTransport,
+  TEXT_ANIMATION_EFFECT_VALUES,
+} from './render-videos.types';
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -44,59 +49,7 @@ export class RenderVideosController {
   constructor(private readonly renderVideosService: RenderVideosService) {}
 
   private parseMultipartSentences(body: { sentences: string }): SentenceInput[] {
-    let sentences: Array<{
-      text: string;
-      isSuspense?: boolean;
-      soundEffectsAlignToSceneEnd?: boolean;
-      secondaryImageUrl?: string | null;
-      mediaType?: 'image' | 'video';
-      videoUrl?: string;
-      soundEffects?: Array<{
-        src: string;
-        delaySeconds?: number;
-        durationSeconds?: number;
-        volumePercent?: number;
-      }>;
-      transitionSoundEffects?: Array<{
-        src: string;
-        delaySeconds?: number;
-        volumePercent?: number;
-      }>;
-      transitionToNext?:
-        | 'none'
-        | 'glitch'
-        | 'whip'
-        | 'flash'
-        | 'fade'
-        | 'chromaLeak'
-        | null;
-      visualEffect?:
-        | 'none'
-        | 'colorGrading'
-        | 'animatedLighting'
-        | 'glassSubtle'
-        | 'glassReflections'
-        | 'glassStrong'
-        | null;
-      imageMotionEffect?:
-        | 'default'
-        | 'slowZoomIn'
-        | 'slowZoomOut'
-        | 'diagonalDrift'
-        | 'cinematicPan'
-        | 'focusShift'
-        | 'parallaxMotion'
-        | 'shakeMicroMotion'
-        | 'splitMotion'
-        | 'rotationDrift'
-        | null;
-      imageMotionSpeed?: number | null;
-      imageEffectsMode?: 'quick' | 'detailed' | null;
-      imageFilterId?: string | null;
-      imageFilterSettings?: Record<string, unknown> | null;
-      motionEffectId?: string | null;
-      imageMotionSettings?: Record<string, unknown> | null;
-    }>;
+    let sentences: Array<Record<string, unknown>>;
 
     try {
       sentences = JSON.parse(body.sentences) as typeof sentences;
@@ -114,74 +67,61 @@ export class RenderVideosController {
         typeof sentence.videoUrl === 'string' && sentence.videoUrl.trim().length > 0
           ? sentence.videoUrl.trim()
           : undefined;
+      const textBackgroundVideoUrl =
+        typeof (sentence as any).textBackgroundVideoUrl === 'string' &&
+        String((sentence as any).textBackgroundVideoUrl).trim().length > 0
+          ? String((sentence as any).textBackgroundVideoUrl).trim()
+          : undefined;
+      const mediaType =
+        sentence.mediaType === 'image' ||
+        sentence.mediaType === 'video' ||
+        sentence.mediaType === 'text'
+          ? sentence.mediaType
+          : undefined;
+      const textAnimationEffect =
+        typeof sentence.textAnimationEffect === 'string' &&
+        (TEXT_ANIMATION_EFFECT_VALUES as readonly string[]).includes(
+          sentence.textAnimationEffect,
+        )
+          ? (sentence.textAnimationEffect as SentenceInput['textAnimationEffect'])
+          : undefined;
+      const textAnimationText =
+        typeof sentence.textAnimationText === 'string' &&
+        sentence.textAnimationText.trim().length > 0
+          ? sentence.textAnimationText.trim()
+          : undefined;
+      const textAnimationSettings =
+        sentence.textAnimationSettings &&
+        typeof sentence.textAnimationSettings === 'object' &&
+        !Array.isArray(sentence.textAnimationSettings)
+          ? (sentence.textAnimationSettings as Record<string, unknown>)
+          : undefined;
       const {
         secondaryImageUrl: _secondaryImageUrl,
         videoUrl: _videoUrl,
+        textBackgroundVideoUrl: _textBackgroundVideoUrl,
+        mediaType: _mediaType,
+        textAnimationEffect: _textAnimationEffect,
+        textAnimationText: _textAnimationText,
+        textAnimationSettings: _textAnimationSettings,
         ...rest
       } = sentence;
 
       return {
-        ...rest,
+        ...(rest as SentenceInput),
+        ...(mediaType ? { mediaType } : {}),
         ...(secondaryImageUrl ? { secondaryImageUrl } : {}),
         ...(videoUrl ? { videoUrl } : {}),
+        ...(textBackgroundVideoUrl ? { textBackgroundVideoUrl } : {}),
+        ...(textAnimationEffect ? { textAnimationEffect } : {}),
+        ...(textAnimationText ? { textAnimationText } : {}),
+        ...(textAnimationSettings ? { textAnimationSettings } : {}),
       };
     });
   }
 
   private validateMultipartSentences(
-    sentences: Array<{
-      text: string;
-      isSuspense?: boolean;
-      soundEffectsAlignToSceneEnd?: boolean;
-      secondaryImageUrl?: string | null;
-      mediaType?: 'image' | 'video';
-      videoUrl?: string;
-      soundEffects?: Array<{
-        src: string;
-        delaySeconds?: number;
-        durationSeconds?: number;
-        volumePercent?: number;
-      }>;
-      transitionSoundEffects?: Array<{
-        src: string;
-        delaySeconds?: number;
-        volumePercent?: number;
-      }>;
-      transitionToNext?:
-        | 'none'
-        | 'glitch'
-        | 'whip'
-        | 'flash'
-        | 'fade'
-        | 'chromaLeak'
-        | null;
-      visualEffect?:
-        | 'none'
-        | 'colorGrading'
-        | 'animatedLighting'
-        | 'glassSubtle'
-        | 'glassReflections'
-        | 'glassStrong'
-        | null;
-      imageMotionEffect?:
-        | 'default'
-        | 'slowZoomIn'
-        | 'slowZoomOut'
-        | 'diagonalDrift'
-        | 'cinematicPan'
-        | 'focusShift'
-        | 'parallaxMotion'
-        | 'shakeMicroMotion'
-        | 'splitMotion'
-        | 'rotationDrift'
-        | null;
-      imageMotionSpeed?: number | null;
-      imageEffectsMode?: 'quick' | 'detailed' | null;
-      imageFilterId?: string | null;
-      imageFilterSettings?: Record<string, unknown> | null;
-      motionEffectId?: string | null;
-      imageMotionSettings?: Record<string, unknown> | null;
-    }>,
+    sentences: SentenceInput[],
     minimumCount = 1,
   ) {
     if (!Array.isArray(sentences) || sentences.length < minimumCount) {
@@ -223,11 +163,52 @@ export class RenderVideosController {
       'rotationDrift',
     ] as const);
 
+    const allowedTextAnimationEffects = new Set(
+      TEXT_ANIMATION_EFFECT_VALUES,
+    );
+
     for (const [idx, s] of sentences.entries()) {
       const mediaType = s?.mediaType;
-      if (mediaType && mediaType !== 'image' && mediaType !== 'video') {
+      if (
+        mediaType &&
+        mediaType !== 'image' &&
+        mediaType !== 'video' &&
+        mediaType !== 'text'
+      ) {
         throw new BadRequestException(
-          `Invalid mediaType for sentence ${idx + 1}. Expected 'image' or 'video'.`,
+          `Invalid mediaType for sentence ${idx + 1}. Expected 'image', 'video', or 'text'.`,
+        );
+      }
+
+      const textAnimationEffect = s?.textAnimationEffect;
+      if (
+        textAnimationEffect != null &&
+        (typeof textAnimationEffect !== 'string' ||
+          !allowedTextAnimationEffects.has(textAnimationEffect))
+      ) {
+        throw new BadRequestException(
+          `Invalid textAnimationEffect for sentence ${idx + 1}.`,
+        );
+      }
+
+      const textAnimationText = s?.textAnimationText;
+      if (
+        textAnimationText != null &&
+        typeof textAnimationText !== 'string'
+      ) {
+        throw new BadRequestException(
+          `Invalid textAnimationText for sentence ${idx + 1}.`,
+        );
+      }
+
+      const textAnimationSettings = s?.textAnimationSettings;
+      if (
+        textAnimationSettings != null &&
+        (typeof textAnimationSettings !== 'object' ||
+          Array.isArray(textAnimationSettings))
+      ) {
+        throw new BadRequestException(
+          `Invalid textAnimationSettings for sentence ${idx + 1}.`,
         );
       }
 
@@ -433,20 +414,14 @@ export class RenderVideosController {
   }
 
   private alignUploadedImages(
-    sentences: Array<{
-      text: string;
-      mediaType?: 'image' | 'video';
-      videoUrl?: string;
-    }>,
+    sentences: SentenceInput[],
     images: Multer.File[],
   ) {
     const alignedImages: Array<Multer.File | null> = [];
     let imageCursor = 0;
     for (const s of sentences) {
       const isSubscribe = isSubscribeLikeSentence(s.text || '');
-      const wantsVideo =
-        s.mediaType === 'video' && !!String(s.videoUrl ?? '').trim();
-      if (isSubscribe || wantsVideo) {
+      if (isSubscribe || !sentenceUsesPrimaryImageTransport(s)) {
         alignedImages.push(null);
       } else {
         alignedImages.push(images[imageCursor] ?? null);
@@ -454,6 +429,37 @@ export class RenderVideosController {
       }
     }
     return alignedImages;
+  }
+
+  private alignUploadedTextBackgroundVideos(
+    sentences: SentenceInput[],
+    videos: Multer.File[],
+  ) {
+    const alignedVideos: Array<Multer.File | null> = [];
+    let videoCursor = 0;
+
+    for (const sentence of sentences) {
+      const backgroundMode = resolveTextSceneBackgroundMode(
+        sentence?.textAnimationSettings,
+      );
+      const hasRemoteVideo = Boolean(
+        String(sentence?.textBackgroundVideoUrl ?? '').trim(),
+      );
+
+      if (
+        sentence?.mediaType !== 'text' ||
+        backgroundMode !== 'video' ||
+        hasRemoteVideo
+      ) {
+        alignedVideos.push(null);
+        continue;
+      }
+
+      alignedVideos.push(videos[videoCursor] ?? null);
+      videoCursor += 1;
+    }
+
+    return alignedVideos;
   }
 
   private parseMultipartRenderOptions(
@@ -522,7 +528,9 @@ export class RenderVideosController {
           contentType: 'multipart/form-data',
           fields: [
             'voiceOver (file)',
+            'audioUrl (string, optional when voiceOver is omitted)',
             'images (files)',
+            'textBackgroundVideos (files)',
             'sentences (json string)',
             'scriptLength',
           ],
@@ -539,7 +547,9 @@ export class RenderVideosController {
           contentType: 'multipart/form-data',
           fields: [
             'voiceOver (file, optional when isSilent=true)',
+            'audioUrl (string, optional when voiceOver is omitted)',
             'images (files)',
+            'textBackgroundVideos (files)',
             'sentences (json string)',
             'scriptLength',
             'isSilent (optional)',
@@ -671,14 +681,42 @@ export class RenderVideosController {
         String((s as any).videoUrl).trim()
           ? String((s as any).videoUrl).trim()
           : undefined;
+      const textBackgroundVideoUrl =
+        typeof (s as any).textBackgroundVideoUrl === 'string' &&
+        String((s as any).textBackgroundVideoUrl).trim()
+          ? String((s as any).textBackgroundVideoUrl).trim()
+          : undefined;
+      const textAnimationText =
+        typeof (s as any).textAnimationText === 'string' &&
+        String((s as any).textAnimationText).trim()
+          ? String((s as any).textAnimationText).trim()
+          : undefined;
+      const textAnimationSettings =
+        (s as any).textAnimationSettings &&
+        typeof (s as any).textAnimationSettings === 'object' &&
+        !Array.isArray((s as any).textAnimationSettings)
+          ? ((s as any).textAnimationSettings as Record<string, unknown>)
+          : undefined;
+      const mediaType =
+        s.mediaType === 'video'
+          ? 'video'
+          : s.mediaType === 'text'
+            ? 'text'
+            : 'image';
 
       return {
         text: s.text,
         isSuspense: s.isSuspense,
         soundEffectsAlignToSceneEnd: s.soundEffectsAlignToSceneEnd,
         ...(secondaryImageUrl ? { secondaryImageUrl } : {}),
-        mediaType: s.mediaType === 'video' ? 'video' : 'image',
+        mediaType,
         ...(videoUrl ? { videoUrl } : {}),
+        ...(textBackgroundVideoUrl ? { textBackgroundVideoUrl } : {}),
+        ...(s.textAnimationEffect != null
+          ? { textAnimationEffect: s.textAnimationEffect }
+          : {}),
+        ...(textAnimationText ? { textAnimationText } : {}),
+        ...(textAnimationSettings ? { textAnimationSettings } : {}),
         ...(Array.isArray((s as any).soundEffects)
           ? { soundEffects: (s as any).soundEffects }
           : {}),
@@ -753,6 +791,7 @@ export class RenderVideosController {
       audioUrl: body.audioUrl,
       sentences: hydratedSentences,
       imageFiles: new Array(sentences.length).fill(null),
+      textBackgroundVideoFiles: new Array(sentences.length).fill(null),
       imageUrls,
       scriptLength: body.scriptLength,
       audioDurationSeconds: body.audioDurationSeconds,
@@ -780,15 +819,16 @@ export class RenderVideosController {
       [
         { name: 'voiceOver', maxCount: 1 },
         { name: 'images', maxCount: 200 },
+        { name: 'textBackgroundVideos', maxCount: 200 },
       ],
       {
         // Intentionally use memory storage (no local disk writes).
         // Limits help avoid OOM/timeouts (especially on serverless platforms).
         limits: {
-          files: 201,
+          files: 401,
           // Per-file size limit (bytes). Tune as needed for your typical inputs.
-          fileSize: 10 * 1024 * 1024,
-          fields: 50,
+          fileSize: 50 * 1024 * 1024,
+          fields: 70,
         },
       },
     ),
@@ -799,6 +839,7 @@ export class RenderVideosController {
     files: {
       voiceOver?: Multer.File[];
       images?: Multer.File[];
+      textBackgroundVideos?: Multer.File[];
     },
   ) {
     // if (this.renderVideosService.isServerlessRuntime()) {
@@ -809,14 +850,20 @@ export class RenderVideosController {
 
     const voice = files.voiceOver?.[0];
     const images = files.images ?? [];
+    const textBackgroundVideos = files.textBackgroundVideos ?? [];
     const sentences = this.parseMultipartSentences(body);
     this.validateMultipartSentences(sentences, 1);
+    const audioUrl = String(body.audioUrl ?? '').trim() || null;
 
-    if (!voice?.buffer?.length) {
-      throw new BadRequestException('Missing `voiceOver` upload');
+    if (!voice?.buffer?.length && !audioUrl) {
+      throw new BadRequestException('Missing `voiceOver` upload or `audioUrl`');
     }
 
     const alignedImages = this.alignUploadedImages(sentences, images);
+    const alignedTextBackgroundVideos = this.alignUploadedTextBackgroundVideos(
+      sentences,
+      textBackgroundVideos,
+    );
     const {
       audioDurationSeconds,
       useLowerFps,
@@ -839,6 +886,7 @@ export class RenderVideosController {
             mimeType: voice.mimetype,
           }
         : null,
+      audioUrl,
       sentences,
       imageFiles: alignedImages.map((f) =>
         f
@@ -846,6 +894,15 @@ export class RenderVideosController {
               buffer: f.buffer,
               originalName: f.originalname,
               mimeType: f.mimetype,
+            }
+          : null,
+      ),
+      textBackgroundVideoFiles: alignedTextBackgroundVideos.map((file) =>
+        file
+          ? {
+              buffer: file.buffer,
+              originalName: file.originalname,
+              mimeType: file.mimetype,
             }
           : null,
       ),
@@ -870,12 +927,13 @@ export class RenderVideosController {
       [
         { name: 'voiceOver', maxCount: 1 },
         { name: 'images', maxCount: 200 },
+        { name: 'textBackgroundVideos', maxCount: 200 },
       ],
       {
         limits: {
-          files: 201,
-          fileSize: 10 * 1024 * 1024,
-          fields: 60,
+          files: 401,
+          fileSize: 50 * 1024 * 1024,
+          fields: 80,
         },
       },
     ),
@@ -886,6 +944,7 @@ export class RenderVideosController {
     files: {
       voiceOver?: Multer.File[];
       images?: Multer.File[];
+      textBackgroundVideos?: Multer.File[];
     },
   ) {
     // if (this.renderVideosService.isServerlessRuntime()) {
@@ -896,17 +955,23 @@ export class RenderVideosController {
 
     const voice = files.voiceOver?.[0];
     const images = files.images ?? [];
+    const textBackgroundVideos = files.textBackgroundVideos ?? [];
     const sentences = this.parseMultipartSentences(body);
     this.validateMultipartSentences(sentences, 2);
 
     const isSilent = body.isSilent === 'true';
-    if (!isSilent && !voice?.buffer?.length) {
+    const audioUrl = String(body.audioUrl ?? '').trim() || null;
+    if (!isSilent && !voice?.buffer?.length && !audioUrl) {
       throw new BadRequestException(
-        'Missing `voiceOver` upload for non-silent test render',
+        'Missing `voiceOver` upload or `audioUrl` for non-silent test render',
       );
     }
 
     const alignedImages = this.alignUploadedImages(sentences, images);
+    const alignedTextBackgroundVideos = this.alignUploadedTextBackgroundVideos(
+      sentences,
+      textBackgroundVideos,
+    );
     const {
       audioDurationSeconds,
       useLowerFps,
@@ -929,6 +994,7 @@ export class RenderVideosController {
             mimeType: voice.mimetype,
           }
         : null,
+      audioUrl,
       allowSilentAudio: isSilent,
       sentences,
       imageFiles: alignedImages.map((f) =>
@@ -937,6 +1003,15 @@ export class RenderVideosController {
               buffer: f.buffer,
               originalName: f.originalname,
               mimeType: f.mimetype,
+            }
+          : null,
+      ),
+      textBackgroundVideoFiles: alignedTextBackgroundVideos.map((file) =>
+        file
+          ? {
+              buffer: file.buffer,
+              originalName: file.originalname,
+              mimeType: file.mimetype,
             }
           : null,
       ),

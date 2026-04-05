@@ -1,6 +1,49 @@
+export type TextAnimationEffect =
+  | 'popInBounceHook'
+  | 'slideCutFast'
+  | 'scalePunchZoom'
+  | 'maskReveal'
+  | 'glitchFlashHook'
+  | 'kineticTypography';
+
+export type TextAnimationSettings = {
+  presetKey?: TextAnimationEffect | 'custom';
+  speed?: number;
+  horizontalAlign?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  offsetX?: number;
+  offsetY?: number;
+  fontSizePercent?: number;
+  maxWidthPercent?: number;
+  fontWeight?: number;
+  letterSpacingEm?: number;
+  lineHeight?: number;
+  textColor?: string;
+  accentColor?: string;
+  strokeColor?: string;
+  strokeWidthPx?: number;
+  shadowOpacity?: number;
+  shadowBlurPx?: number;
+  backgroundMode?:
+    | 'inheritImage'
+    | 'image'
+    | 'inheritVideo'
+    | 'video'
+    | 'solid'
+    | 'gradient';
+  backgroundColor?: string;
+  gradientFrom?: string;
+  gradientTo?: string;
+  gradientAngleDeg?: number;
+  backgroundDim?: number;
+  animationIntensity?: number;
+  textCase?: 'original' | 'uppercase';
+};
+
 export type TimelineScene = {
   index: number;
   text: string;
+  mediaType?: 'image' | 'video' | 'text';
   subtitleWords?: Array<{
     text: string;
     startFrame: number;
@@ -15,6 +58,7 @@ export type TimelineScene = {
   imageSrc?: string; // static file path (publicDir) or absolute URL
   secondaryImageSrc?: string;
   videoSrc?: string; // static file path (publicDir) or absolute URL
+  textBackgroundVideoSrc?: string;
   soundEffects?: Array<{
     src: string; // static file path (publicDir) or absolute URL
     delaySeconds?: number;
@@ -37,6 +81,9 @@ export type TimelineScene = {
     | 'glassReflections'
     | 'glassStrong'
     | null;
+  textAnimationEffect?: TextAnimationEffect | null;
+  textAnimationText?: string;
+  textAnimationSettings?: TextAnimationSettings | Record<string, unknown> | null;
   imageMotionEffect?:
     | 'default'
     | 'slowZoomIn'

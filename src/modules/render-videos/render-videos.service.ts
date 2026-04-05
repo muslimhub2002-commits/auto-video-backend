@@ -20,6 +20,10 @@ import type {
   UploadedAsset,
 } from './render-videos.types';
 import {
+  resolveTextSceneBackgroundMode,
+  sentenceUsesPrimaryImageTransport,
+} from './render-videos.types';
+import {
   CHROMA_LEAK_SFX_CLOUDINARY_URL,
   SUBSCRIBE_VIDEO_CLOUDINARY_URL,
   isSubscribeLikeSentence,
@@ -177,6 +181,7 @@ export class RenderVideosService implements OnModuleInit {
     allowSilentAudio?: boolean;
     sentences: SentenceInput[];
     imageFiles: Array<UploadedAsset | null>;
+    textBackgroundVideoFiles: Array<UploadedAsset | null>;
     imageUrls?: Array<string | null> | null;
     scriptLength: string;
     audioDurationSeconds?: number;
@@ -594,6 +599,7 @@ export class RenderVideosService implements OnModuleInit {
       allowSilentAudio?: boolean;
       sentences: SentenceInput[];
       imageFiles: Array<UploadedAsset | null>;
+      textBackgroundVideoFiles: Array<UploadedAsset | null>;
       imageUrls?: Array<string | null> | null;
       scriptLength: string;
       audioDurationSeconds?: number;
@@ -707,10 +713,26 @@ export class RenderVideosService implements OnModuleInit {
         throw new Error('imageUrls length must match sentences length');
       }
 
+      const providedTextBackgroundVideoFiles = Array.isArray(
+        params.textBackgroundVideoFiles,
+      )
+        ? params.textBackgroundVideoFiles
+        : null;
+      if (
+        !providedTextBackgroundVideoFiles ||
+        providedTextBackgroundVideoFiles.length !== params.sentences.length
+      ) {
+        throw new Error(
+          'textBackgroundVideoFiles length must match sentences length',
+        );
+      }
+
       const stageSecondaryImageForSentence = async (
         index: number,
         localJobDir?: string,
       ) => {
+        if (params.sentences[index]?.mediaType === 'text') return;
+
         const current = String(params.sentences[index]?.secondaryImageUrl ?? '').trim();
         if (!current) return;
 
@@ -754,6 +776,88 @@ export class RenderVideosService implements OnModuleInit {
         params.sentences[index].secondaryImageUrl = rel;
       };
 
+      const stageTextBackgroundVideoForSentence = async (
+        index: number,
+        localJobDir?: string,
+      ) => {
+        const sentence = params.sentences[index];
+        if (sentence?.mediaType !== 'text') return;
+
+        const backgroundMode = resolveTextSceneBackgroundMode(
+          sentence.textAnimationSettings,
+        );
+        if (backgroundMode !== 'inheritVideo' && backgroundMode !== 'video') {
+          return;
+        }
+
+        const current = String(sentence.textBackgroundVideoUrl ?? '').trim();
+        const uploadedFile = providedTextBackgroundVideoFiles[index];
+        const rel = `videos/scene-${String(index + 1).padStart(3, '0')}-text-background`;
+
+        if (useLambdaTestMode) {
+          if (current) return;
+
+          if (!uploadedFile?.buffer) {
+            throw new Error(
+              `Missing text background video for text scene ${index + 1}.`,
+            );
+          }
+
+          const uploaded = await this.uploadBufferToCloudinary({
+            buffer: uploadedFile.buffer,
+            folder: 'auto-video-generator/render-inputs/videos',
+            resource_type: 'video',
+          });
+
+          params.sentences[index].textBackgroundVideoUrl = uploaded.secure_url;
+          return;
+        }
+
+        if (!localJobDir) {
+          throw new Error(
+            'Missing local job directory for staging text background videos',
+          );
+        }
+
+        if (current) {
+          const localStatic = this.readLocalStaticFileToBuffer(current);
+          const downloaded =
+            localStatic ??
+            (await this.downloadUrlToBuffer({
+              url: current,
+              maxBytes: 100 * 1024 * 1024,
+              label: `text background video for sentence ${index + 1}`,
+            }));
+
+          const ext = this.inferExt({
+            originalName: localStatic?.fileName ?? current,
+            mimeType: 'mimeType' in downloaded ? downloaded.mimeType : undefined,
+            fallback: '.mp4',
+          });
+
+          const stagedRel = `${rel}${ext}`;
+          fs.writeFileSync(join(localJobDir, stagedRel), downloaded.buffer);
+          params.sentences[index].textBackgroundVideoUrl = stagedRel;
+          return;
+        }
+
+        if (!uploadedFile?.buffer) {
+          throw new Error(
+            `Missing text background video for text scene ${index + 1}.`,
+          );
+        }
+
+        const ext = this.inferExt({
+          originalName: uploadedFile.originalName,
+          mimeType: uploadedFile.mimeType,
+          fallback: '.mp4',
+        });
+
+        const stagedRel = `${rel}${ext}`;
+        fs.writeFileSync(join(localJobDir, stagedRel), uploadedFile.buffer);
+        params.sentences[index].textBackgroundVideoUrl = stagedRel;
+      };
+
       const hasSubscribeSentence = params.sentences.some((s) =>
         this.isSubscribeLikeSentence(s?.text || ''),
       );
@@ -775,10 +879,9 @@ export class RenderVideosService implements OnModuleInit {
             continue;
           }
 
-          const wantsVideo =
-            params.sentences[i]?.mediaType === 'video' &&
-            !!String(params.sentences[i]?.videoUrl ?? '').trim();
-          if (wantsVideo) {
+          await stageTextBackgroundVideoForSentence(i);
+
+          if (!sentenceUsesPrimaryImageTransport(params.sentences[i])) {
             imageSrcs.push('');
             continue;
           }
@@ -813,7 +916,7 @@ export class RenderVideosService implements OnModuleInit {
           const file = params.imageFiles[i];
           if (!file?.buffer) {
             throw new Error(
-              `Missing image upload for sentence ${i + 1} (non-subscribe sentence)`,
+              `Missing image upload for scene ${i + 1}.`,
             );
           }
 
@@ -1006,10 +1109,9 @@ export class RenderVideosService implements OnModuleInit {
             continue;
           }
 
-          const wantsVideo =
-            params.sentences[i]?.mediaType === 'video' &&
-            !!String(params.sentences[i]?.videoUrl ?? '').trim();
-          if (wantsVideo) {
+          await stageTextBackgroundVideoForSentence(i, jobDir);
+
+          if (!sentenceUsesPrimaryImageTransport(params.sentences[i])) {
             imageSrcs.push('');
             continue;
           }
@@ -1042,7 +1144,7 @@ export class RenderVideosService implements OnModuleInit {
           const file = params.imageFiles[i];
           if (!file?.buffer) {
             throw new Error(
-              `Missing image upload for sentence ${i + 1} (non-subscribe sentence)`,
+              `Missing image upload for scene ${i + 1}.`,
             );
           }
 

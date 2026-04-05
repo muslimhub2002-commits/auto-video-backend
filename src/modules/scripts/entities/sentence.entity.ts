@@ -40,6 +40,12 @@ export class Sentence {
   @Column({ type: 'uuid', nullable: true })
   video_id: string | null;
 
+  @Column({ type: 'uuid', nullable: true })
+  text_background_image_id: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  text_background_video_id: string | null;
+
   // Optional per-sentence video prompt (used for AI video generation modes).
   @Column({ type: 'text', nullable: true })
   video_prompt: string | null;
@@ -68,6 +74,9 @@ export class Sentence {
   @Column({ type: 'text', nullable: true })
   image_effects_mode: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  scene_tab: string | null;
+
   @Column({ type: 'uuid', nullable: true })
   image_filter_id: string | null;
 
@@ -79,6 +88,18 @@ export class Sentence {
 
   @Column({ type: 'jsonb', nullable: true })
   image_motion_settings: Record<string, unknown> | null;
+
+  @Column({ type: 'text', nullable: true })
+  text_animation_text: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  text_animation_effect: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  text_animation_id: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  text_animation_settings: Record<string, unknown> | null;
 
   // Optional per-cut custom transition sounds for the cut from this sentence
   // into the next one. Stored inline so unsaved multi-sound mixes can round-trip.
@@ -136,6 +157,14 @@ export class Sentence {
   @ManyToOne(() => Video, { nullable: true })
   @JoinColumn({ name: 'video_id' })
   video: Video | null;
+
+  @ManyToOne(() => Image, { nullable: true })
+  @JoinColumn({ name: 'text_background_image_id' })
+  textBackgroundImage: Image | null;
+
+  @ManyToOne(() => Video, { nullable: true })
+  @JoinColumn({ name: 'text_background_video_id' })
+  textBackgroundVideo: Video | null;
 
   @OneToMany(
     () => SentenceSoundEffect,

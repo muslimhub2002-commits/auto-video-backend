@@ -143,6 +143,9 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       if (scene.secondaryImageSrc) {
         sources.add(resolveMediaSrc(scene.secondaryImageSrc));
       }
+      if (scene.textBackgroundVideoSrc) {
+        sources.add(resolveMediaSrc(scene.textBackgroundVideoSrc));
+      }
       if (scene.videoSrc) sources.add(resolveMediaSrc(scene.videoSrc));
 
       const soundEffects = Array.isArray(scene.soundEffects)

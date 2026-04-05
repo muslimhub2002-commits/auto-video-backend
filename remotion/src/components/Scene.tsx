@@ -44,6 +44,7 @@ import { getChromaParams } from '../utils/transitions';
 import { GlitchImage } from './GlitchImage';
 import { ProgressiveSubtitles } from './ProgressiveSubtitles';
 import { SuspenseOverlay } from './SuspenseOverlay';
+import { TextScene } from './TextScene';
 // import { loadFont as loadNotoKufiArabic } from '@remotion/google-fonts/NotoKufiArabic';
 
 // const { fontFamily: notoKufiArabicFontFamily } = loadNotoKufiArabic();
@@ -338,6 +339,7 @@ export const Scene: React.FC<{
       normalizedLanguage.startsWith('ar-') ||
       normalizedLanguage.startsWith('ar_') ||
       normalizedLanguage.includes('arab');
+    const isTextScene = scene.mediaType === 'text';
     const subtitleFontFamily = isArabic
       ? `Noto Kufi Arabic, sans-serif`
       : 'Oswald, system-ui, sans-serif';
@@ -482,19 +484,24 @@ export const Scene: React.FC<{
       : 0;
     const whipBlur = Math.min(WHIP_MAX_BLUR_PX, blurIn + blurOut);
 
+    const shouldApplyImageMotion = !isTextScene;
     const motionEffect = (scene.imageMotionEffect ?? 'default') as SceneMotionEffect;
-    const resolvedMotion = normalizeImageMotionSettings(
-      scene.imageMotionSettings,
-      motionEffect,
-      scene.imageMotionSpeed,
-    );
-    const motionSpeed = resolvedMotion.speed;
+    const resolvedMotion = shouldApplyImageMotion
+      ? normalizeImageMotionSettings(
+          scene.imageMotionSettings,
+          motionEffect,
+          scene.imageMotionSpeed,
+        )
+      : null;
+    const motionSpeed = resolvedMotion?.speed ?? 1;
     const motionEasing = Easing.inOut(Easing.cubic);
     const forwardMotionProgress =
       Math.max(0, elapsedSeconds / MOTION_CYCLE_DURATION_SECONDS) * motionSpeed;
     const scaledMotionProgress = getPingPongProgress(forwardMotionProgress);
-    const usesAutomaticDefaultScale = motionEffect === 'default';
-    const motionScale = usesAutomaticDefaultScale
+    const usesAutomaticDefaultScale = shouldApplyImageMotion && motionEffect === 'default';
+    const motionScale = !resolvedMotion
+      ? 1
+      : usesAutomaticDefaultScale
       ? clampNumber(1 + elapsedSeconds * IMAGE_ZOOM_PER_SECOND * motionSpeed, 0.5, 2)
       : interpolateMotionValue({
           start: resolvedMotion.startScale,
@@ -504,31 +511,39 @@ export const Scene: React.FC<{
           noLimit: resolvedMotion.scaleEndNoLimit === true,
           easing: motionEasing,
         });
-    const motionTranslateX = interpolateMotionValue({
-      start: width * (resolvedMotion.translateXStart / 100),
-      end: width * (resolvedMotion.translateXEnd / 100),
-      boundedProgress: scaledMotionProgress,
-      extendedProgress: forwardMotionProgress,
-      noLimit: resolvedMotion.translateXEndNoLimit === true,
-      easing: motionEasing,
-    });
-    const motionTranslateY = interpolateMotionValue({
-      start: height * (resolvedMotion.translateYStart / 100),
-      end: height * (resolvedMotion.translateYEnd / 100),
-      boundedProgress: scaledMotionProgress,
-      extendedProgress: forwardMotionProgress,
-      noLimit: resolvedMotion.translateYEndNoLimit === true,
-      easing: motionEasing,
-    });
-    const motionRotate = interpolateMotionValue({
-      start: resolvedMotion.rotateStart,
-      end: resolvedMotion.rotateEnd,
-      boundedProgress: scaledMotionProgress,
-      extendedProgress: forwardMotionProgress,
-      noLimit: resolvedMotion.rotateEndNoLimit === true,
-      easing: motionEasing,
-    });
-    const motionTransformOrigin = `${resolvedMotion.originX.toFixed(2)}% ${resolvedMotion.originY.toFixed(2)}%`;
+    const motionTranslateX = !resolvedMotion
+      ? 0
+      : interpolateMotionValue({
+          start: width * (resolvedMotion.translateXStart / 100),
+          end: width * (resolvedMotion.translateXEnd / 100),
+          boundedProgress: scaledMotionProgress,
+          extendedProgress: forwardMotionProgress,
+          noLimit: resolvedMotion.translateXEndNoLimit === true,
+          easing: motionEasing,
+        });
+    const motionTranslateY = !resolvedMotion
+      ? 0
+      : interpolateMotionValue({
+          start: height * (resolvedMotion.translateYStart / 100),
+          end: height * (resolvedMotion.translateYEnd / 100),
+          boundedProgress: scaledMotionProgress,
+          extendedProgress: forwardMotionProgress,
+          noLimit: resolvedMotion.translateYEndNoLimit === true,
+          easing: motionEasing,
+        });
+    const motionRotate = !resolvedMotion
+      ? 0
+      : interpolateMotionValue({
+          start: resolvedMotion.rotateStart,
+          end: resolvedMotion.rotateEnd,
+          boundedProgress: scaledMotionProgress,
+          extendedProgress: forwardMotionProgress,
+          noLimit: resolvedMotion.rotateEndNoLimit === true,
+          easing: motionEasing,
+        });
+    const motionTransformOrigin = resolvedMotion
+      ? `${resolvedMotion.originX.toFixed(2)}% ${resolvedMotion.originY.toFixed(2)}%`
+      : '50% 50%';
 
     const whipSkew = (whipBlur / WHIP_MAX_BLUR_PX) * 6 * (whipX >= 0 ? 1 : -1);
 
@@ -822,7 +837,17 @@ export const Scene: React.FC<{
       </AbsoluteFill>
     );
 
-    const mediaContent = scene.videoSrc ? (
+    const mediaContent = isTextScene ? (
+      <TextScene
+        scene={scene}
+        frame={frame}
+        fps={fps}
+        width={width}
+        height={height}
+        isShort={isShort}
+        fontFamily={subtitleFontFamily}
+      />
+    ) : scene.videoSrc ? (
       <OffthreadVideo
         src={resolveMediaSrc(scene.videoSrc)}
         muted
@@ -906,7 +931,7 @@ export const Scene: React.FC<{
           />
         ) : null}
 
-        {showSubtitles ? (
+        {showSubtitles && !isTextScene ? (
           <ProgressiveSubtitles
             text={scene.text}
             subtitleWords={scene.subtitleWords}

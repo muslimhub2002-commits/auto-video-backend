@@ -44,4 +44,54 @@ describe('buildTimeline', () => {
       { text: 'scene', startFrame: 12, endFrame: 30 },
     ]);
   });
+
+  it('preserves text scene metadata and only binds a primary image when needed', () => {
+    const timeline = buildTimeline({
+      language: 'en',
+      sentences: [
+        {
+          text: 'This hook should use a solid background',
+          mediaType: 'text',
+          textAnimationEffect: 'maskReveal',
+          textAnimationText: 'Solid hook',
+          textAnimationSettings: {
+            backgroundMode: 'solid',
+            backgroundColor: '#111827',
+          },
+        },
+        {
+          text: 'This hook should inherit an image background',
+          mediaType: 'text',
+          textAnimationEffect: 'popInBounceHook',
+          textAnimationSettings: {
+            backgroundMode: 'image',
+          },
+        },
+      ],
+      imagePaths: ['', 'hook-background.png'],
+      scriptLength: '30 seconds',
+      audioDurationSeconds: 2,
+      audioSrc: 'audio/voiceover.mp3',
+      addSubtitles: true,
+    });
+
+    expect(timeline.scenes[0]).toMatchObject({
+      mediaType: 'text',
+      textAnimationEffect: 'maskReveal',
+      textAnimationText: 'Solid hook',
+      textAnimationSettings: {
+        backgroundMode: 'solid',
+      },
+    });
+    expect(timeline.scenes[0].imageSrc).toBeUndefined();
+
+    expect(timeline.scenes[1]).toMatchObject({
+      mediaType: 'text',
+      textAnimationEffect: 'popInBounceHook',
+      textAnimationSettings: {
+        backgroundMode: 'image',
+      },
+      imageSrc: 'hook-background.png',
+    });
+  });
 });

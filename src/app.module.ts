@@ -34,10 +34,12 @@ import { MetaCredential } from './modules/meta/entities/meta-credential.entity';
 import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/background-soundtrack.entity';
 import { ImageFilter } from './modules/image-filters/entities/image-filter.entity';
 import { MotionEffect } from './modules/motion-effects/entities/motion-effect.entity';
+import { TextAnimation } from './modules/text-animations/entities/text-animation.entity';
 import { VideosLibraryModule } from './modules/videos-library/videos-library.module';
 import { SoundEffectsModule } from './modules/sound-effects/sound-effects.module';
 import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entity';
 import { SoundEditPreset } from './modules/sound-effects/entities/sound-edit-preset.entity';
+import { TextAnimationsModule } from './modules/text-animations/text-animations.module';
 
 @Module({
   imports: [
@@ -73,6 +75,7 @@ import { SoundEditPreset } from './modules/sound-effects/entities/sound-edit-pre
         Voice,
         ImageFilter,
         MotionEffect,
+        TextAnimation,
         BackgroundSoundtrack,
         SoundEffect,
         SoundEditPreset,
@@ -99,6 +102,7 @@ import { SoundEditPreset } from './modules/sound-effects/entities/sound-edit-pre
     VoicesModule,
     ImageFiltersModule,
     MotionEffectsModule,
+    TextAnimationsModule,
     BackgroundSoundtracksModule,
     SoundEffectsModule,
     ScriptsModule,
