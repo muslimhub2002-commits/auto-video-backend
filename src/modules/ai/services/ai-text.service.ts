@@ -2212,6 +2212,7 @@ export class AiTextService {
   async createVoiceStyleInstructionsStream(dto: {
     script: string;
     model?: string;
+    instructionMode?: 'full' | 'tone-only';
   }) {
     const script = String(dto?.script ?? '').trim();
     if (!script) {
@@ -2219,17 +2220,27 @@ export class AiTextService {
     }
 
     const model = String(dto?.model ?? '').trim() || this.cheapModel;
+    const instructionMode = dto?.instructionMode === 'tone-only' ? 'tone-only' : 'full';
 
     const systemPrompt =
-      'You are a voice director for short-form narration (reels/shorts).\n' +
-      'Given a SCRIPT, you produce detailed style instructions for AI Studio / TTS.\n' +
-      'Respond with ONLY the style instructions text (no headings, no markdown, no quotes).\n\n' +
-      'Requirements:\n' +
-      '- Tone and Speed should differ depending on the sentence\n' +
-      '- Pause on important points to make the message more impactful.\n' +
-      '- Emphasizing important words in script\n' +
-      '- Keep it concise but detailed: 4-10 short lines max.\n' +
-      '- Do NOT repeat the script. Do NOT add meta commentary.';
+      instructionMode === 'tone-only'
+        ? 'You are a voice director for short-form narration (reels/shorts).\n' +
+          'Given a SCRIPT, produce a minimal global tone instruction for AI Studio / TTS.\n' +
+          'Respond with ONLY the instruction text (no headings, no markdown, no quotes).\n\n' +
+          'Requirements:\n' +
+          '- Return a single short instruction, around 3-10 words.\n' +
+          '- Define only the exact overall tone.\n' +
+          '- Do NOT mention sentence-by-sentence variation, speed, pauses, or emphasis.\n' +
+          '- Do NOT repeat the script. Do NOT add meta commentary.'
+        : 'You are a voice director for short-form narration (reels/shorts).\n' +
+          'Given a SCRIPT, you produce detailed style instructions for AI Studio / TTS.\n' +
+          'Respond with ONLY the style instructions text (no headings, no markdown, no quotes).\n\n' +
+          'Requirements:\n' +
+          '- Tone and Speed should differ depending on the sentence\n' +
+          '- Pause on important points to make the message more impactful.\n' +
+          '- Emphasizing important words in script\n' +
+          '- Keep it concise but detailed: 4-10 short lines max.\n' +
+          '- Do NOT repeat the script. Do NOT add meta commentary.';
 
     return this.llm.streamText({
       model,

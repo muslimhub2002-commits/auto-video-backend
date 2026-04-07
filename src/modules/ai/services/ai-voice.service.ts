@@ -13,6 +13,30 @@ import { withTimeout } from '../../render-videos/utils/promise.utils';
 
 type VoiceProvider = 'google' | 'elevenlabs';
 
+type ElevenLabsVoiceSettings = {
+  stability?: number;
+  similarityBoost?: number;
+  style?: number;
+  speed?: number;
+  useSpeakerBoost?: boolean;
+};
+
+type ElevenLabsVoiceSettingsPayload = {
+  stability?: number;
+  similarity_boost?: number;
+  style?: number;
+  speed?: number;
+  use_speaker_boost?: boolean;
+};
+
+const ELEVENLABS_DEFAULT_VOICE_SETTINGS = {
+  stability: 0.5,
+  similarityBoost: 0.75,
+  style: 0,
+  speed: 1,
+  useSpeakerBoost: true,
+} as const;
+
 @Injectable()
 export class AiVoiceService {
   private readonly narrationWpm = 150;
@@ -45,6 +69,112 @@ export class AiVoiceService {
   private isTimeoutError(error: unknown): boolean {
     if (!(error instanceof Error)) return false;
     return /timed out after/i.test(error.message);
+  }
+
+  private clampNumber(
+    value: unknown,
+    min: number,
+    max: number,
+  ): number | null {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.min(max, Math.max(min, parsed));
+  }
+
+  private extractApiErrorMessage(raw: string): string | null {
+    const fallback = String(raw ?? '').trim();
+    if (!fallback) return null;
+
+    const pickFirstString = (value: unknown): string | null => {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          const found = pickFirstString(entry);
+          if (found) return found;
+        }
+        return null;
+      }
+
+      if (value && typeof value === 'object') {
+        const record = value as Record<string, unknown>;
+        for (const key of ['message', 'detail', 'error', 'body']) {
+          const found = pickFirstString(record[key]);
+          if (found) return found;
+        }
+      }
+
+      return null;
+    };
+
+    try {
+      const parsed = JSON.parse(fallback) as unknown;
+      return pickFirstString(parsed) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private buildElevenLabsVoiceSettingsPayload(
+    settings?: ElevenLabsVoiceSettings,
+    omitKeys: Array<keyof ElevenLabsVoiceSettings> = [],
+  ): ElevenLabsVoiceSettingsPayload | undefined {
+    if (!settings) return undefined;
+
+    const omitted = new Set<keyof ElevenLabsVoiceSettings>(omitKeys);
+    const payload: ElevenLabsVoiceSettingsPayload = {};
+
+    const stability = this.clampNumber(settings.stability, 0, 1);
+    if (
+      stability !== null &&
+      !omitted.has('stability') &&
+      Math.abs(stability - ELEVENLABS_DEFAULT_VOICE_SETTINGS.stability) >
+        0.0001
+    ) {
+      payload.stability = stability;
+    }
+
+    const similarityBoost = this.clampNumber(settings.similarityBoost, 0, 1);
+    if (
+      similarityBoost !== null &&
+      !omitted.has('similarityBoost') &&
+      Math.abs(
+        similarityBoost - ELEVENLABS_DEFAULT_VOICE_SETTINGS.similarityBoost,
+      ) > 0.0001
+    ) {
+      payload.similarity_boost = similarityBoost;
+    }
+
+    const style = this.clampNumber(settings.style, 0, 1);
+    if (
+      style !== null &&
+      !omitted.has('style') &&
+      Math.abs(style - ELEVENLABS_DEFAULT_VOICE_SETTINGS.style) > 0.0001
+    ) {
+      payload.style = style;
+    }
+
+    const speed = this.clampNumber(settings.speed, 0.5, 1.5);
+    if (
+      speed !== null &&
+      !omitted.has('speed') &&
+      Math.abs(speed - ELEVENLABS_DEFAULT_VOICE_SETTINGS.speed) > 0.0001
+    ) {
+      payload.speed = speed;
+    }
+
+    if (
+      typeof settings.useSpeakerBoost === 'boolean' &&
+      !omitted.has('useSpeakerBoost') &&
+      settings.useSpeakerBoost !==
+        ELEVENLABS_DEFAULT_VOICE_SETTINGS.useSpeakerBoost
+    ) {
+      payload.use_speaker_boost = settings.useSpeakerBoost;
+    }
+
+    return Object.keys(payload).length > 0 ? payload : undefined;
   }
 
   private async runWithAbortableTimeout<T>(params: {
@@ -237,15 +367,22 @@ export class AiVoiceService {
     sentences: string[],
     voiceId?: string,
     styleInstructions?: string,
+    elevenLabsSettings?: ElevenLabsVoiceSettings,
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     const merged = this.mergeSentenceTexts(sentences);
-    return this.generateVoiceForScript(merged, voiceId, styleInstructions);
+    return this.generateVoiceForScript(
+      merged,
+      voiceId,
+      styleInstructions,
+      elevenLabsSettings,
+    );
   }
 
   async generateVoiceForScript(
     script: string,
     voiceId?: string,
     styleInstructions?: string,
+    elevenLabsSettings?: ElevenLabsVoiceSettings,
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     const text = script?.trim();
     if (!text) {
@@ -306,6 +443,7 @@ export class AiVoiceService {
     const buffer = await this.generateVoiceWithElevenLabs({
       text,
       voiceId: elevenVoiceId,
+      settings: elevenLabsSettings,
     });
     return { buffer, mimeType: 'audio/mpeg', filename: 'voice-over.mp3' };
   }
@@ -435,6 +573,7 @@ export class AiVoiceService {
   private async generateVoiceWithElevenLabs(params: {
     text: string;
     voiceId: string;
+    settings?: ElevenLabsVoiceSettings;
   }): Promise<Buffer> {
     if (!this.elevenApiKey) {
       throw new InternalServerErrorException(
@@ -444,56 +583,123 @@ export class AiVoiceService {
 
     try {
       const timeoutMs = this.getProviderTimeoutMs('elevenlabs');
-      const response = await this.runWithAbortableTimeout({
-        label: 'ElevenLabs voice generation',
-        timeoutMs,
-        run: async (signal) =>
-          fetch(
-            `https://api.elevenlabs.io/v1/text-to-speech/${params.voiceId}`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Accept: 'audio/mpeg',
-                'xi-api-key': this.elevenApiKey,
-              },
-              body: JSON.stringify({
-                text: params.text,
-                model_id: 'eleven_multilingual_v2',
-              }),
-              signal,
-            } as any,
-          ),
-      });
+      const requestSpeech = async (
+        omitKeys: Array<keyof ElevenLabsVoiceSettings> = [],
+      ): Promise<
+        | { ok: true; buffer: Buffer }
+        | {
+            ok: false;
+            status: number;
+            statusText: string;
+            errorText: string;
+            omittedKeys: Array<keyof ElevenLabsVoiceSettings>;
+            payload?: ElevenLabsVoiceSettingsPayload;
+          }
+      > => {
+        const voiceSettings = this.buildElevenLabsVoiceSettingsPayload(
+          params.settings,
+          omitKeys,
+        );
+        const requestBody = {
+          text: params.text,
+          model_id: 'eleven_multilingual_v2',
+          ...(voiceSettings ? { voice_settings: voiceSettings } : {}),
+        };
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-
-        console.error('ElevenLabs TTS failed', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorText,
+        const response = await this.runWithAbortableTimeout({
+          label: 'ElevenLabs voice generation',
+          timeoutMs,
+          run: async (signal) =>
+            fetch(
+              `https://api.elevenlabs.io/v1/text-to-speech/${params.voiceId}`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Accept: 'audio/mpeg',
+                  'xi-api-key': this.elevenApiKey,
+                },
+                body: JSON.stringify(requestBody),
+                signal,
+              } as any,
+            ),
         });
 
-        if (response.status === 400) {
-          throw new BadRequestException(
-            'Invalid request to ElevenLabs text-to-speech API',
-          );
+        if (!response.ok) {
+          return {
+            ok: false,
+            status: response.status,
+            statusText: response.statusText,
+            errorText: await response.text().catch(() => ''),
+            omittedKeys: [...omitKeys],
+            payload: voiceSettings,
+          };
         }
 
-        if (response.status === 401 || response.status === 403) {
-          throw new UnauthorizedException(
-            'Unauthorized to call ElevenLabs text-to-speech API',
-          );
-        }
+        const arrayBuffer = await response.arrayBuffer();
+        return { ok: true, buffer: Buffer.from(arrayBuffer) };
+      };
 
-        throw new InternalServerErrorException(
-          'Failed to generate voice using ElevenLabs',
+      const firstAttempt = await requestSpeech();
+      if (firstAttempt.ok) {
+        return firstAttempt.buffer;
+      }
+
+      let finalFailure = firstAttempt;
+      const fallbackOmitKeys: Array<keyof ElevenLabsVoiceSettings> = [];
+      if (typeof params.settings?.style === 'number') {
+        fallbackOmitKeys.push('style');
+      }
+      if (typeof params.settings?.speed === 'number') {
+        fallbackOmitKeys.push('speed');
+      }
+
+      if (firstAttempt.status === 400 && fallbackOmitKeys.length > 0) {
+        const retryAttempt = await requestSpeech(fallbackOmitKeys);
+        if (retryAttempt.ok) {
+          console.warn(
+            'ElevenLabs accepted voice generation only after dropping optional settings',
+            {
+              voiceId: params.voiceId,
+              omittedKeys: fallbackOmitKeys,
+              initialError: this.extractApiErrorMessage(
+                firstAttempt.errorText,
+              ),
+            },
+          );
+          return retryAttempt.buffer;
+        }
+        finalFailure = retryAttempt;
+      }
+
+      console.error('ElevenLabs TTS failed', {
+        status: finalFailure.status,
+        statusText: finalFailure.statusText,
+        body: finalFailure.errorText,
+        omittedKeys: finalFailure.omittedKeys,
+        payload: finalFailure.payload,
+      });
+
+      if (finalFailure.status === 400) {
+        const providerMessage = this.extractApiErrorMessage(
+          finalFailure.errorText,
+        );
+        throw new BadRequestException(
+          providerMessage
+            ? `ElevenLabs rejected the requested voice settings: ${providerMessage}`
+            : 'Invalid request to ElevenLabs text-to-speech API',
         );
       }
 
-      const arrayBuffer = await response.arrayBuffer();
-      return Buffer.from(arrayBuffer);
+      if (finalFailure.status === 401 || finalFailure.status === 403) {
+        throw new UnauthorizedException(
+          'Unauthorized to call ElevenLabs text-to-speech API',
+        );
+      }
+
+      throw new InternalServerErrorException(
+        'Failed to generate voice using ElevenLabs',
+      );
     } catch (error) {
       const err: any = error;
 
@@ -596,6 +802,7 @@ export class AiVoiceService {
                 },
               ],
               generationConfig: {
+                temperature: 0,
                 responseModalities: ['AUDIO'],
                 speechConfig: {
                   voiceConfig: {

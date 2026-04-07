@@ -174,7 +174,11 @@ export class AiService {
     return this.textService.generateMediaSearchTerm(dto);
   }
 
-  createVoiceStyleInstructionsStream(dto: { script: string; model?: string }) {
+  createVoiceStyleInstructionsStream(dto: {
+    script: string;
+    model?: string;
+    instructionMode?: 'full' | 'tone-only';
+  }) {
     return this.textService.createVoiceStyleInstructionsStream(dto);
   }
 
@@ -265,11 +269,19 @@ export class AiService {
     sentences: string[],
     voiceId?: string,
     styleInstructions?: string,
+    elevenLabsSettings?: {
+      stability?: number;
+      similarityBoost?: number;
+      style?: number;
+      speed?: number;
+      useSpeakerBoost?: boolean;
+    },
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     return this.voiceService.generateVoiceForSentences(
       sentences,
       voiceId,
       styleInstructions,
+      elevenLabsSettings,
     );
   }
 
@@ -277,11 +289,19 @@ export class AiService {
     script: string,
     voiceId?: string,
     styleInstructions?: string,
+    elevenLabsSettings?: {
+      stability?: number;
+      similarityBoost?: number;
+      style?: number;
+      speed?: number;
+      useSpeakerBoost?: boolean;
+    },
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     return this.voiceService.generateVoiceForScript(
       script,
       voiceId,
       styleInstructions,
+      elevenLabsSettings,
     );
   }
 

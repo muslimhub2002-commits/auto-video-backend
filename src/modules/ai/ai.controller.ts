@@ -347,11 +347,13 @@ export class AiController {
           body.sentences!,
           body.voiceId,
           body.styleInstructions,
+          body.elevenLabsSettings,
         )
       : await this.aiService.generateVoiceForScript(
           body.script,
           body.voiceId,
           body.styleInstructions,
+          body.elevenLabsSettings,
         );
 
     res.setHeader('Content-Type', result.mimeType);

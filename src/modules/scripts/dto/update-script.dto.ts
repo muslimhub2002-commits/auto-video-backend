@@ -105,10 +105,79 @@ class TransitionSoundEffectInput {
   volume_percent?: number;
 }
 
+class ElevenLabsVoiceSettingsInput {
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  @IsOptional()
+  stability?: number | null;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  @IsOptional()
+  similarityBoost?: number | null;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  @IsOptional()
+  style?: number | null;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.5)
+  @Max(1.5)
+  @IsOptional()
+  speed?: number | null;
+
+  @IsBoolean()
+  @IsOptional()
+  useSpeakerBoost?: boolean | null;
+}
+
 class UpdateSentenceInput {
   @IsString()
   @IsNotEmpty()
   text: string;
+
+  @IsString()
+  @IsOptional()
+  voice_over_url?: string | null;
+
+  @IsString()
+  @IsOptional()
+  voice_over_mime_type?: string | null;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  voice_over_duration_seconds?: number | null;
+
+  @IsString()
+  @IsOptional()
+  voice_over_provider?: string | null;
+
+  @IsString()
+  @IsOptional()
+  voice_over_voice_id?: string | null;
+
+  @IsString()
+  @IsOptional()
+  voice_over_voice_name?: string | null;
+
+  @IsString()
+  @IsOptional()
+  voice_over_style_instructions?: string | null;
+
+  @ValidateNested()
+  @Type(() => ElevenLabsVoiceSettingsInput)
+  @IsOptional()
+  eleven_labs_settings?: ElevenLabsVoiceSettingsInput | null;
 
   @IsBoolean()
   @IsOptional()
@@ -327,6 +396,29 @@ class VoiceOverChunkInput {
   url: string;
 }
 
+class VoiceGenerationConfigInput {
+  @IsIn(['auto', 'perSentence'])
+  @IsOptional()
+  mode?: 'auto' | 'perSentence';
+
+  @IsIn(['google', 'elevenlabs'])
+  @IsOptional()
+  provider?: 'google' | 'elevenlabs' | null;
+
+  @IsString()
+  @IsOptional()
+  providerVoiceId?: string | null;
+
+  @IsString()
+  @IsOptional()
+  styleInstructions?: string | null;
+
+  @ValidateNested()
+  @Type(() => ElevenLabsVoiceSettingsInput)
+  @IsOptional()
+  elevenLabsSettings?: ElevenLabsVoiceSettingsInput | null;
+}
+
 class ShortScriptInput {
   @IsString()
   @IsNotEmpty()
@@ -408,6 +500,11 @@ export class UpdateScriptDto {
   @Type(() => VoiceOverChunkInput)
   @IsOptional()
   voice_over_chunks?: VoiceOverChunkInput[] | null;
+
+  @ValidateNested()
+  @Type(() => VoiceGenerationConfigInput)
+  @IsOptional()
+  voice_generation_config?: VoiceGenerationConfigInput | null;
 
   @IsString()
   @IsOptional()

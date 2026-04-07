@@ -93,6 +93,21 @@ export class Script {
     createdAt?: string | null;
   }> | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  voice_generation_config: {
+    mode: 'auto' | 'perSentence';
+    provider: 'google' | 'elevenlabs' | null;
+    providerVoiceId: string | null;
+    styleInstructions?: string | null;
+    elevenLabsSettings?: {
+      stability?: number | null;
+      similarityBoost?: number | null;
+      style?: number | null;
+      speed?: number | null;
+      useSpeakerBoost?: boolean | null;
+    } | null;
+  } | null;
+
   @Column({ type: 'uuid', nullable: false })
   user_id: string;
 

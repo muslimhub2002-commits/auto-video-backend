@@ -46,6 +46,36 @@ export class Sentence {
   @Column({ type: 'uuid', nullable: true })
   text_background_video_id: string | null;
 
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  voice_over_url: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  voice_over_mime_type: string | null;
+
+  @Column({ type: 'real', nullable: true })
+  voice_over_duration_seconds: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  voice_over_provider: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  voice_over_voice_id: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  voice_over_voice_name: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  voice_over_style_instructions: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  eleven_labs_settings: {
+    stability?: number | null;
+    similarityBoost?: number | null;
+    style?: number | null;
+    speed?: number | null;
+    useSpeakerBoost?: boolean | null;
+  } | null;
+
   // Optional per-sentence video prompt (used for AI video generation modes).
   @Column({ type: 'text', nullable: true })
   video_prompt: string | null;

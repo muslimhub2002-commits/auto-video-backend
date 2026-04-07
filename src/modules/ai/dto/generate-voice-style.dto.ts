@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class GenerateVoiceStyleDto {
   @IsString()
@@ -8,4 +8,9 @@ export class GenerateVoiceStyleDto {
   @IsString()
   @IsOptional()
   model?: string;
+
+  @IsString()
+  @IsIn(['full', 'tone-only'])
+  @IsOptional()
+  instructionMode?: 'full' | 'tone-only';
 }

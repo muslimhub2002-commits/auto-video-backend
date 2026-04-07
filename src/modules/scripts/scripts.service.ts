@@ -60,6 +60,22 @@ type NormalizedVoiceOverChunk = {
   createdAt: string | null;
 };
 
+type NormalizedVoiceGenerationConfig = {
+  mode: 'auto' | 'perSentence';
+  provider: 'google' | 'elevenlabs' | null;
+  providerVoiceId: string | null;
+  styleInstructions: string | null;
+  elevenLabsSettings: NormalizedElevenLabsVoiceSettings | null;
+};
+
+type NormalizedElevenLabsVoiceSettings = {
+  stability: number | null;
+  similarityBoost: number | null;
+  style: number | null;
+  speed: number | null;
+  useSpeakerBoost: boolean | null;
+};
+
 const ALLOWED_TEXT_ANIMATION_EFFECTS = new Set([
   'popInBounceHook',
   'slideCutFast',
@@ -165,6 +181,65 @@ export class ScriptsService implements OnModuleInit {
       .filter(Boolean) as NormalizedVoiceOverChunk[];
 
     return normalized.sort((left, right) => left.index - right.index);
+  }
+
+  private normalizeVoiceGenerationConfigInput(
+    value: unknown,
+  ): NormalizedVoiceGenerationConfig | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    const mode = (value as any).mode === 'perSentence' ? 'perSentence' : 'auto';
+    const providerRaw = String((value as any).provider ?? '').trim();
+    const provider =
+      providerRaw === 'google' || providerRaw === 'elevenlabs'
+        ? providerRaw
+        : null;
+
+    return {
+      mode,
+      provider,
+      providerVoiceId:
+        String((value as any).providerVoiceId ?? '').trim() || null,
+      styleInstructions:
+        String((value as any).styleInstructions ?? '').trim() || null,
+      elevenLabsSettings:
+        this.normalizeElevenLabsVoiceSettingsInput(
+          (value as any).elevenLabsSettings,
+        ) ?? null,
+    };
+  }
+
+  private normalizeElevenLabsVoiceSettingsInput(
+    value: unknown,
+  ): NormalizedElevenLabsVoiceSettings | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    const normalizeOptional = (
+      raw: unknown,
+      min: number,
+      max: number,
+    ): number | null => {
+      const numeric = this.normalizeOptionalNumber(raw);
+      if (numeric === null) return null;
+      return Math.min(max, Math.max(min, numeric));
+    };
+
+    const useSpeakerBoostRaw = (value as any).useSpeakerBoost;
+
+    return {
+      stability: normalizeOptional((value as any).stability, 0, 1),
+      similarityBoost: normalizeOptional((value as any).similarityBoost, 0, 1),
+      style: normalizeOptional((value as any).style, 0, 1),
+      speed: normalizeOptional((value as any).speed, 0.5, 1.5),
+      useSpeakerBoost:
+        typeof useSpeakerBoostRaw === 'boolean' ? useSpeakerBoostRaw : null,
+    };
   }
 
   constructor(
@@ -740,6 +815,21 @@ export class ScriptsService implements OnModuleInit {
       throw err;
     }
 
+    try {
+      await this.dataSource.query(
+        'ALTER TABLE scripts ADD COLUMN IF NOT EXISTS voice_generation_config JSONB NULL',
+      );
+    } catch (err: any) {
+      const message = String(err?.message || '');
+      if (
+        message.includes('does not exist') ||
+        message.includes('permission denied')
+      ) {
+        return;
+      }
+      throw err;
+    }
+
     // Sentence-level location + non-forced character mapping.
     const sentencesExists = await this.sentencesTableExists();
     if (sentencesExists) {
@@ -810,9 +900,33 @@ export class ScriptsService implements OnModuleInit {
       await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_background_image_id UUID NULL',
       );
-        await tryAlterSentences(
-          'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_background_video_id UUID NULL',
-        );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_background_video_id UUID NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS voice_over_url VARCHAR(2048) NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS voice_over_mime_type VARCHAR(255) NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS voice_over_duration_seconds REAL NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS voice_over_provider TEXT NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS voice_over_voice_id TEXT NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS voice_over_voice_name TEXT NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS voice_over_style_instructions TEXT NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS eleven_labs_settings JSONB NULL',
+      );
     }
 
     try {
@@ -1310,6 +1424,25 @@ export class ScriptsService implements OnModuleInit {
                 video_id: s.video_id ?? null,
                 text_background_image_id: s.text_background_image_id ?? null,
                 text_background_video_id: s.text_background_video_id ?? null,
+                voice_over_url:
+                  String((s as any).voice_over_url ?? '').trim() || null,
+                voice_over_mime_type:
+                  String((s as any).voice_over_mime_type ?? '').trim() || null,
+                voice_over_duration_seconds: this.normalizeOptionalNumber(
+                  (s as any).voice_over_duration_seconds,
+                ),
+                voice_over_provider:
+                  String((s as any).voice_over_provider ?? '').trim() || null,
+                voice_over_voice_id:
+                  String((s as any).voice_over_voice_id ?? '').trim() || null,
+                voice_over_voice_name:
+                  String((s as any).voice_over_voice_name ?? '').trim() || null,
+                voice_over_style_instructions:
+                  String((s as any).voice_over_style_instructions ?? '').trim() || null,
+                eleven_labs_settings:
+                  this.normalizeElevenLabsVoiceSettingsInput(
+                    (s as any).eleven_labs_settings,
+                  ) ?? null,
                 video_prompt: String(s.video_prompt ?? '').trim() || null,
                 transition_to_next: s.transition_to_next ?? null,
                 visual_effect: s.visual_effect ?? null,
@@ -1785,6 +1918,7 @@ export class ScriptsService implements OnModuleInit {
       characters,
       locations,
       voice_over_chunks,
+      voice_generation_config,
       title: providedTitle,
       shorts_scripts,
       shorts_script_ids,
@@ -1810,6 +1944,8 @@ export class ScriptsService implements OnModuleInit {
     const normalizedVoiceOverChunks = this.normalizeVoiceOverChunksInput(
       voice_over_chunks,
     );
+    const normalizedVoiceGenerationConfig =
+      this.normalizeVoiceGenerationConfigInput(voice_generation_config);
 
     const cleanedVideoUrl =
       video_url === undefined ? undefined : (video_url ?? '').trim() || null;
@@ -1913,6 +2049,11 @@ export class ScriptsService implements OnModuleInit {
             : null;
       }
 
+      if (normalizedVoiceGenerationConfig !== undefined) {
+        (existingScript as any).voice_generation_config =
+          normalizedVoiceGenerationConfig ?? null;
+      }
+
       if (referenceScripts !== undefined) {
         existingScript.reference_scripts = referenceScripts;
       }
@@ -1956,8 +2097,27 @@ export class ScriptsService implements OnModuleInit {
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
             text_background_image_id: (s as any).text_background_image_id ?? null,
-              text_background_video_id:
-                (s as any).text_background_video_id ?? null,
+            text_background_video_id:
+              (s as any).text_background_video_id ?? null,
+            voice_over_url:
+              String((s as any).voice_over_url ?? '').trim() || null,
+            voice_over_mime_type:
+              String((s as any).voice_over_mime_type ?? '').trim() || null,
+            voice_over_duration_seconds: this.normalizeOptionalNumber(
+              (s as any).voice_over_duration_seconds,
+            ),
+            voice_over_provider:
+              String((s as any).voice_over_provider ?? '').trim() || null,
+            voice_over_voice_id:
+              String((s as any).voice_over_voice_id ?? '').trim() || null,
+            voice_over_voice_name:
+              String((s as any).voice_over_voice_name ?? '').trim() || null,
+            voice_over_style_instructions:
+              String((s as any).voice_over_style_instructions ?? '').trim() || null,
+            eleven_labs_settings:
+              this.normalizeElevenLabsVoiceSettingsInput(
+                (s as any).eleven_labs_settings,
+              ) ?? null,
             video_prompt: String((s as any).video_prompt ?? '').trim() || null,
             transition_to_next: (s as any).transition_to_next ?? null,
             visual_effect: (s as any).visual_effect ?? null,
@@ -2082,6 +2242,7 @@ export class ScriptsService implements OnModuleInit {
         characters && characters.length > 0 ? (characters as any) : null,
       locations:
         locations && (locations as any).length > 0 ? (locations as any) : null,
+      voice_generation_config: normalizedVoiceGenerationConfig ?? null,
       voice_over_chunks:
         normalizedVoiceOverChunks && normalizedVoiceOverChunks.length > 0
           ? normalizedVoiceOverChunks
@@ -2114,8 +2275,27 @@ export class ScriptsService implements OnModuleInit {
           end_frame_image_id: s.end_frame_image_id ?? null,
           video_id: s.video_id ?? null,
           text_background_image_id: (s as any).text_background_image_id ?? null,
-            text_background_video_id:
-              (s as any).text_background_video_id ?? null,
+          text_background_video_id:
+            (s as any).text_background_video_id ?? null,
+          voice_over_url:
+            String((s as any).voice_over_url ?? '').trim() || null,
+          voice_over_mime_type:
+            String((s as any).voice_over_mime_type ?? '').trim() || null,
+          voice_over_duration_seconds: this.normalizeOptionalNumber(
+            (s as any).voice_over_duration_seconds,
+          ),
+          voice_over_provider:
+            String((s as any).voice_over_provider ?? '').trim() || null,
+          voice_over_voice_id:
+            String((s as any).voice_over_voice_id ?? '').trim() || null,
+          voice_over_voice_name:
+            String((s as any).voice_over_voice_name ?? '').trim() || null,
+          voice_over_style_instructions:
+            String((s as any).voice_over_style_instructions ?? '').trim() || null,
+          eleven_labs_settings:
+            this.normalizeElevenLabsVoiceSettingsInput(
+              (s as any).eleven_labs_settings,
+            ) ?? null,
           video_prompt: String((s as any).video_prompt ?? '').trim() || null,
           transition_to_next: (s as any).transition_to_next ?? null,
           visual_effect: (s as any).visual_effect ?? null,
@@ -2495,6 +2675,15 @@ export class ScriptsService implements OnModuleInit {
           : null;
     }
 
+    if (Object.prototype.hasOwnProperty.call(dto, 'voice_generation_config')) {
+      const normalizedVoiceGenerationConfig =
+        this.normalizeVoiceGenerationConfigInput(
+          (dto as any).voice_generation_config,
+        );
+      (script as any).voice_generation_config =
+        normalizedVoiceGenerationConfig ?? null;
+    }
+
     if (dto.title !== undefined) {
       const trimmedTitle = (dto.title ?? '').trim();
       script.title = trimmedTitle ? trimmedTitle : null;
@@ -2572,6 +2761,25 @@ export class ScriptsService implements OnModuleInit {
             text_background_image_id: (s as any).text_background_image_id ?? null,
             text_background_video_id:
               (s as any).text_background_video_id ?? null,
+            voice_over_url:
+              String((s as any).voice_over_url ?? '').trim() || null,
+            voice_over_mime_type:
+              String((s as any).voice_over_mime_type ?? '').trim() || null,
+            voice_over_duration_seconds: this.normalizeOptionalNumber(
+              (s as any).voice_over_duration_seconds,
+            ),
+            voice_over_provider:
+              String((s as any).voice_over_provider ?? '').trim() || null,
+            voice_over_voice_id:
+              String((s as any).voice_over_voice_id ?? '').trim() || null,
+            voice_over_voice_name:
+              String((s as any).voice_over_voice_name ?? '').trim() || null,
+            voice_over_style_instructions:
+              String((s as any).voice_over_style_instructions ?? '').trim() || null,
+            eleven_labs_settings:
+              this.normalizeElevenLabsVoiceSettingsInput(
+                (s as any).eleven_labs_settings,
+              ) ?? null,
             video_prompt: String((s as any).video_prompt ?? '').trim() || null,
             transition_to_next: (s as any).transition_to_next ?? null,
             visual_effect: (s as any).visual_effect ?? null,
