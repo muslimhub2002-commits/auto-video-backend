@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, Easing, Img, OffthreadVideo, interpolate } from 'remotion';
+import { AbsoluteFill, Img, OffthreadVideo, interpolate } from 'remotion';
 import type {
   TextAnimationEffect,
   TextAnimationSettings,
@@ -21,6 +21,8 @@ const DEFAULT_TEXT_ANIMATION_SPEED = 1.1;
 const MAX_TEXT_ANIMATION_WORDS = 5;
 const DEFAULT_IMAGE_MOTION_SPEED = 1.2;
 const LANDSCAPE_IMAGE_MOTION_SPEED = 0.5;
+const TEXT_ANIMATION_SPEED_MIN = 0.4;
+const TEXT_ANIMATION_SPEED_MAX = 2.4;
 
 const clampNumber = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -299,8 +301,13 @@ const formatDisplayText = (
 };
 
 const getAnimationFrames = (fps: number, speed: number) => {
-  const durationSeconds = clampNumber(1.3 / Math.max(speed, 0.4), 0.45, 1.8);
-  return Math.max(10, Math.round(durationSeconds * fps));
+  const normalizedSpeed = clampNumber(
+    speed,
+    TEXT_ANIMATION_SPEED_MIN,
+    TEXT_ANIMATION_SPEED_MAX,
+  );
+  const durationMs = Math.max(1200, 3600 / normalizedSpeed);
+  return Math.max(10, Math.round((durationMs / 1000) * fps));
 };
 
 const buildBackgroundStyle = (
@@ -323,40 +330,21 @@ const buildBackgroundStyle = (
   };
 };
 
-const getIdlePulseScale = (frame: number, introFrames: number, fps: number, intensity: number) => {
-  const postIntroFrame = Math.max(0, frame - introFrames);
-  if (postIntroFrame <= 0) return 1;
-
-  return 1 + Math.sin((postIntroFrame / fps) * 2.4) * 0.012 * intensity;
-};
-
 const getAnimatedBlockStyle = (params: {
   effect: TextAnimationEffect;
   frame: number;
   introFrames: number;
-  intensity: number;
-  fps: number;
-  width: number;
-  height: number;
 }): React.CSSProperties => {
   const progress = clampNumber(params.frame / params.introFrames, 0, 1);
-  const holdScale = getIdlePulseScale(
-    params.frame,
-    params.introFrames,
-    params.fps,
-    params.intensity,
-  );
 
   if (params.effect === 'slideCutFast') {
-    const translateX = interpolate(progress, [0, 0.4, 1], [-params.width * 0.18, 0, 0], {
+    const translateXPercent = interpolate(progress, [0, 0.4, 1], [-18, 0, 0], {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
-      easing: Easing.out(Easing.cubic),
     });
     const clipRight = interpolate(progress, [0, 0.4, 1], [100, 16, 0], {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
-      easing: Easing.out(Easing.cubic),
     });
 
     return {
@@ -364,7 +352,7 @@ const getAnimatedBlockStyle = (params: {
         extrapolateLeft: 'clamp',
         extrapolateRight: 'clamp',
       }),
-      transform: `translate3d(${translateX.toFixed(2)}px, 0, 0) scale(${holdScale.toFixed(4)})`,
+      transform: `translate3d(${translateXPercent.toFixed(2)}%, 0, 0)`,
       clipPath: `inset(0 ${clipRight.toFixed(2)}% 0 0)`,
     };
   }
@@ -385,15 +373,14 @@ const getAnimatedBlockStyle = (params: {
         extrapolateLeft: 'clamp',
         extrapolateRight: 'clamp',
       }),
-      transform: `scale(${(scale * holdScale).toFixed(4)}) rotate(${rotate.toFixed(2)}deg)`,
+      transform: `scale(${scale.toFixed(4)}) rotate(${rotate.toFixed(2)}deg)`,
     };
   }
 
   if (params.effect === 'maskReveal') {
-    const translateY = interpolate(progress, [0, 0.5, 1], [params.height * 0.16, params.height * 0.04, 0], {
+    const translateYPercent = interpolate(progress, [0, 0.5, 1], [16, 0, 0], {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
-      easing: Easing.out(Easing.cubic),
     });
     const clipBottom = interpolate(progress, [0, 0.5, 1], [100, 18, 0], {
       extrapolateLeft: 'clamp',
@@ -405,44 +392,77 @@ const getAnimatedBlockStyle = (params: {
         extrapolateLeft: 'clamp',
         extrapolateRight: 'clamp',
       }),
-      transform: `translate3d(0, ${translateY.toFixed(2)}px, 0) scale(${holdScale.toFixed(4)})`,
+      transform: `translate3d(0, ${translateYPercent.toFixed(2)}%, 0)`,
       clipPath: `inset(0 0 ${clipBottom.toFixed(2)}% 0)`,
     };
   }
 
   if (params.effect === 'glitchFlashHook') {
-    const jitter =
-      progress < 0.42
-        ? Math.sin(params.frame * 1.9) * params.width * 0.006 * params.intensity
-        : 0;
-    const brightness = progress < 0.42 ? 1.15 + (0.42 - progress) * 0.7 : 1;
+    const translateXPercent = interpolate(
+      progress,
+      [0, 0.1, 0.22, 0.3, 1],
+      [0, -2, 2, -1, 0],
+      {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      },
+    );
+    const brightness = interpolate(
+      progress,
+      [0, 0.42, 1],
+      [1, 1.4, 1],
+      {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      },
+    );
 
     return {
       opacity: interpolate(progress, [0, 0.1, 1], [0, 1, 1], {
         extrapolateLeft: 'clamp',
         extrapolateRight: 'clamp',
       }),
-      transform: `translate3d(${jitter.toFixed(2)}px, 0, 0) scale(${holdScale.toFixed(4)})`,
+      transform: `translate3d(${translateXPercent.toFixed(2)}%, 0, 0)`,
       filter: `brightness(${brightness.toFixed(3)})`,
     };
   }
 
   if (params.effect === 'kineticTypography') {
+    const translateXPercent = interpolate(progress, [0, 0.45, 1], [-6, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const skew = interpolate(progress, [0, 0.45, 1], [-10, 0, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const letterSpacingEm = interpolate(
+      progress,
+      [0, 0.45, 1],
+      [0.22, 0.06, 0.02],
+      {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      },
+    );
+
     return {
-      opacity: 1,
-      transform: 'none',
+      opacity: interpolate(progress, [0, 0.12, 1], [0, 1, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      }),
+      transform: `translate3d(${translateXPercent.toFixed(2)}%, 0, 0) skewX(${skew.toFixed(2)}deg)`,
+      letterSpacing: `${letterSpacingEm.toFixed(3)}em`,
     };
   }
 
-  const translateY = interpolate(progress, [0, 0.38, 0.68, 1], [params.height * 0.22, -params.height * 0.05, params.height * 0.015, 0], {
+  const translateYPercent = interpolate(progress, [0, 0.38, 0.68, 1], [22, -5, 1.5, 0], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
-    easing: Easing.out(Easing.cubic),
   });
   const scale = interpolate(progress, [0, 0.38, 0.68, 1], [0.68, 1.08, 0.98, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
-    easing: Easing.out(Easing.back(1.35)),
   });
 
   return {
@@ -450,7 +470,7 @@ const getAnimatedBlockStyle = (params: {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     }),
-    transform: `translate3d(0, ${translateY.toFixed(2)}px, 0) scale(${(scale * holdScale).toFixed(4)})`,
+    transform: `translate3d(0, ${translateYPercent.toFixed(2)}%, 0) scale(${scale.toFixed(4)})`,
   };
 };
 
@@ -517,10 +537,6 @@ export const TextScene: React.FC<{
     effect: resolvedEffect,
     frame,
     introFrames,
-    intensity: animationIntensity,
-    fps,
-    width,
-    height,
   });
 
   const baseTextStyle: React.CSSProperties = {
@@ -541,13 +557,6 @@ export const TextScene: React.FC<{
     whiteSpace: 'pre-wrap',
   };
 
-  const slideAccentOpacity =
-    resolvedEffect === 'slideCutFast'
-      ? interpolate(frame, [0, Math.max(4, introFrames * 0.3)], [0, 1], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-        })
-      : 0;
   const glitchFlashOpacity =
     resolvedEffect === 'glitchFlashHook'
       ? interpolate(frame, [0, Math.max(3, introFrames * 0.18), introFrames], [0.65, 0, 0], {
@@ -608,6 +617,7 @@ export const TextScene: React.FC<{
 
       <AbsoluteFill
         style={{
+          flexDirection: 'row',
           justifyContent: resolveJustifyContent(
             resolvedSettings.horizontalAlign ?? 'center',
           ),
@@ -618,100 +628,21 @@ export const TextScene: React.FC<{
           transform: `translate(${(resolvedSettings.offsetX ?? 0).toFixed(1)}%, ${(resolvedSettings.offsetY ?? 0).toFixed(1)}%)`,
         }}
       >
-        {resolvedEffect === 'slideCutFast' ? (
-          <div
-            style={{
-              position: 'absolute',
-              top: Math.max(28, containerPadding * 0.85),
-              left: Math.max(28, containerPadding * 0.85),
-              width: Math.max(120, width * 0.1),
-              height: Math.max(8, width * 0.006),
-              borderRadius: 999,
-              backgroundColor: resolvedSettings.accentColor,
-              opacity: slideAccentOpacity,
-              transform: `scaleX(${slideAccentOpacity.toFixed(3)})`,
-              transformOrigin: 'left center',
-            }}
-          />
-        ) : null}
-
-        {resolvedEffect === 'kineticTypography' ? (
-          <div
-            style={{
-              ...baseTextStyle,
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: `${Math.max(8, fontSizePx * 0.16).toFixed(0)}px ${Math.max(10, fontSizePx * 0.18).toFixed(0)}px`,
-              alignItems: 'center',
-              justifyContent: resolveJustifyContent(
-                resolvedSettings.horizontalAlign ?? 'center',
-              ),
-            }}
-          >
-            {words.map((word, wordIndex) => {
-              const wordDelay = wordIndex * Math.max(2, Math.round(4 / (resolvedSettings.speed ?? DEFAULT_TEXT_ANIMATION_SPEED)));
-              const wordProgress = clampNumber(
-                (frame - wordDelay) / Math.max(8, introFrames - wordDelay),
-                0,
-                1,
-              );
-              const translateX = interpolate(wordProgress, [0, 0.45, 1], [-width * 0.06, width * 0.01, 0], {
-                extrapolateLeft: 'clamp',
-                extrapolateRight: 'clamp',
-                easing: Easing.out(Easing.cubic),
-              });
-              const skew = interpolate(wordProgress, [0, 0.45, 1], [-10, 0, 0], {
-                extrapolateLeft: 'clamp',
-                extrapolateRight: 'clamp',
-              });
-              const letterSpacing = interpolate(
-                wordProgress,
-                [0, 0.45, 1],
-                [0.22, 0.06, resolvedSettings.letterSpacingEm ?? 0.05],
-                {
-                  extrapolateLeft: 'clamp',
-                  extrapolateRight: 'clamp',
-                },
-              );
-
-              return (
-                <span
-                  key={`${word}-${wordIndex}`}
-                  style={{
-                    color:
-                      wordIndex === 0
-                        ? resolvedSettings.accentColor
-                        : resolvedSettings.textColor,
-                    opacity: interpolate(wordProgress, [0, 0.12, 1], [0, 1, 1], {
-                      extrapolateLeft: 'clamp',
-                      extrapolateRight: 'clamp',
-                    }),
-                    transform: `translate3d(${translateX.toFixed(2)}px, 0, 0) skewX(${skew.toFixed(2)}deg)`,
-                    letterSpacing: `${letterSpacing.toFixed(3)}em`,
-                  }}
-                >
-                  {word}
-                </span>
-              );
-            })}
-          </div>
-        ) : (
-          <div
-            style={{
-              ...baseTextStyle,
-              ...animatedBlockStyle,
-              filter:
-                resolvedEffect === 'glitchFlashHook'
-                  ? 'drop-shadow(-2px 0 0 rgba(244, 63, 94, 0.55)) drop-shadow(2px 0 0 rgba(56, 189, 248, 0.55))'
-                  : resolvedEffect === 'scalePunchZoom'
-                    ? `drop-shadow(0 0 ${(10 + animationIntensity * 20).toFixed(0)}px ${resolvedSettings.accentColor}66)`
-                    : animatedBlockStyle.filter,
-            }}
-          >
-            <span style={{ color: resolvedSettings.accentColor }}>{firstWord}</span>
-            {restWords ? ` ${restWords}` : ''}
-          </div>
-        )}
+        <div
+          style={{
+            ...baseTextStyle,
+            ...animatedBlockStyle,
+            filter:
+              resolvedEffect === 'glitchFlashHook'
+                ? `${String(animatedBlockStyle.filter ?? '').trim() ? `${String(animatedBlockStyle.filter ?? '').trim()} ` : ''}drop-shadow(-2px 0 0 rgba(244, 63, 94, 0.55)) drop-shadow(2px 0 0 rgba(56, 189, 248, 0.55))`
+                : resolvedEffect === 'scalePunchZoom'
+                  ? `drop-shadow(0 0 ${(10 + animationIntensity * 20).toFixed(0)}px ${resolvedSettings.accentColor}66)`
+                  : animatedBlockStyle.filter,
+          }}
+        >
+          <span style={{ color: resolvedSettings.accentColor }}>{firstWord}</span>
+          {restWords ? ` ${restWords}` : ''}
+        </div>
       </AbsoluteFill>
     </AbsoluteFill>
   );
