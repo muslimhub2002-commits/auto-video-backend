@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { GenerateScriptDto } from './dto/generate-script.dto';
+import { GenerateScriptIdeasDto } from './dto/generate-script-ideas.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
 import { GenerateBulkLookEffectsDto } from './dto/generate-bulk-look-effects.dto';
@@ -89,6 +90,15 @@ export class AiService {
 
   createScriptStream(options: GenerateScriptDto) {
     return this.textService.createScriptStream(options);
+  }
+
+  generateScriptIdeas(dto: GenerateScriptIdeasDto): Promise<{
+    ideas: Array<{
+      id: string;
+      title: string;
+    }>;
+  }> {
+    return this.textService.generateScriptIdeas(dto);
   }
 
   splitScript(dto: {
@@ -225,11 +235,37 @@ export class AiService {
       }))
       .filter((c) => c.key && c.name && c.description);
 
+    const safeCharacterKeys = new Set(safeCharacters.map((character) => character.key));
+    const selectedCharacterKeys = Array.isArray(dto?.selectedCharacterKeys)
+      ? Array.from(
+          new Set(
+            dto.selectedCharacterKeys
+              .map((value) => String(value ?? '').trim())
+              .filter(Boolean),
+          ),
+        )
+      : [];
+
+    if (selectedCharacterKeys.length > 4) {
+      throw new BadRequestException('You can select up to 4 wallpaper characters.');
+    }
+
+    if (selectedCharacterKeys.some((key) => !safeCharacterKeys.has(key))) {
+      throw new BadRequestException(
+        'Selected wallpaper characters must be from the safe character list.',
+      );
+    }
+
+    const selectedSafeCharacters = selectedCharacterKeys.length
+      ? safeCharacters.filter((character) => selectedCharacterKeys.includes(character.key))
+      : [];
+
     const wallpaper = await this.youtubeService.generateYoutubeWallpaperPrompt({
       script,
       title: title || undefined,
       promptModel: dto.promptModel,
       safeCharacters,
+      selectedSafeCharacters,
     });
 
     const style =
@@ -257,7 +293,7 @@ export class AiService {
     return {
       headline: wallpaper.headline,
       usedCharacterKeys: wallpaper.characterKeys,
-      safeCharacters,
+      safeCharacters: selectedSafeCharacters.length ? selectedSafeCharacters : safeCharacters,
       prompt: imageResult?.prompt,
       imageUrl: (imageResult as any)?.imageUrl,
       imageBase64: (imageResult as any)?.imageBase64,

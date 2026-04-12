@@ -802,7 +802,6 @@ export class AiVoiceService {
                 },
               ],
               generationConfig: {
-                temperature: 0,
                 responseModalities: ['AUDIO'],
                 speechConfig: {
                   voiceConfig: {

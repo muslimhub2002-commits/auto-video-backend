@@ -1,15 +1,11 @@
 export type TextAnimationEffect =
-  | 'popInBounceHook'
-  | 'slideCutFast'
-  | 'scalePunchZoom'
-  | 'maskReveal'
-  | 'glitchFlashHook'
-  | 'kineticTypography';
+  | 'slideCutFast';
 
 export type TextAnimationSettings = {
   presetKey?: TextAnimationEffect | 'custom';
   speed?: number;
   horizontalAlign?: 'left' | 'center' | 'right';
+  contentAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
   offsetX?: number;
   offsetY?: number;
@@ -37,6 +33,8 @@ export type TextAnimationSettings = {
   gradientAngleDeg?: number;
   backgroundDim?: number;
   animationIntensity?: number;
+  animatePerWord?: boolean;
+  wordDelaySeconds?: number;
   textCase?: 'original' | 'uppercase';
 };
 

@@ -1,10 +1,5 @@
 export const TEXT_ANIMATION_EFFECT_VALUES = [
-  'popInBounceHook',
   'slideCutFast',
-  'scalePunchZoom',
-  'maskReveal',
-  'glitchFlashHook',
-  'kineticTypography',
 ] as const;
 
 export const TEXT_BACKGROUND_MODE_VALUES = [
@@ -23,6 +18,7 @@ export type TextAnimationSettings = {
   presetKey?: TextAnimationEffect | 'custom';
   speed?: number;
   horizontalAlign?: 'left' | 'center' | 'right';
+  contentAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
   offsetX?: number;
   offsetY?: number;
@@ -44,6 +40,8 @@ export type TextAnimationSettings = {
   gradientAngleDeg?: number;
   backgroundDim?: number;
   animationIntensity?: number;
+  animatePerWord?: boolean;
+  wordDelaySeconds?: number;
   textCase?: 'original' | 'uppercase';
 };
 

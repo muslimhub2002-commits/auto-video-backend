@@ -52,12 +52,16 @@ type NormalizedVoiceOverChunk = {
   text: string;
   sentences: string[];
   provider: string | null;
+  providerVoiceId: string | null;
+  providerVoiceName: string | null;
   mimeType: string | null;
+  styleInstructions: string | null;
   durationSeconds: number | null;
   estimatedSeconds: number | null;
   url: string;
   fileName: string | null;
   createdAt: string | null;
+  elevenLabsSettings: NormalizedElevenLabsVoiceSettings | null;
 };
 
 type NormalizedVoiceGenerationConfig = {
@@ -124,9 +128,50 @@ export class ScriptsService implements OnModuleInit {
   private normalizeTextAnimationEffect(value: unknown): string | null {
     if (typeof value !== 'string') return null;
     const normalized = value.trim();
-    return ALLOWED_TEXT_ANIMATION_EFFECTS.has(normalized as any)
-      ? normalized
-      : null;
+    if (!ALLOWED_TEXT_ANIMATION_EFFECTS.has(normalized as any)) {
+      return null;
+    }
+
+    return 'slideCutFast';
+  }
+
+  private normalizeTextAnimationSettingsObject(
+    value: unknown,
+  ): Record<string, unknown> | null {
+    const normalized = this.normalizeSettingsObject(value);
+    if (!normalized) {
+      return null;
+    }
+
+    const next: Record<string, unknown> = { ...normalized };
+    const presetKey = this.normalizeTextAnimationEffect(next.presetKey);
+    if (presetKey) {
+      next.presetKey = presetKey;
+    } else {
+      delete next.presetKey;
+    }
+
+    const contentAlign = String(next.contentAlign ?? '').trim();
+    if (
+      contentAlign === 'left' ||
+      contentAlign === 'center' ||
+      contentAlign === 'right'
+    ) {
+      next.contentAlign = contentAlign;
+    } else {
+      delete next.contentAlign;
+    }
+
+    next.animatePerWord = next.animatePerWord === true;
+
+    const wordDelaySeconds = this.normalizeOptionalNumber(next.wordDelaySeconds);
+    if (wordDelaySeconds === null) {
+      delete next.wordDelaySeconds;
+    } else {
+      next.wordDelaySeconds = Math.min(0.4, Math.max(0.03, wordDelaySeconds));
+    }
+
+    return next;
   }
 
   private normalizeTextAnimationText(value: unknown): string | null {
@@ -166,7 +211,13 @@ export class ScriptsService implements OnModuleInit {
           text,
           sentences,
           provider: String((item as any)?.provider ?? '').trim() || null,
+          providerVoiceId:
+            String((item as any)?.providerVoiceId ?? '').trim() || null,
+          providerVoiceName:
+            String((item as any)?.providerVoiceName ?? '').trim() || null,
           mimeType: String((item as any)?.mimeType ?? '').trim() || null,
+          styleInstructions:
+            String((item as any)?.styleInstructions ?? '').trim() || null,
           durationSeconds: this.normalizeOptionalNumber(
             (item as any)?.durationSeconds,
           ),
@@ -176,6 +227,10 @@ export class ScriptsService implements OnModuleInit {
           url,
           fileName: String((item as any)?.fileName ?? '').trim() || null,
           createdAt: String((item as any)?.createdAt ?? '').trim() || null,
+          elevenLabsSettings:
+            this.normalizeElevenLabsVoiceSettingsInput(
+              (item as any)?.elevenLabsSettings,
+            ) ?? null,
         } satisfies NormalizedVoiceOverChunk;
       })
       .filter(Boolean) as NormalizedVoiceOverChunk[];
@@ -1471,7 +1526,7 @@ export class ScriptsService implements OnModuleInit {
                 text_animation_id: this.normalizeOptionalId(
                   (s as any).text_animation_id,
                 ),
-                text_animation_settings: this.normalizeSettingsObject(
+                text_animation_settings: this.normalizeTextAnimationSettingsObject(
                   (s as any).text_animation_settings,
                 ),
                 transition_sound_effects:
@@ -2150,7 +2205,7 @@ export class ScriptsService implements OnModuleInit {
             text_animation_id: this.normalizeOptionalId(
               (s as any).text_animation_id,
             ),
-            text_animation_settings: this.normalizeSettingsObject(
+            text_animation_settings: this.normalizeTextAnimationSettingsObject(
               (s as any).text_animation_settings,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
@@ -2326,7 +2381,7 @@ export class ScriptsService implements OnModuleInit {
           text_animation_id: this.normalizeOptionalId(
             (s as any).text_animation_id,
           ),
-          text_animation_settings: this.normalizeSettingsObject(
+          text_animation_settings: this.normalizeTextAnimationSettingsObject(
             (s as any).text_animation_settings,
           ),
           transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
@@ -2812,7 +2867,7 @@ export class ScriptsService implements OnModuleInit {
             text_animation_id: this.normalizeOptionalId(
               (s as any).text_animation_id,
             ),
-            text_animation_settings: this.normalizeSettingsObject(
+            text_animation_settings: this.normalizeTextAnimationSettingsObject(
               (s as any).text_animation_settings,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
@@ -3038,7 +3093,7 @@ export class ScriptsService implements OnModuleInit {
             text_animation_id: this.normalizeOptionalId(
               (s as any).text_animation_id,
             ),
-            text_animation_settings: this.normalizeSettingsObject(
+            text_animation_settings: this.normalizeTextAnimationSettingsObject(
               (s as any).text_animation_settings,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(

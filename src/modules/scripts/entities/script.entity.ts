@@ -85,12 +85,22 @@ export class Script {
     text: string;
     sentences: string[];
     provider: string | null;
+    providerVoiceId?: string | null;
+    providerVoiceName?: string | null;
     mimeType: string | null;
+    styleInstructions?: string | null;
     durationSeconds: number | null;
     estimatedSeconds: number | null;
     url: string;
     fileName?: string | null;
     createdAt?: string | null;
+    elevenLabsSettings?: {
+      stability?: number | null;
+      similarityBoost?: number | null;
+      style?: number | null;
+      speed?: number | null;
+      useSpeakerBoost?: boolean | null;
+    } | null;
   }> | null;
 
   @Column({ type: 'jsonb', nullable: true })

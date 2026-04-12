@@ -39,7 +39,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   // Treat empty strings from the backend as "unset" so local `staticFile()` defaults work.
   const rawBackgroundMusicSrc = timeline.assets?.backgroundMusicSrc;
   const backgroundMusicSrc =
-    rawBackgroundMusicSrc === null
+    rawBackgroundMusicSrc === null || rawBackgroundMusicSrc === '__none__'
       ? null
       : rawBackgroundMusicSrc || DEFAULT_BACKGROUND_MUSIC_SRC;
 

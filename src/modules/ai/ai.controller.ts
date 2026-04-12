@@ -16,6 +16,7 @@ import { Response } from 'express';
 import { FileFieldsInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { AiService } from './ai.service';
 import { GenerateScriptDto } from './dto/generate-script.dto';
+import { GenerateScriptIdeasDto } from './dto/generate-script-ideas.dto';
 import { SplitScriptDto } from './dto/split-script.dto';
 import { SplitIntoShortsDto } from './dto/split-into-shorts.dto';
 import { GenerateImageDto } from './dto/generate-image.dto';
@@ -91,6 +92,13 @@ export class AiController {
       }
       res.end('\n[Error] Failed to stream script.');
     }
+  }
+
+  @Post('generate-script-ideas')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async generateScriptIdeas(@Body() body: GenerateScriptIdeasDto) {
+    return this.aiService.generateScriptIdeas(body);
   }
 
   /**

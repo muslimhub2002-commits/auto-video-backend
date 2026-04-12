@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsNotEmpty,
@@ -78,4 +79,10 @@ export class YoutubeWallpaperDto {
   @Type(() => ScriptCharacterInput)
   @IsOptional()
   characters?: ScriptCharacterInput[];
+
+  @IsArray()
+  @ArrayMaxSize(4)
+  @IsString({ each: true })
+  @IsOptional()
+  selectedCharacterKeys?: string[];
 }

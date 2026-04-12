@@ -52,17 +52,19 @@ describe('buildTimeline', () => {
         {
           text: 'This hook should use a solid background',
           mediaType: 'text',
-          textAnimationEffect: 'maskReveal',
+          textAnimationEffect: 'slideCutFast',
           textAnimationText: 'Solid hook',
           textAnimationSettings: {
             backgroundMode: 'solid',
             backgroundColor: '#111827',
+            animatePerWord: true,
+            wordDelaySeconds: 0.12,
           },
         },
         {
           text: 'This hook should inherit an image background',
           mediaType: 'text',
-          textAnimationEffect: 'popInBounceHook',
+          textAnimationEffect: 'slideCutFast',
           textAnimationSettings: {
             backgroundMode: 'image',
           },
@@ -77,17 +79,19 @@ describe('buildTimeline', () => {
 
     expect(timeline.scenes[0]).toMatchObject({
       mediaType: 'text',
-      textAnimationEffect: 'maskReveal',
+      textAnimationEffect: 'slideCutFast',
       textAnimationText: 'Solid hook',
       textAnimationSettings: {
         backgroundMode: 'solid',
+        animatePerWord: true,
+        wordDelaySeconds: 0.12,
       },
     });
     expect(timeline.scenes[0].imageSrc).toBeUndefined();
 
     expect(timeline.scenes[1]).toMatchObject({
       mediaType: 'text',
-      textAnimationEffect: 'popInBounceHook',
+      textAnimationEffect: 'slideCutFast',
       textAnimationSettings: {
         backgroundMode: 'image',
       },

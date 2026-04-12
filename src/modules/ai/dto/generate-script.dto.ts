@@ -3,7 +3,7 @@ import { IsArray, IsOptional, IsString, ValidateNested } from 'class-validator';
 
 class ReferenceScriptDto {
   @IsString()
-  script: string;
+  script!: string;
 
   @IsString()
   @IsOptional()
@@ -12,6 +12,11 @@ class ReferenceScriptDto {
   @IsString()
   @IsOptional()
   title?: string;
+}
+
+class SelectedScriptIdeaDto {
+  @IsString()
+  title!: string;
 }
 
 export class GenerateScriptDto {
@@ -62,4 +67,9 @@ export class GenerateScriptDto {
   @Type(() => ReferenceScriptDto)
   @IsOptional()
   referenceScripts?: ReferenceScriptDto[];
+
+  @ValidateNested()
+  @Type(() => SelectedScriptIdeaDto)
+  @IsOptional()
+  selectedIdea?: SelectedScriptIdeaDto;
 }

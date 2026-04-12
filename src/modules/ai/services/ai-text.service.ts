@@ -3,8 +3,9 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { GenerateScriptDto } from '../dto/generate-script.dto';
+import { GenerateScriptIdeasDto } from '../dto/generate-script-ideas.dto';
 import { EnhanceScriptDto } from '../dto/enhance-script.dto';
 import { EnhanceSentenceDto } from '../dto/enhance-sentence.dto';
 import { GenerateBulkLookEffectsDto } from '../dto/generate-bulk-look-effects.dto';
@@ -40,7 +41,7 @@ export class AiTextService {
     'rotationDrift',
   ] as const;
 
-  constructor(private readonly runtime: AiRuntimeService) { }
+  constructor(private readonly runtime: AiRuntimeService) {}
 
   private get llm() {
     return this.runtime.llm;
@@ -55,6 +56,120 @@ export class AiTextService {
   private normalizeTechnique(raw?: string | null): string | null {
     const s = (raw ?? '').trim();
     return s ? s : null;
+  }
+
+  private getLanguageDescription(languageCodeRaw?: string | null): string {
+    const code = String(languageCodeRaw ?? '').trim() || 'en';
+    switch (code.toLowerCase()) {
+      case 'en':
+        return 'English (en)';
+      case 'ar':
+        return 'Arabic (ar)';
+      case 'fr':
+        return 'French (fr)';
+      case 'es':
+        return 'Spanish (es)';
+      case 'de':
+        return 'German (de)';
+      case 'it':
+        return 'Italian (it)';
+      case 'pt':
+        return 'Portuguese (pt)';
+      case 'ru':
+        return 'Russian (ru)';
+      case 'tr':
+        return 'Turkish (tr)';
+      case 'hi':
+        return 'Hindi (hi)';
+      case 'ur':
+        return 'Urdu (ur)';
+      case 'id':
+        return 'Indonesian (id)';
+      case 'ja':
+        return 'Japanese (ja)';
+      case 'ko':
+        return 'Korean (ko)';
+      case 'zh-cn':
+      case 'zh':
+        return 'Chinese (Simplified) (zh-CN)';
+      default:
+        return `${code} (target language code)`;
+    }
+  }
+
+  private normalizeReferenceScripts(
+    referenceScripts: GenerateScriptDto['referenceScripts'],
+  ) {
+    return (referenceScripts ?? [])
+      .map((r) => ({
+        id: typeof r?.id === 'string' ? r.id.trim() : '',
+        title: typeof r?.title === 'string' ? r.title.trim() : '',
+        script: typeof r?.script === 'string' ? r.script.trim() : '',
+      }))
+      .filter((r) => Boolean(r.script));
+  }
+
+  private appendReferenceScriptMessages(
+    messages: LlmMessage[],
+    referenceScripts: ReturnType<AiTextService['normalizeReferenceScripts']>,
+  ) {
+    if (referenceScripts.length === 0) return;
+
+    messages.push({
+      role: 'system',
+      content:
+        'REFERENCE SCRIPTS MODE: The user provided one or more reference scripts in the conversation history below. ' +
+        'Analyze them to infer writing style (voice, pacing, structure, rhythm, hooks, transitions). ' +
+        'For this request, IGNORE any style/tone field and IGNORE any writing-goals prompt text. ' +
+        'Generate NEW output that matches the requested subject, subject content, and length constraints, while matching the STYLE of the references. ' +
+        'Do NOT mention the reference scripts. Do NOT copy unique facts or reuse long verbatim phrases; only mimic style.',
+    });
+
+    referenceScripts.forEach((ref, idx) => {
+      const headerParts = [`Reference Script #${idx + 1}`];
+      if (ref.title) headerParts.push(`Title: ${ref.title}`);
+      if (ref.id) headerParts.push(`Id: ${ref.id}`);
+
+      messages.push({
+        role: 'user',
+        content:
+          `${headerParts.join(' | ')}\n` +
+          'Use this script as a STYLE exemplar only.',
+      });
+
+      messages.push({ role: 'assistant', content: ref.script });
+    });
+  }
+
+  private normalizeIdeaText(value: unknown): string {
+    const normalized =
+      typeof value === 'string'
+        ? value
+        : typeof value === 'number' || typeof value === 'boolean'
+          ? String(value)
+          : '';
+
+    return normalized
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private dedupeScriptIdeas(
+    ideas: Array<{
+      title: string;
+    }>,
+  ) {
+    const seen = new Set<string>();
+
+    return ideas.filter((idea) => {
+      const signature = createHash('sha1')
+        .update(idea.title.toLowerCase())
+        .digest('hex');
+
+      if (seen.has(signature)) return false;
+      seen.add(signature);
+      return true;
+    });
   }
 
   private getTechniquePromptBlock(techniqueRaw?: string | null): string | null {
@@ -557,53 +672,12 @@ export class AiTextService {
     const model = options.model?.trim() || this.model;
     const customSystemPrompt = options.systemPrompt?.trim() || '';
     const wordRange = this.getStrictWordRange(length);
+    const languageDesc = this.getLanguageDescription(languageCode);
 
-    const languageDesc = (() => {
-      const code = languageCode;
-      switch (code.toLowerCase()) {
-        case 'en':
-          return 'English (en)';
-        case 'ar':
-          return 'Arabic (ar)';
-        case 'fr':
-          return 'French (fr)';
-        case 'es':
-          return 'Spanish (es)';
-        case 'de':
-          return 'German (de)';
-        case 'it':
-          return 'Italian (it)';
-        case 'pt':
-          return 'Portuguese (pt)';
-        case 'ru':
-          return 'Russian (ru)';
-        case 'tr':
-          return 'Turkish (tr)';
-        case 'hi':
-          return 'Hindi (hi)';
-        case 'ur':
-          return 'Urdu (ur)';
-        case 'id':
-          return 'Indonesian (id)';
-        case 'ja':
-          return 'Japanese (ja)';
-        case 'ko':
-          return 'Korean (ko)';
-        case 'zh-cn':
-        case 'zh':
-          return 'Chinese (Simplified) (zh-CN)';
-        default:
-          return `${code} (target language code)`;
-      }
-    })();
-
-    const referenceScripts = (options.referenceScripts ?? [])
-      .map((r) => ({
-        id: typeof r?.id === 'string' ? r.id.trim() : '',
-        title: typeof r?.title === 'string' ? r.title.trim() : '',
-        script: typeof r?.script === 'string' ? r.script.trim() : '',
-      }))
-      .filter((r) => Boolean(r.script));
+    const referenceScripts = this.normalizeReferenceScripts(
+      options.referenceScripts,
+    );
+    const selectedIdeaTitle = this.normalizeIdeaText(options.selectedIdea?.title);
 
     const haveReferences = referenceScripts.length > 0;
     const techniqueBlock = this.getTechniquePromptBlock(technique);
@@ -633,30 +707,7 @@ export class AiTextService {
       }
 
       if (haveReferences) {
-        messages.push({
-          role: 'system',
-          content:
-            'REFERENCE SCRIPTS MODE: The user provided one or more reference scripts in the conversation history below. ' +
-            'Analyze them to infer writing style (voice, pacing, structure, rhythm, hooks, transitions). ' +
-            'For this request, IGNORE any style/tone field and IGNORE any writing-goals prompt text. ' +
-            'Generate a NEW script that matches the requested subject, subject content, and length constraints, while matching the STYLE of the references. ' +
-            'Do NOT mention the reference scripts. Do NOT copy unique facts or reuse long verbatim phrases; only mimic style.',
-        });
-
-        referenceScripts.forEach((ref, idx) => {
-          const headerParts = [`Reference Script #${idx + 1}`];
-          if (ref.title) headerParts.push(`Title: ${ref.title}`);
-          if (ref.id) headerParts.push(`Id: ${ref.id}`);
-
-          messages.push({
-            role: 'user',
-            content:
-              `${headerParts.join(' | ')}\n` +
-              'Use this script as a STYLE exemplar only.',
-          });
-
-          messages.push({ role: 'assistant', content: ref.script });
-        });
+        this.appendReferenceScriptMessages(messages, referenceScripts);
       }
 
       messages.push({
@@ -667,10 +718,19 @@ export class AiTextService {
           `Strict word count requirement: ${wordRange.minWords}-${wordRange.maxWords} words (target ${wordRange.targetWords}).\n` +
           `Language: ${languageDesc}.\n` +
           `Subject: ${subject}.\n` +
+          (selectedIdeaTitle
+            ? 'SELECTED IDEA: The user explicitly chose this direction, so the full script must be about this exact idea rather than a different interpretation of the subject.\n' +
+              `Idea title: ${selectedIdeaTitle}.\n`
+            : '') +
           (subjectContent
             ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${subjectContent}.\n`
             : '') +
-          'Write the NEW script in the same narrative style as the reference scripts above.\n' +
+          (haveReferences
+            ? 'Write the NEW script in the same narrative style as the reference scripts above.\n'
+            : `Style: ${style}.\n`) +
+          (customSystemPrompt
+            ? `Additional writing guidance: ${customSystemPrompt}.\n`
+            : '') +
           `For religious (Islam) scripts, keep it respectful, authentic, and avoid controversial topics.\n` +
           'Do not include scene directions, only spoken narration.',
       });
@@ -678,6 +738,129 @@ export class AiTextService {
       return this.llm.streamText({ model, messages, maxTokens: 2500 });
     } catch {
       throw new InternalServerErrorException('Failed to generate script');
+    }
+  }
+
+  async generateScriptIdeas(dto: GenerateScriptIdeasDto): Promise<{
+    ideas: Array<{
+      id: string;
+      title: string;
+    }>;
+  }> {
+    const subject = String(dto.subject ?? '').trim() || 'religious (Islam)';
+    const subjectContent = String(dto.subjectContent ?? '').trim();
+    const length = String(dto.length ?? '').trim() || '1 minute';
+    const style = String(dto.style ?? '').trim() || 'Conversational';
+    const technique = this.normalizeTechnique(dto.technique);
+    const languageCode = String(dto.language ?? '').trim() || 'en';
+    const languageDesc = this.getLanguageDescription(languageCode);
+    const model = String(dto.model ?? '').trim() || this.model;
+    const count = this.clampNumber(dto.count, 5, 5, 5);
+    const wordRange = this.getStrictWordRange(length);
+    const customSystemPrompt = String(dto.systemPrompt ?? '').trim();
+    const referenceScripts = this.normalizeReferenceScripts(dto.referenceScripts);
+    const techniqueBlock = this.getTechniquePromptBlock(technique);
+
+    const messages: LlmMessage[] = [
+      {
+        role: 'system',
+        content:
+          'You are an expert video topic strategist for short-form and long-form narrated videos. ' +
+          'Return ONLY valid JSON. No prose, no markdown, no code fences. ' +
+          'Your job is to produce exactly five clearly distinct script ideas that all stay within the selected subject but are not variations of the same topic. ' +
+          'Each idea must feel different in story, event, or hook. Avoid duplicates, near-duplicates, and simple wording changes.',
+      },
+      {
+        role: 'system',
+        content:
+          'JSON schema:\n' +
+          '{"ideas":[{"title":"string"}]}\n' +
+          'Rules:\n' +
+          '- Return exactly 5 ideas.\n' +
+          '- `title` must be concise, specific, and strong enough for the user to choose from on its own.\n' +
+          '- Every title must imply a different script direction, not five phrasings of one topic.\n' +
+          '- Every idea must be suitable for a final script constrained to approximately ' +
+          `${wordRange.minWords}-${wordRange.maxWords} words.`,
+      },
+    ];
+
+    if (techniqueBlock) {
+      messages.push({
+        role: 'system',
+        content:
+          'When shaping the ideas, keep the selected narrative technique in mind so the future script direction fits it well.\n\n' +
+          techniqueBlock,
+      });
+    }
+
+    if (referenceScripts.length > 0) {
+      this.appendReferenceScriptMessages(messages, referenceScripts);
+    }
+
+    messages.push({
+      role: 'user',
+      content:
+        `Generate ${count} script ideas.\n` +
+        `Language: ${languageDesc}.\n` +
+        `Subject: ${subject}.\n` +
+        (subjectContent
+          ? `Subject content focus: ${subjectContent}.\n`
+          : '') +
+        `Target duration: ${length}.\n` +
+        `Target script word range: ${wordRange.minWords}-${wordRange.maxWords} words.\n` +
+        (referenceScripts.length > 0
+          ? 'Match the overall style DNA of the reference scripts while keeping all 5 ideas about different topics.\n'
+          : `Preferred style: ${style}.\n`) +
+        (customSystemPrompt
+          ? `Additional writing guidance: ${customSystemPrompt}.\n`
+          : '') +
+        'Important: the 5 ideas must not be related to the same event, the same subtopic, or the same lesson told five ways. ' +
+        'They should feel like five genuinely different script-title directions a user could choose from. ' +
+        'For religious (Islam) requests, keep ideas respectful, authentic, and away from controversial framing.',
+    });
+
+    try {
+      const parsed = await this.llm.completeJson<{
+        ideas?: Array<{
+          title?: unknown;
+        }>;
+      }>({
+        model,
+        maxTokens: 1400,
+        temperature: 0.8,
+        retries: 2,
+        messages,
+      });
+
+      const normalized = Array.isArray(parsed?.ideas)
+        ? parsed.ideas
+            .map((idea) => ({
+              title: this.normalizeIdeaText(idea?.title),
+            }))
+            .filter((idea) => idea.title)
+        : [];
+
+      const deduped = this.dedupeScriptIdeas(normalized).slice(0, count);
+
+      if (deduped.length !== count) {
+        throw new InternalServerErrorException(
+          'Failed to generate enough distinct script ideas',
+        );
+      }
+
+      return {
+        ideas: deduped.map((idea) => ({
+          id: randomUUID(),
+          ...idea,
+        })),
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Failed to generate script ideas',
+      );
     }
   }
 

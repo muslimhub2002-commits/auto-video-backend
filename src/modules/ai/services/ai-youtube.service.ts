@@ -64,6 +64,7 @@ export class AiYoutubeService {
     title?: string;
     promptModel?: string;
     safeCharacters?: Array<{ key: string; name: string; description: string }>;
+    selectedSafeCharacters?: Array<{ key: string; name: string; description: string }>;
   }): Promise<{ headline: string; prompt: string; characterKeys: string[] }> {
     const script = String(params?.script ?? '').trim();
     const trimmed = script.length > 3000 ? script.slice(0, 3000) : script;
@@ -87,12 +88,31 @@ export class AiYoutubeService {
         .slice(0, 12)
       : [];
 
-    const safeCharBlock = safeChars.length
+    const selectedSafeChars = Array.isArray(params?.selectedSafeCharacters)
+      ? params.selectedSafeCharacters
+        .map((c) => ({
+          key: String(c?.key ?? '').trim(),
+          name: String(c?.name ?? '').trim(),
+          description: String(c?.description ?? '').trim(),
+        }))
+        .filter((c) => c.key && c.name && c.description)
+        .filter((c) => safeChars.some((safeChar) => safeChar.key === c.key))
+        .slice(0, 4)
+      : [];
+
+    const promptSafeChars = selectedSafeChars.length > 0 ? selectedSafeChars : safeChars;
+
+    const safeCharBlock = promptSafeChars.length
       ? 'SAFE CHARACTERS (ONLY these may be depicted as humans):\n' +
-      safeChars
+      promptSafeChars
         .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
         .join('\n')
       : 'SAFE CHARACTERS: (none provided)';
+
+    const selectedCharBlock = selectedSafeChars.length
+      ? '\n\nUSER-SELECTED CHARACTERS (prefer these if any humans appear):\n' +
+        selectedSafeChars.map((c) => `- ${c.key}: ${c.name}`).join('\n')
+      : '';
 
     let parsed: any;
     try {
@@ -123,7 +143,8 @@ export class AiYoutubeService {
               '- Composition: rule of thirds, clear focal subject, clean negative space.\n' +
               '- Avoid clutter; prioritize clarity and curiosity.\n' +
               '- Only depict human characters if they are listed in SAFE CHARACTERS.\n' +
-              '- characterKeys must be a subset of SAFE CHARACTERS keys (0-3 keys).\n' +
+              '- If USER-SELECTED CHARACTERS are provided, only choose from that subset when depicting humans.\n' +
+              '- characterKeys must be a subset of SAFE CHARACTERS keys (0-4 keys).\n' +
               '- The prompt MUST repeat the headline text exactly in quotes, like: Headline text: "...".\n' +
               '- The prompt MUST explicitly instruct: (1) large face close-up, (2) vivid contrasting colors, (3) one graphic element, (4) large background text.\n',
           },
@@ -135,6 +156,7 @@ export class AiYoutubeService {
                 ? `VIDEO TITLE (do NOT copy this text as the headline):\n${title}\n\n`
                 : '') +
               safeCharBlock +
+              selectedCharBlock +
               '\n\nSCRIPT:\n' +
               trimmed,
           },
@@ -152,8 +174,8 @@ export class AiYoutubeService {
     const characterKeys = characterKeysRaw
       .map((k: any) => String(k ?? '').trim())
       .filter(Boolean)
-      .filter((k: string) => safeChars.some((c) => c.key === k))
-      .slice(0, 3);
+      .filter((k: string) => promptSafeChars.some((c) => c.key === k))
+      .slice(0, 4);
 
     if (!headline) {
       throw new InternalServerErrorException('Model returned empty headline');

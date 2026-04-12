@@ -783,6 +783,18 @@ export class RenderVideosController {
       typeof body.backgroundMusicVolume === 'number'
         ? normalizeVolume(body.backgroundMusicVolume)
         : undefined;
+    const rawBackgroundMusicSrc =
+      typeof body.backgroundMusicSrc === 'string'
+        ? body.backgroundMusicSrc.trim()
+        : body.backgroundMusicSrc;
+    const backgroundMusicSrc =
+      rawBackgroundMusicSrc === '__none__'
+        ? null
+        : typeof rawBackgroundMusicSrc === 'string' && rawBackgroundMusicSrc
+          ? rawBackgroundMusicSrc
+          : rawBackgroundMusicSrc === null
+            ? null
+            : undefined;
 
     const job = await this.renderVideosService.createJob({
       language:
@@ -801,12 +813,7 @@ export class RenderVideosController {
       addSubtitles: body.addSubtitles,
       enableGlitchTransitions: !!body.enableGlitchTransitions,
       enableLongFormSubscribeOverlay: body.enableLongFormSubscribeOverlay,
-      backgroundMusicSrc:
-        typeof body.backgroundMusicSrc === 'string'
-          ? body.backgroundMusicSrc
-          : body.backgroundMusicSrc === null
-            ? null
-            : undefined,
+      backgroundMusicSrc,
       backgroundMusicVolume,
     });
 

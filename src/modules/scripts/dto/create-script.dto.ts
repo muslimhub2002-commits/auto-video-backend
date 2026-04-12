@@ -369,7 +369,19 @@ class VoiceOverChunkInput {
 
   @IsString()
   @IsOptional()
+  providerVoiceId?: string | null;
+
+  @IsString()
+  @IsOptional()
+  providerVoiceName?: string | null;
+
+  @IsString()
+  @IsOptional()
   mimeType?: string | null;
+
+  @IsString()
+  @IsOptional()
+  styleInstructions?: string | null;
 
   @Type(() => Number)
   @IsNumber()
@@ -390,6 +402,11 @@ class VoiceOverChunkInput {
   @IsString()
   @IsOptional()
   createdAt?: string | null;
+
+  @ValidateNested()
+  @Type(() => ElevenLabsVoiceSettingsInput)
+  @IsOptional()
+  elevenLabsSettings?: ElevenLabsVoiceSettingsInput | null;
 
   @IsString()
   @IsNotEmpty()
