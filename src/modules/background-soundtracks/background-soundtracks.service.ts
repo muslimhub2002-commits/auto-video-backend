@@ -7,32 +7,21 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { v2 as cloudinary } from 'cloudinary';
 import * as crypto from 'crypto';
 import { BackgroundSoundtrack } from './entities/background-soundtrack.entity';
 import {
   DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
   normalizeSoundEffectAudioSettings,
 } from '../sound-effects/audio-settings.types';
+import { UploadsService } from '../uploads/uploads.service';
 
 @Injectable()
 export class BackgroundSoundtracksService implements OnModuleInit {
   constructor(
     @InjectRepository(BackgroundSoundtrack)
     private readonly repo: Repository<BackgroundSoundtrack>,
-  ) {
-    if (
-      process.env.CLOUDINARY_CLOUD_NAME &&
-      process.env.CLOUDINARY_API_KEY &&
-      process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      cloudinary.config({
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
-      });
-    }
-  }
+    private readonly uploadsService: UploadsService,
+  ) {}
 
   async onModuleInit() {
     await this.ensureBackgroundSoundtracksSchema();
@@ -295,22 +284,15 @@ export class BackgroundSoundtracksService implements OnModuleInit {
       throw new NotFoundException('Soundtrack not found');
     }
 
-    // Best-effort Cloudinary cleanup. The upload uses `resource_type: 'video'`.
     const publicId = String((target as any)?.public_id ?? '').trim();
     if (publicId) {
       try {
-        if (
-          process.env.CLOUDINARY_CLOUD_NAME &&
-          process.env.CLOUDINARY_API_KEY &&
-          process.env.CLOUDINARY_CLOUD_SECRET
-        ) {
-          await cloudinary.uploader.destroy(publicId, {
-            resource_type: 'video',
-          } as any);
-        }
+        await this.uploadsService.deleteByRef({
+          providerRef: publicId,
+          resourceType: 'audio',
+        });
       } catch (error) {
-        // Don't block deletion if Cloudinary cleanup fails.
-        console.error('Failed to delete soundtrack from Cloudinary', {
+        console.error('Failed to delete soundtrack from managed upload', {
           soundtrackId,
           publicId,
           error,
@@ -322,45 +304,20 @@ export class BackgroundSoundtracksService implements OnModuleInit {
     return target.id;
   }
 
-  private ensureCloudinaryConfigured() {
-    if (
-      !process.env.CLOUDINARY_CLOUD_NAME ||
-      !process.env.CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      throw new InternalServerErrorException(
-        'Cloudinary environment variables are not configured',
-      );
-    }
-  }
-
-  private async uploadAudioToCloudinary(params: {
+  private async uploadAudioToManagedStorage(params: {
     buffer: Buffer;
     filename: string;
   }): Promise<{ url: string; public_id: string | null }> {
-    this.ensureCloudinaryConfigured();
-
-    const uploadResult: any = await new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          folder: 'auto-video-generator/background-soundtracks',
-          resource_type: 'video',
-          overwrite: false,
-        },
-        (error, result) => {
-          if (error || !result) {
-            return reject(error ?? new Error('Cloudinary upload failed'));
-          }
-          resolve(result);
-        },
-      );
-
-      stream.end(params.buffer);
+    const uploadResult = await this.uploadsService.uploadBuffer({
+      buffer: params.buffer,
+      filename: params.filename,
+      folder: 'auto-video-generator/background-soundtracks',
+      resourceType: 'audio',
     });
 
     return {
-      url: uploadResult.secure_url,
-      public_id: uploadResult.public_id ?? null,
+      url: uploadResult.url,
+      public_id: uploadResult.providerRef,
     };
   }
 
@@ -374,7 +331,7 @@ export class BackgroundSoundtracksService implements OnModuleInit {
         .update(params.buffer)
         .digest('hex');
 
-      const uploaded = await this.uploadAudioToCloudinary({
+      const uploaded = await this.uploadAudioToManagedStorage({
         buffer: params.buffer,
         filename: params.filename,
       });
@@ -434,7 +391,7 @@ export class BackgroundSoundtracksService implements OnModuleInit {
 
       await this.assertTitleAvailable({ user_id: params.user_id, title });
 
-      const uploaded = await this.uploadAudioToCloudinary({
+      const uploaded = await this.uploadAudioToManagedStorage({
         buffer: params.buffer,
         filename: params.filename,
       });

@@ -11,9 +11,9 @@ import { Image } from './entities/image.entity';
 import { CreateImageDto } from './dto/create-image.dto';
 import { UpdateImageDto } from './dto/update-image.dto';
 import tinify from 'tinify';
-import { v2 as cloudinary } from 'cloudinary';
 import * as crypto from 'crypto';
 import { downloadUrlToBuffer } from '../render-videos/utils/net.utils';
+import { UploadsService } from '../uploads/uploads.service';
 import {
   browsePexelsPhotos,
   searchPexelsPhotos,
@@ -197,21 +197,10 @@ export class ImagesService {
   constructor(
     @InjectRepository(Image)
     private readonly imagesRepository: Repository<Image>,
+    private readonly uploadsService: UploadsService,
   ) {
     if (process.env.TINIFY_KEY) {
       tinify.key = process.env.TINIFY_KEY;
-    }
-
-    if (
-      process.env.CLOUDINARY_CLOUD_NAME &&
-      process.env.CLOUDINARY_API_KEY &&
-      process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      cloudinary.config({
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
-      });
     }
   }
 
@@ -491,16 +480,6 @@ export class ImagesService {
       throw new InternalServerErrorException('TINIFY_KEY is not configured');
     }
 
-    if (
-      !process.env.CLOUDINARY_CLOUD_NAME ||
-      !process.env.CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      throw new InternalServerErrorException(
-        'Cloudinary environment variables are not configured',
-      );
-    }
-
     try {
       // const source = tinify.fromBuffer(params.buffer);
       // const compressedBuffer = await source.toBuffer();
@@ -529,33 +508,23 @@ export class ImagesService {
         return this.imagesRepository.save(existing);
       }
 
-      const uploadResult: any = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: 'auto-video-generator/images',
-            resource_type: 'image',
-            overwrite: false,
-          },
-          (error, result) => {
-            if (error || !result) {
-              return reject(error ?? new Error('Cloudinary upload failed'));
-            }
-            resolve(result);
-          },
-        );
-
-        stream.end(params.buffer);
+      const uploadResult = await this.uploadsService.uploadBuffer({
+        buffer: params.buffer,
+        filename: params.filename,
+        mimeType: null,
+        folder: 'auto-video-generator/images',
+        resourceType: 'image',
       });
 
       const imagePartial: Partial<Image> = {
-        image: uploadResult.secure_url,
+        image: uploadResult.url,
         prompt: typeof params.prompt === 'string' ? params.prompt.trim() : null,
         user_id: params.user_id,
         message_id: params.message_id ?? null,
         image_style: params.image_style,
         image_size: params.image_size,
         image_quality: params.image_quality,
-        public_id: uploadResult.public_id,
+        public_id: uploadResult.providerRef,
         number_of_times_used: 0,
         hash,
       };
@@ -577,7 +546,7 @@ export class ImagesService {
         /invalid image file/i.test(message)
       ) {
         console.warn(
-          'Tinify rejected image (unsupported type). Uploading uncompressed to Cloudinary.',
+          'Tinify rejected image (unsupported type). Uploading the original image through managed uploads.',
           { status: status ?? undefined, message: message || undefined },
         );
 
@@ -610,16 +579,6 @@ export class ImagesService {
     image_quality?: Image['image_quality'];
     prompt?: string;
   }): Promise<Image> {
-    if (
-      !process.env.CLOUDINARY_CLOUD_NAME ||
-      !process.env.CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      throw new InternalServerErrorException(
-        'Cloudinary environment variables are not configured',
-      );
-    }
-
     try {
       const hash = crypto
         .createHash('sha256')
@@ -641,33 +600,23 @@ export class ImagesService {
         return this.imagesRepository.save(existing);
       }
 
-      const uploadResult: any = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: 'auto-video-generator/images',
-            resource_type: 'image',
-            overwrite: false,
-          },
-          (error, result) => {
-            if (error || !result) {
-              return reject(error ?? new Error('Cloudinary upload failed'));
-            }
-            resolve(result);
-          },
-        );
-
-        stream.end(params.buffer);
+      const uploadResult = await this.uploadsService.uploadBuffer({
+        buffer: params.buffer,
+        filename: params.filename,
+        mimeType: null,
+        folder: 'auto-video-generator/images',
+        resourceType: 'image',
       });
 
       const imagePartial: Partial<Image> = {
-        image: uploadResult.secure_url,
+        image: uploadResult.url,
         prompt: typeof params.prompt === 'string' ? params.prompt.trim() : null,
         user_id: params.user_id,
         message_id: params.message_id ?? null,
         image_style: params.image_style,
         image_size: params.image_size,
         image_quality: params.image_quality,
-        public_id: uploadResult.public_id,
+        public_id: uploadResult.providerRef,
         number_of_times_used: 0,
         hash,
       };
@@ -760,11 +709,12 @@ export class ImagesService {
 
     if (image.public_id) {
       try {
-        await cloudinary.uploader.destroy(image.public_id, {
-          resource_type: 'image',
+        await this.uploadsService.deleteByRef({
+          providerRef: image.public_id,
+          resourceType: 'image',
         });
       } catch (error) {
-        console.warn('Failed to delete image from Cloudinary:', error);
+        console.warn('Failed to delete image from managed uploads:', error);
       }
     }
 

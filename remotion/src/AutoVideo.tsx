@@ -69,7 +69,8 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   const fontScale = Math.max(0.5, Math.min(1, timeline.height / baseHeight));
   const voiceOverVolume = 1; // +0.5 louder than the 0.5 background track (max 1.0)
   const suspenseOpeningScene = timeline.scenes[0];
-  const isSuspenseOpening = Boolean(suspenseOpeningScene?.isSuspense);
+  // const isSuspenseOpening = Boolean(suspenseOpeningScene?.isSuspense);
+  const isSuspenseOpening = false;
   const cutTransitions = React.useMemo(() => {
     const base = buildCutTransitions(timeline.scenes);
     return base.map((t, idx) => {

@@ -347,14 +347,15 @@ export const Scene: React.FC<{
     // Inside a <Sequence>, useCurrentFrame() is already relative to the Sequence start.
     // Clamp to 0 to ensure each scene starts at default scale.
     const elapsedSeconds = Math.max(0, frame) / fps;
-    const isSuspenseOpening = scene.index === 0 && Boolean(scene.isSuspense);
+    // const isSuspenseOpening = scene.index === 0 && Boolean(scene.isSuspense);
+    const isSuspenseOpening = false;
     const suspenseFilter = isSuspenseOpening
       ? 'grayscale(1) contrast(1.38) brightness(0.88)'
       : undefined;
 
-    const visualEffect = scene.visualEffect ?? null;
+    const visualEffect = isTextScene ? null : scene.visualEffect ?? null;
     const resolvedLook = normalizeImageFilterSettings(
-      scene.imageFilterSettings,
+      isTextScene ? null : scene.imageFilterSettings,
       visualEffect,
     );
 
@@ -374,7 +375,9 @@ export const Scene: React.FC<{
       .filter(Boolean)
       .join(' ');
 
-    const wrapperFilter = [suspenseFilter, lookFilter].filter(Boolean).join(' ') || undefined;
+    const wrapperFilter = isTextScene
+      ? undefined
+      : [suspenseFilter, lookFilter].filter(Boolean).join(' ') || undefined;
 
     // Subtle film flicker for the suspense opening.
     const suspenseFlicker = isSuspenseOpening

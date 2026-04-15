@@ -12,8 +12,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
 import { VoiceOver } from './entities/voice-over.entity';
 import { AiService } from '../ai/ai.service';
-import { v2 as cloudinary } from 'cloudinary';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
+import { UploadsService } from '../uploads/uploads.service';
 
 type VoiceProvider = 'elevenlabs' | 'google';
 
@@ -89,61 +89,45 @@ export class VoiceOversService {
     @InjectRepository(VoiceOver)
     private readonly voiceOverRepository: Repository<VoiceOver>,
     private readonly aiService: AiService,
-  ) {
-    if (
-      process.env.CLOUDINARY_CLOUD_NAME &&
-      process.env.CLOUDINARY_API_KEY &&
-      process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      cloudinary.config({
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
-      });
-    }
+    private readonly uploadsService: UploadsService,
+  ) {}
+
+  private inferAudioMimeType(format?: string | null): string | undefined {
+    const normalized = String(format ?? '')
+      .trim()
+      .toLowerCase();
+
+    if (normalized === 'mp3') return 'audio/mpeg';
+    if (normalized === 'wav') return 'audio/wav';
+    if (normalized === 'aac') return 'audio/aac';
+    if (normalized === 'ogg') return 'audio/ogg';
+    if (normalized === 'webm') return 'audio/webm';
+    if (normalized === 'm4a' || normalized === 'mp4') return 'audio/mp4';
+    return undefined;
   }
 
-  private async uploadAudioPreviewToCloudinary(params: {
+  private async uploadAudioPreviewToManagedStorage(params: {
     buffer: Buffer;
     fileName: string;
     folder: string;
-    overwrite?: boolean;
     format?: string;
   }): Promise<string> {
-    if (
-      !process.env.CLOUDINARY_CLOUD_NAME ||
-      !process.env.CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      throw new InternalServerErrorException(
-        'Cloudinary environment variables are not configured',
-      );
-    }
+    const normalizedFormat = String(params.format ?? '')
+      .trim()
+      .toLowerCase();
+    const filename = normalizedFormat
+      ? `${params.fileName}.${normalizedFormat}`
+      : params.fileName;
 
-    const { buffer, fileName, folder, overwrite = false, format } = params;
-
-    return await new Promise<string>((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          resource_type: 'video',
-          folder,
-          public_id: fileName,
-          ...(format ? { format } : {}),
-          overwrite,
-        },
-        (error, result) => {
-          if (error) return reject(error);
-          if (!result?.secure_url) {
-            return reject(
-              new Error('Cloudinary upload failed: missing secure_url'),
-            );
-          }
-          resolve(result.secure_url);
-        },
-      );
-
-      uploadStream.end(buffer);
+    const uploadResult = await this.uploadsService.uploadBuffer({
+      buffer: params.buffer,
+      filename,
+      mimeType: this.inferAudioMimeType(normalizedFormat),
+      folder: params.folder,
+      resourceType: 'audio',
     });
+
+    return uploadResult.url;
   }
 
   async getOrCreatePreviewUrl(
@@ -178,11 +162,10 @@ export class VoiceOversService {
       .replace(/[:/\\\s]+/g, '__')
       .replace(/[^a-zA-Z0-9_\-]/g, '');
 
-    const previewUrl = await this.uploadAudioPreviewToCloudinary({
+    const previewUrl = await this.uploadAudioPreviewToManagedStorage({
       buffer: voiceResult.buffer,
       fileName: `${safePublicId}__preview`,
       folder: 'auto-video-generator/voice-previews',
-      overwrite: false,
       format: (() => {
         const name = String(voiceResult.filename ?? '')
           .trim()
@@ -397,7 +380,7 @@ export class VoiceOversService {
         } as any,
       );
       voice = (result ?? null) as any;
-    } catch (error) {
+    } catch (error: any) {
       this.logger.warn(
         `ElevenLabs SDK fetch failed for voice ${rawId}; falling back to HTTP: ${error?.message ?? error}`,
       );
@@ -552,7 +535,7 @@ export class VoiceOversService {
         provider,
         voice_id: nextVoiceId,
         name: rawId,
-        // Preserve any cached Cloudinary preview URL we may have generated.
+        // Preserve any cached preview URL we may have generated.
         preview_url: existing?.preview_url ?? null,
         description: null,
         category: 'gemini-tts',

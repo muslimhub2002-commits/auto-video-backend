@@ -1,30 +1,19 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { v2 as cloudinary } from 'cloudinary';
 import { Voice } from './entities/voice.entity';
 import { CreateVoiceDto } from './dto/create-voice.dto';
 import { UpdateVoiceDto } from './dto/update-voice.dto';
 import * as crypto from 'crypto';
+import { UploadsService } from '../uploads/uploads.service';
 
 @Injectable()
 export class VoicesService {
   constructor(
     @InjectRepository(Voice)
     private readonly voicesRepository: Repository<Voice>,
-  ) {
-    if (
-      process.env.CLOUDINARY_CLOUD_NAME &&
-      process.env.CLOUDINARY_API_KEY &&
-      process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      cloudinary.config({
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
-      });
-    }
-  }
+    private readonly uploadsService: UploadsService,
+  ) {}
 
   async create(createVoiceDto: CreateVoiceDto): Promise<Voice> {
     const voice = this.voicesRepository.create(createVoiceDto);
@@ -73,12 +62,28 @@ export class VoicesService {
     const safeLimit =
       Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 20;
 
-    const [items, total] = await this.voicesRepository.findAndCount({
-      where: { user_id },
-      order: { created_at: 'DESC' },
-      skip: (safePage - 1) * safeLimit,
-      take: safeLimit,
-    });
+    const cloudinaryDeliveryAvailable =
+      await this.uploadsService.isCloudinaryDeliveryAvailable();
+
+    const query = this.voicesRepository
+      .createQueryBuilder('voice')
+      .where('voice.user_id = :user_id', { user_id });
+
+    if (!cloudinaryDeliveryAvailable) {
+      query.andWhere(
+        'voice.voice NOT LIKE :cloudinaryHttps AND voice.voice NOT LIKE :cloudinaryHttp',
+        {
+          cloudinaryHttps: 'https://res.cloudinary.com/%',
+          cloudinaryHttp: 'http://res.cloudinary.com/%',
+        },
+      );
+    }
+
+    const [items, total] = await query
+      .orderBy('voice.created_at', 'DESC')
+      .skip((safePage - 1) * safeLimit)
+      .take(safeLimit)
+      .getManyAndCount();
 
     return { items, total, page: safePage, limit: safeLimit };
   }
@@ -99,16 +104,6 @@ export class VoicesService {
     voice_type?: string;
     voice_lang?: string;
   }): Promise<Voice> {
-    if (
-      !process.env.CLOUDINARY_CLOUD_NAME ||
-      !process.env.CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      throw new InternalServerErrorException(
-        'Cloudinary environment variables are not configured',
-      );
-    }
-
     try {
       // Compute a content hash of the audio buffer to detect duplicates
       const hash = crypto
@@ -133,26 +128,16 @@ export class VoicesService {
         return this.voicesRepository.save(existing);
       }
 
-      const uploadResult: any = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: 'auto-video-generator/voices',
-            resource_type: 'video', // audio files are stored under the "video" type in Cloudinary
-            overwrite: false,
-          },
-          (error, result) => {
-            if (error || !result) {
-              return reject(error ?? new Error('Cloudinary upload failed'));
-            }
-            resolve(result);
-          },
-        );
-
-        stream.end(params.buffer);
+      const uploadResult = await this.uploadsService.uploadBuffer({
+        buffer: params.buffer,
+        filename: params.filename,
+        mimeType: 'audio/mpeg',
+        folder: 'auto-video-generator/voices',
+        resourceType: 'audio',
       });
 
       const voicePartial: Partial<Voice> = {
-        voice: uploadResult.secure_url,
+        voice: uploadResult.url,
         user_id: params.user_id,
         number_of_times_used: 0,
         voice_type: params.voice_type,

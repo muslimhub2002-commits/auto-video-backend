@@ -40,6 +40,7 @@
     "@remotion/lambda": "4.0.409",
     "@remotion/renderer": "4.0.409",
     "@remotion/transitions": "4.0.409",
+    "@smash-sdk/uploader": "^2.1.5",
     "@types/bcrypt": "^6.0.0",
     "@types/passport-jwt": "^4.0.1",
     "bcrypt": "^6.0.0",

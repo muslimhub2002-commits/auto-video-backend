@@ -10,6 +10,12 @@ import { TiktokUploadDto } from './dto/tiktok-upload.dto';
 const TIKTOK_AUTH_BASE_URL = 'https://www.tiktok.com/v2/auth/authorize/';
 const TIKTOK_OPEN_API_BASE_URL = 'https://open.tiktokapis.com';
 const TIKTOK_SCOPES = ['user.info.basic', 'video.publish'];
+const TIKTOK_MIN_CHUNK_SIZE_BYTES = 5_000_000;
+const TIKTOK_DEFAULT_CHUNK_SIZE_BYTES = 32_000_000;
+const TIKTOK_MAX_CHUNK_SIZE_BYTES = 64_000_000;
+const TIKTOK_MAX_FINAL_CHUNK_SIZE_BYTES = 128_000_000;
+const TIKTOK_MAX_VIDEO_SIZE_BYTES = 4 * 1024 * 1024 * 1024;
+const TIKTOK_MAX_CHUNK_COUNT = 1000;
 
 type TiktokCreatorInfo = {
   creator_avatar_url?: string;
@@ -29,6 +35,18 @@ type TiktokApiEnvelope<T> = {
     message?: string;
     log_id?: string;
   };
+};
+
+type TiktokUploadChunk = {
+  start: number;
+  end: number;
+  size: number;
+};
+
+type TiktokUploadPlan = {
+  chunkSize: number;
+  totalChunkCount: number;
+  chunks: TiktokUploadChunk[];
 };
 
 function sleep(ms: number): Promise<void> {
@@ -104,6 +122,85 @@ function createCodeVerifier(): string {
 
 function createCodeChallenge(codeVerifier: string): string {
   return toBase64Url(createHash('sha256').update(codeVerifier).digest());
+}
+
+function buildTiktokUploadPlan(videoSize: number): TiktokUploadPlan {
+  if (!Number.isFinite(videoSize) || videoSize <= 0) {
+    throw new BadRequestException('TikTok video upload size must be greater than 0 bytes.');
+  }
+
+  if (videoSize > TIKTOK_MAX_VIDEO_SIZE_BYTES) {
+    throw new BadRequestException('TikTok videos must be 4 GB or smaller.');
+  }
+
+  if (videoSize < TIKTOK_MIN_CHUNK_SIZE_BYTES) {
+    return {
+      chunkSize: videoSize,
+      totalChunkCount: 1,
+      chunks: [
+        {
+          start: 0,
+          end: videoSize - 1,
+          size: videoSize,
+        },
+      ],
+    };
+  }
+
+  if (videoSize <= TIKTOK_MAX_CHUNK_SIZE_BYTES) {
+    return {
+      chunkSize: videoSize,
+      totalChunkCount: 1,
+      chunks: [
+        {
+          start: 0,
+          end: videoSize - 1,
+          size: videoSize,
+        },
+      ],
+    };
+  }
+
+  const chunkSize = TIKTOK_DEFAULT_CHUNK_SIZE_BYTES;
+  const totalChunkCount = Math.floor(videoSize / chunkSize);
+  if (totalChunkCount > TIKTOK_MAX_CHUNK_COUNT) {
+    throw new BadRequestException('TikTok upload requires too many chunks for this video size.');
+  }
+
+  if (totalChunkCount < 2) {
+    throw new BadRequestException('Unable to calculate a valid TikTok upload chunk count.');
+  }
+
+  if (chunkSize < TIKTOK_MIN_CHUNK_SIZE_BYTES || chunkSize > TIKTOK_MAX_CHUNK_SIZE_BYTES) {
+    throw new BadRequestException('Unable to calculate a valid TikTok upload chunk size.');
+  }
+
+  const chunks: TiktokUploadChunk[] = [];
+  let start = 0;
+
+  for (let index = 0; index < totalChunkCount; index += 1) {
+    const isFinalChunk = index === totalChunkCount - 1;
+    const size = isFinalChunk ? videoSize - start : chunkSize;
+
+    if (!isFinalChunk && size < TIKTOK_MIN_CHUNK_SIZE_BYTES) {
+      throw new BadRequestException('Unable to calculate a valid TikTok upload chunk size.');
+    }
+
+    if (isFinalChunk && size > TIKTOK_MAX_FINAL_CHUNK_SIZE_BYTES) {
+      throw new BadRequestException('TikTok final upload chunk would exceed the allowed size.');
+    }
+
+    const end = start + size - 1;
+
+    chunks.push({ start, end, size });
+    start = end + 1;
+  }
+
+  return {
+    chunkSize,
+    totalChunkCount,
+    chunks,
+  };
 }
 
 @Injectable()
@@ -381,21 +478,27 @@ export class TiktokService {
   }
 
   private async uploadVideoBytes(uploadUrl: string, buffer: Buffer, contentType: string): Promise<void> {
-    const response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': String(buffer.length),
-        'Content-Range': `bytes 0-${buffer.length - 1}/${buffer.length}`,
-      },
-      body: buffer as any,
-    });
+    const uploadPlan = buildTiktokUploadPlan(buffer.length);
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new BadRequestException(
-        `TikTok upload transfer failed (${response.status}). ${text || ''}`.trim(),
-      );
+    for (let index = 0; index < uploadPlan.chunks.length; index += 1) {
+      const chunk = uploadPlan.chunks[index];
+      const chunkBuffer = buffer.subarray(chunk.start, chunk.end + 1);
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': String(chunk.size),
+          'Content-Range': `bytes ${chunk.start}-${chunk.end}/${buffer.length}`,
+        },
+        body: chunkBuffer as any,
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new BadRequestException(
+          `TikTok upload transfer failed on chunk ${index + 1}/${uploadPlan.totalChunkCount} (${response.status}). ${text || ''}`.trim(),
+        );
+      }
     }
   }
 
@@ -518,28 +621,37 @@ export class TiktokService {
     }
 
     const { buffer, contentType } = await this.downloadVideo(dto.videoUrl);
-    const initData = await this.requestTikTok<{ publish_id: string; upload_url: string }>({
-      accessToken,
-      path: '/v2/post/publish/video/init/',
-      body: {
-        post_info: {
-          ...(caption ? { title: caption } : {}),
-          privacy_level: dto.privacyLevel,
-          disable_comment: creatorInfo.comment_disabled ? true : Boolean(dto.disableComment),
-          disable_duet: creatorInfo.duet_disabled ? true : Boolean(dto.disableDuet),
-          disable_stitch: creatorInfo.stitch_disabled ? true : Boolean(dto.disableStitch),
-          brand_content_toggle: Boolean(dto.brandContentToggle),
-          brand_organic_toggle: Boolean(dto.brandOrganicToggle),
-          is_aigc: true,
+    const uploadPlan = buildTiktokUploadPlan(buffer.length);
+    let initData: { publish_id: string; upload_url: string };
+    try {
+      initData = await this.requestTikTok<{ publish_id: string; upload_url: string }>({
+        accessToken,
+        path: '/v2/post/publish/video/init/',
+        body: {
+          post_info: {
+            ...(caption ? { title: caption } : {}),
+            privacy_level: dto.privacyLevel,
+            disable_comment: creatorInfo.comment_disabled ? true : Boolean(dto.disableComment),
+            disable_duet: creatorInfo.duet_disabled ? true : Boolean(dto.disableDuet),
+            disable_stitch: creatorInfo.stitch_disabled ? true : Boolean(dto.disableStitch),
+            brand_content_toggle: Boolean(dto.brandContentToggle),
+            brand_organic_toggle: Boolean(dto.brandOrganicToggle),
+            is_aigc: true,
+          },
+          source_info: {
+            source: 'FILE_UPLOAD',
+            video_size: buffer.length,
+            chunk_size: uploadPlan.chunkSize,
+            total_chunk_count: uploadPlan.totalChunkCount,
+          },
         },
-        source_info: {
-          source: 'FILE_UPLOAD',
-          video_size: buffer.length,
-          chunk_size: buffer.length,
-          total_chunk_count: 1,
-        },
-      },
-    });
+      });
+    } catch (error: any) {
+      const message = String(error?.message ?? 'TikTok init failed');
+      throw new BadRequestException(
+        `${message} (videoSize=${buffer.length}, chunkSize=${uploadPlan.chunkSize}, totalChunkCount=${uploadPlan.totalChunkCount})`,
+      );
+    }
 
     if (!initData.publish_id || !initData.upload_url) {
       throw new InternalServerErrorException('TikTok did not return an upload URL.');

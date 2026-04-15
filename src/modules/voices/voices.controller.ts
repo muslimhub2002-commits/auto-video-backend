@@ -64,7 +64,7 @@ export class VoicesController {
 
     if (!file?.buffer) {
       throw new BadRequestException(
-        'No voice file uploaded. If deploying on Vercel, prefer POST /voices/url (upload directly to Cloudinary from the client).',
+        'No voice file uploaded. If deploying on Vercel, prefer POST /voices/url after staging the file through the managed uploads flow.',
       );
     }
 

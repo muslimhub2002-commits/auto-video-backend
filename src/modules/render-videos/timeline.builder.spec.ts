@@ -68,11 +68,30 @@ describe('buildTimeline', () => {
           textAnimationSettings: {
             backgroundMode: 'image',
           },
+          visualEffect: 'colorGrading',
+          imageFilterSettings: {
+            contrast: 1.18,
+            saturation: 1.14,
+          },
+        },
+        {
+          text: 'This hook should inherit a video background with a look',
+          mediaType: 'text',
+          textAnimationEffect: 'slideCutFast',
+          textAnimationSettings: {
+            backgroundMode: 'inheritVideo',
+          },
+          textBackgroundVideoUrl: 'looping-hook.mp4',
+          visualEffect: 'glassReflections',
+          imageFilterSettings: {
+            brightness: 1.06,
+            glassOverlayOpacity: 0.22,
+          },
         },
       ],
-      imagePaths: ['', 'hook-background.png'],
+      imagePaths: ['', 'hook-background.png', 'video-fallback.png'],
       scriptLength: '30 seconds',
-      audioDurationSeconds: 2,
+      audioDurationSeconds: 3,
       audioSrc: 'audio/voiceover.mp3',
       addSubtitles: true,
     });
@@ -95,7 +114,27 @@ describe('buildTimeline', () => {
       textAnimationSettings: {
         backgroundMode: 'image',
       },
+      visualEffect: 'colorGrading',
+      imageFilterSettings: {
+        contrast: 1.18,
+        saturation: 1.14,
+      },
       imageSrc: 'hook-background.png',
     });
+
+    expect(timeline.scenes[2]).toMatchObject({
+      mediaType: 'text',
+      textAnimationEffect: 'slideCutFast',
+      textAnimationSettings: {
+        backgroundMode: 'inheritVideo',
+      },
+      visualEffect: 'glassReflections',
+      imageFilterSettings: {
+        brightness: 1.06,
+        glassOverlayOpacity: 0.22,
+      },
+      textBackgroundVideoSrc: 'looping-hook.mp4',
+    });
+    expect(timeline.scenes[2].imageSrc).toBeUndefined();
   });
 });

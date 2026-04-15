@@ -9,6 +9,7 @@ import { extname, join, sep } from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { GenerateVideoFromFramesDto } from '../dto/generate-video-from-frames.dto';
 import { AiRuntimeService } from './ai-runtime.service';
+import { isLikelyImageBuffer } from './ai-image/image-bytes';
 
 type UploadedImageFile = {
   buffer?: Buffer;
@@ -20,6 +21,102 @@ type UploadedImageFile = {
 @Injectable()
 export class AiVideoService {
   constructor(private readonly runtime: AiRuntimeService) {}
+
+  private inferImageMimeType(buffer: Buffer): string {
+    if (buffer.length >= 8) {
+      if (
+        buffer[0] === 0x89 &&
+        buffer[1] === 0x50 &&
+        buffer[2] === 0x4e &&
+        buffer[3] === 0x47 &&
+        buffer[4] === 0x0d &&
+        buffer[5] === 0x0a &&
+        buffer[6] === 0x1a &&
+        buffer[7] === 0x0a
+      ) {
+        return 'image/png';
+      }
+    }
+
+    if (
+      buffer.length >= 3 &&
+      buffer[0] === 0xff &&
+      buffer[1] === 0xd8 &&
+      buffer[2] === 0xff
+    ) {
+      return 'image/jpeg';
+    }
+
+    if (
+      buffer.length >= 6 &&
+      buffer[0] === 0x47 &&
+      buffer[1] === 0x49 &&
+      buffer[2] === 0x46 &&
+      buffer[3] === 0x38 &&
+      (buffer[4] === 0x37 || buffer[4] === 0x39) &&
+      buffer[5] === 0x61
+    ) {
+      return 'image/gif';
+    }
+
+    if (
+      buffer.length >= 12 &&
+      buffer[0] === 0x52 &&
+      buffer[1] === 0x49 &&
+      buffer[2] === 0x46 &&
+      buffer[3] === 0x46 &&
+      buffer[8] === 0x57 &&
+      buffer[9] === 0x45 &&
+      buffer[10] === 0x42 &&
+      buffer[11] === 0x50
+    ) {
+      return 'image/webp';
+    }
+
+    if (
+      buffer.length >= 12 &&
+      buffer[4] === 0x66 &&
+      buffer[5] === 0x74 &&
+      buffer[6] === 0x79 &&
+      buffer[7] === 0x70
+    ) {
+      const brand = buffer.slice(8, 12).toString('ascii');
+      if (['avif', 'avis'].includes(brand)) return 'image/avif';
+      if (['heic', 'heix', 'hevc', 'hevx'].includes(brand)) {
+        return 'image/heic';
+      }
+    }
+
+    if (buffer.length >= 2 && buffer[0] === 0x42 && buffer[1] === 0x4d) {
+      return 'image/bmp';
+    }
+
+    return 'image/png';
+  }
+
+  private normalizeUploadedImage(
+    file: UploadedImageFile | undefined,
+    label: string,
+  ) {
+    if (!file) return null;
+    if (!file.buffer || !(file.buffer instanceof Buffer) || file.buffer.length === 0) {
+      throw new BadRequestException(`${label} is missing file data`);
+    }
+
+    const mimeType = String(file.mimetype ?? '').trim().toLowerCase();
+    if (mimeType.startsWith('image/')) {
+      return { buffer: file.buffer, mimeType };
+    }
+
+    if (!isLikelyImageBuffer(file.buffer)) {
+      throw new BadRequestException(`${label} must be an image`);
+    }
+
+    return {
+      buffer: file.buffer,
+      mimeType: this.inferImageMimeType(file.buffer),
+    };
+  }
 
   private get geminiApiKey() {
     return this.runtime.geminiApiKey;
@@ -521,33 +618,18 @@ export class AiVideoService {
 
     const isLooping = Boolean(params.dto?.isLooping);
 
-    const fromUploaded = (
-      file: UploadedImageFile | undefined,
-      label: string,
-    ) => {
-      if (!file) return null;
-      const mimeType = String(file.mimetype ?? '').trim();
-      if (!mimeType || !mimeType.startsWith('image/')) {
-        throw new BadRequestException(`${label} must be an image`);
-      }
-      if (
-        !file.buffer ||
-        !(file.buffer instanceof Buffer) ||
-        file.buffer.length === 0
-      ) {
-        throw new BadRequestException(`${label} is missing file data`);
-      }
-      return { buffer: file.buffer, mimeType };
-    };
-
-    const start = fromUploaded(params.startFrameFile, 'Start frame');
+    const start = this.normalizeUploadedImage(
+      params.startFrameFile,
+      'Start frame',
+    );
     if (!start) {
       throw new BadRequestException('Start frame image is required');
     }
 
     const end = isLooping
       ? undefined
-      : (fromUploaded(params.endFrameFile, 'End frame') ?? undefined);
+      : (this.normalizeUploadedImage(params.endFrameFile, 'End frame') ??
+          undefined);
     if (!isLooping && !end) {
       throw new BadRequestException('End frame image is required');
     }
@@ -651,26 +733,10 @@ export class AiVideoService {
       throw new BadRequestException('Prompt is required');
     }
 
-    const fromUploaded = (
-      file: UploadedImageFile | undefined,
-      label: string,
-    ) => {
-      if (!file) return null;
-      const mimeType = String(file.mimetype ?? '').trim();
-      if (!mimeType || !mimeType.startsWith('image/')) {
-        throw new BadRequestException(`${label} must be an image`);
-      }
-      if (
-        !file.buffer ||
-        !(file.buffer instanceof Buffer) ||
-        file.buffer.length === 0
-      ) {
-        throw new BadRequestException(`${label} is missing file data`);
-      }
-      return { buffer: file.buffer, mimeType };
-    };
-
-    const image = fromUploaded(params.referenceImageFile, 'Reference image');
+    const image = this.normalizeUploadedImage(
+      params.referenceImageFile,
+      'Reference image',
+    );
     if (!image) {
       throw new BadRequestException('Reference image is required');
     }

@@ -40,6 +40,7 @@ import { SoundEffectsModule } from './modules/sound-effects/sound-effects.module
 import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entity';
 import { SoundEditPreset } from './modules/sound-effects/entities/sound-edit-preset.entity';
 import { TextAnimationsModule } from './modules/text-animations/text-animations.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
   imports: [
@@ -94,6 +95,7 @@ import { TextAnimationsModule } from './modules/text-animations/text-animations.
     }),
 
     AuthModule,
+    UploadsModule,
     AiModule,
     RenderVideosModule,
     VideosLibraryModule,

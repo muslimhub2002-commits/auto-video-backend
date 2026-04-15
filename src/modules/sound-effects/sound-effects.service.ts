@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, ILike, Repository } from 'typeorm';
-import { v2 as cloudinary } from 'cloudinary';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -21,6 +20,7 @@ import {
   DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
   normalizeSoundEffectAudioSettings,
 } from './audio-settings.types';
+import { UploadsService } from '../uploads/uploads.service';
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const clampPercent = (v: number) => Math.max(0, Math.min(300, v));
@@ -32,19 +32,8 @@ export class SoundEffectsService implements OnModuleInit {
     private readonly dataSource: DataSource,
     @InjectRepository(SoundEffect)
     private readonly repo: Repository<SoundEffect>,
-  ) {
-    if (
-      process.env.CLOUDINARY_CLOUD_NAME &&
-      process.env.CLOUDINARY_API_KEY &&
-      process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      cloudinary.config({
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_CLOUD_SECRET,
-      });
-    }
-  }
+    private readonly uploadsService: UploadsService,
+  ) {}
 
   async onModuleInit() {
     await this.ensureSoundEffectsSchema();
@@ -495,17 +484,12 @@ export class SoundEffectsService implements OnModuleInit {
     const publicId = String((target as any)?.public_id ?? '').trim();
     if (publicId) {
       try {
-        if (
-          process.env.CLOUDINARY_CLOUD_NAME &&
-          process.env.CLOUDINARY_API_KEY &&
-          process.env.CLOUDINARY_CLOUD_SECRET
-        ) {
-          await cloudinary.uploader.destroy(publicId, {
-            resource_type: 'video',
-          } as any);
-        }
+        await this.uploadsService.deleteByRef({
+          providerRef: publicId,
+          resourceType: 'audio',
+        });
       } catch (error) {
-        console.error('Failed to delete sound effect from Cloudinary', {
+        console.error('Failed to delete sound effect from managed upload', {
           soundEffectId,
           publicId,
           error,
@@ -517,44 +501,20 @@ export class SoundEffectsService implements OnModuleInit {
     return target.id;
   }
 
-  private ensureCloudinaryConfigured() {
-    if (
-      !process.env.CLOUDINARY_CLOUD_NAME ||
-      !process.env.CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_CLOUD_SECRET
-    ) {
-      throw new InternalServerErrorException(
-        'Cloudinary environment variables are not configured',
-      );
-    }
-  }
-
-  private async uploadAudioToCloudinary(params: {
+  private async uploadAudioToManagedStorage(params: {
     buffer: Buffer;
+    filename: string;
   }): Promise<{ url: string; public_id: string | null }> {
-    this.ensureCloudinaryConfigured();
-
-    const uploadResult: any = await new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          folder: 'auto-video-generator/sound-effects',
-          resource_type: 'video',
-          overwrite: false,
-        },
-        (error, result) => {
-          if (error || !result) {
-            return reject(error ?? new Error('Cloudinary upload failed'));
-          }
-          resolve(result);
-        },
-      );
-
-      stream.end(params.buffer);
+    const uploadResult = await this.uploadsService.uploadBuffer({
+      buffer: params.buffer,
+      filename: params.filename,
+      folder: 'auto-video-generator/sound-effects',
+      resourceType: 'audio',
     });
 
     return {
-      url: uploadResult.secure_url,
-      public_id: uploadResult.public_id ?? null,
+      url: uploadResult.url,
+      public_id: uploadResult.providerRef,
     };
   }
 
@@ -614,8 +574,9 @@ export class SoundEffectsService implements OnModuleInit {
         return this.normalizeStoredSoundEffect(await this.repo.save(existing));
       }
 
-      const uploaded = await this.uploadAudioToCloudinary({
+      const uploaded = await this.uploadAudioToManagedStorage({
         buffer: params.buffer,
+        filename: params.filename,
       });
 
       const entity = this.repo.create({
@@ -736,6 +697,7 @@ export class SoundEffectsService implements OnModuleInit {
     items: MergeSoundEffectItemDto[];
   }): Promise<{
     mergedBuffer: Buffer;
+    mergedFilename: string;
     mergedDurationSeconds: number | null;
     mergedFrom: {
       items: Array<{
@@ -878,6 +840,7 @@ export class SoundEffectsService implements OnModuleInit {
 
       return {
         mergedBuffer,
+        mergedFilename: path.basename(outPath),
         mergedDurationSeconds,
         mergedFrom: {
           items: items.map((item) => ({
@@ -922,8 +885,9 @@ export class SoundEffectsService implements OnModuleInit {
       user_id: params.user_id,
       items: params.items,
     });
-    const uploaded = await this.uploadAudioToCloudinary({
+    const uploaded = await this.uploadAudioToManagedStorage({
       buffer: rendered.mergedBuffer,
+      filename: rendered.mergedFilename,
     });
 
     return {
@@ -956,8 +920,9 @@ export class SoundEffectsService implements OnModuleInit {
       user_id: params.user_id,
       items: params.items,
     });
-    const uploaded = await this.uploadAudioToCloudinary({
+    const uploaded = await this.uploadAudioToManagedStorage({
       buffer: rendered.mergedBuffer,
+      filename: rendered.mergedFilename,
     });
 
     const rawVolume = Number(params.volumePercent);

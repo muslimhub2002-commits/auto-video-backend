@@ -1,5 +1,7 @@
 export const isCloudinaryUrl = (url: string): boolean => {
-  return /^(https?:\/\/)?res\.cloudinary\.com\//i.test(url || '');
+  return /^(https?:\/\/)?(res\.cloudinary\.com|(?:[a-z0-9-]+\.)?ucarecdn\.com|(?:[a-z0-9-]+\.)?ucarecd\.net|cdn\.filestackcontent\.com|(?:[a-z0-9-]+\.)?fromsmash\.com)\//i.test(
+    url || '',
+  );
 };
 
 export const isServerlessRuntime = () => {

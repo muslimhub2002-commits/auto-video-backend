@@ -99,7 +99,7 @@ export class BackgroundSoundtracksController {
 
     if (!file?.buffer) {
       throw new BadRequestException(
-        'No soundtrack file uploaded. If deploying on Vercel, consider direct-to-Cloudinary uploads and then POST a URL endpoint.',
+        'No soundtrack file uploaded. If deploying on Vercel, consider using the managed uploads endpoint first and then POST a URL endpoint.',
       );
     }
 
