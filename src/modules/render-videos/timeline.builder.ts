@@ -1,5 +1,6 @@
 import type { SentenceInput, SentenceTiming } from './render-videos.types';
 import {
+  resolveOverlaySceneBackgroundMode,
   resolveTextSceneBackgroundMode,
   sentenceUsesPrimaryImageTransport,
 } from './render-videos.types';
@@ -139,15 +140,42 @@ export const buildTimeline = (params: {
       !!String(s.videoUrl ?? '').trim();
 
     const isTextScene = !isSubscribeLike && s.mediaType === 'text';
-    const isImageScene = !isSubscribeLike && !wantsSentenceVideo && !isTextScene;
+    const isOverlayScene = !isSubscribeLike && s.mediaType === 'overlay';
+    const isImageScene =
+      !isSubscribeLike && !wantsSentenceVideo && !isTextScene && !isOverlayScene;
     const sceneMediaType = isSubscribeLike || wantsSentenceVideo
       ? 'video'
       : isTextScene
         ? 'text'
+        : isOverlayScene
+          ? 'overlay'
         : 'image';
     const primaryImageSrc = sentenceUsesPrimaryImageTransport(s)
       ? String(params.imagePaths[index] ?? '').trim() || undefined
       : undefined;
+    const overlayBackgroundMode = isOverlayScene
+      ? resolveOverlaySceneBackgroundMode(s.overlaySettings)
+      : undefined;
+    const overlaySettings = isOverlayScene
+      ? {
+          ...(s.overlaySettings &&
+          typeof s.overlaySettings === 'object' &&
+          !Array.isArray(s.overlaySettings)
+            ? s.overlaySettings
+            : {}),
+          backgroundMode: overlayBackgroundMode ?? 'image',
+        }
+      : undefined;
+    const overlaySrc = isOverlayScene
+      ? String(s.overlayUrl ?? '').trim() || undefined
+      : undefined;
+    const overlayMimeType = isOverlayScene
+      ? String(s.overlayMimeType ?? '').trim() || undefined
+      : undefined;
+    const overlayBackgroundVideoSrc =
+      isOverlayScene && overlayBackgroundMode === 'video'
+        ? String(s.videoUrl ?? '').trim() || undefined
+        : undefined;
     const textAnimationText = String(s.textAnimationText ?? '').trim() || undefined;
     const textBackgroundMode = isTextScene
       ? resolveTextSceneBackgroundMode(s.textAnimationSettings)
@@ -346,12 +374,26 @@ export const buildTimeline = (params: {
       ...(isTextScene && s.textAnimationEffect != null
         ? { textAnimationEffect: s.textAnimationEffect }
         : {}),
-      ...(isTextScene && textAnimationText ? { textAnimationText } : {}),
+      ...((isTextScene || isOverlayScene) && textAnimationText
+        ? { textAnimationText }
+        : {}),
       ...(isTextScene && textAnimationSettings
         ? { textAnimationSettings }
         : {}),
+      ...(isOverlayScene && s.textAnimationEffect != null
+        ? { textAnimationEffect: s.textAnimationEffect }
+        : {}),
+      ...(isOverlayScene && s.textAnimationSettings != null
+        ? { textAnimationSettings: s.textAnimationSettings }
+        : {}),
       ...(isTextScene && textBackgroundVideoSrc
         ? { textBackgroundVideoSrc }
+        : {}),
+      ...(isOverlayScene && overlaySrc ? { overlaySrc } : {}),
+      ...(isOverlayScene && overlayMimeType ? { overlayMimeType } : {}),
+      ...(isOverlayScene && overlaySettings ? { overlaySettings } : {}),
+      ...(isOverlayScene && overlayBackgroundVideoSrc
+        ? { overlayBackgroundVideoSrc }
         : {}),
       ...(isImageScene
         ? { imageMotionEffect: s.imageMotionEffect ?? 'default' }

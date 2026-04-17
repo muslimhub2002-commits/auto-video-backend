@@ -23,6 +23,7 @@ import { CreateRenderVideoUrlDto } from './dto/create-render-video-url.dto';
 import { RenderVideosService } from './render-videos.service';
 import { isSubscribeLikeSentence } from './render-videos.constants';
 import {
+  resolveOverlaySceneBackgroundMode,
   resolveTextSceneBackgroundMode,
   sentenceUsesPrimaryImageTransport,
   TEXT_ANIMATION_EFFECT_VALUES,
@@ -72,10 +73,21 @@ export class RenderVideosController {
         String((sentence as any).textBackgroundVideoUrl).trim().length > 0
           ? String((sentence as any).textBackgroundVideoUrl).trim()
           : undefined;
+      const overlayUrl =
+        typeof (sentence as any).overlayUrl === 'string' &&
+        String((sentence as any).overlayUrl).trim().length > 0
+          ? String((sentence as any).overlayUrl).trim()
+          : undefined;
+      const overlayMimeType =
+        typeof (sentence as any).overlayMimeType === 'string' &&
+        String((sentence as any).overlayMimeType).trim().length > 0
+          ? String((sentence as any).overlayMimeType).trim()
+          : undefined;
       const mediaType =
         sentence.mediaType === 'image' ||
         sentence.mediaType === 'video' ||
-        sentence.mediaType === 'text'
+        sentence.mediaType === 'text' ||
+        sentence.mediaType === 'overlay'
           ? sentence.mediaType
           : undefined;
       const textAnimationEffect =
@@ -96,14 +108,23 @@ export class RenderVideosController {
         !Array.isArray(sentence.textAnimationSettings)
           ? (sentence.textAnimationSettings as Record<string, unknown>)
           : undefined;
+      const overlaySettings =
+        (sentence as any).overlaySettings &&
+        typeof (sentence as any).overlaySettings === 'object' &&
+        !Array.isArray((sentence as any).overlaySettings)
+          ? ((sentence as any).overlaySettings as Record<string, unknown>)
+          : undefined;
       const {
         secondaryImageUrl: _secondaryImageUrl,
         videoUrl: _videoUrl,
         textBackgroundVideoUrl: _textBackgroundVideoUrl,
+        overlayUrl: _overlayUrl,
+        overlayMimeType: _overlayMimeType,
         mediaType: _mediaType,
         textAnimationEffect: _textAnimationEffect,
         textAnimationText: _textAnimationText,
         textAnimationSettings: _textAnimationSettings,
+        overlaySettings: _overlaySettings,
         ...rest
       } = sentence;
 
@@ -113,9 +134,12 @@ export class RenderVideosController {
         ...(secondaryImageUrl ? { secondaryImageUrl } : {}),
         ...(videoUrl ? { videoUrl } : {}),
         ...(textBackgroundVideoUrl ? { textBackgroundVideoUrl } : {}),
+        ...(overlayUrl ? { overlayUrl } : {}),
+        ...(overlayMimeType ? { overlayMimeType } : {}),
         ...(textAnimationEffect ? { textAnimationEffect } : {}),
         ...(textAnimationText ? { textAnimationText } : {}),
         ...(textAnimationSettings ? { textAnimationSettings } : {}),
+        ...(overlaySettings ? { overlaySettings } : {}),
       };
     });
   }
@@ -173,10 +197,11 @@ export class RenderVideosController {
         mediaType &&
         mediaType !== 'image' &&
         mediaType !== 'video' &&
-        mediaType !== 'text'
+        mediaType !== 'text' &&
+        mediaType !== 'overlay'
       ) {
         throw new BadRequestException(
-          `Invalid mediaType for sentence ${idx + 1}. Expected 'image', 'video', or 'text'.`,
+          `Invalid mediaType for sentence ${idx + 1}. Expected 'image', 'video', 'text', or 'overlay'.`,
         );
       }
 
@@ -209,6 +234,23 @@ export class RenderVideosController {
       ) {
         throw new BadRequestException(
           `Invalid textAnimationSettings for sentence ${idx + 1}.`,
+        );
+      }
+
+      const overlayMimeType = (s as any)?.overlayMimeType;
+      if (overlayMimeType != null && typeof overlayMimeType !== 'string') {
+        throw new BadRequestException(
+          `Invalid overlayMimeType for sentence ${idx + 1}.`,
+        );
+      }
+
+      const overlaySettings = (s as any)?.overlaySettings;
+      if (
+        overlaySettings != null &&
+        (typeof overlaySettings !== 'object' || Array.isArray(overlaySettings))
+      ) {
+        throw new BadRequestException(
+          `Invalid overlaySettings for sentence ${idx + 1}.`,
         );
       }
 
@@ -299,6 +341,31 @@ export class RenderVideosController {
           throw new BadRequestException(
             `Missing or invalid videoUrl for sentence ${idx + 1} on video tab.`,
           );
+        }
+      }
+
+      if (mediaType === 'overlay') {
+        const overlayUrl = String((s as any).overlayUrl ?? '').trim();
+        if (!overlayUrl) {
+          throw new BadRequestException(
+            `Missing overlayUrl for sentence ${idx + 1} on overlay tab.`,
+          );
+        }
+
+        const backgroundMode = resolveOverlaySceneBackgroundMode(
+          (s as any).overlaySettings,
+        );
+        if (backgroundMode === 'video') {
+          const url = String(s.videoUrl ?? '').trim();
+          const ok =
+            url.startsWith('http://') ||
+            url.startsWith('https://') ||
+            url === '/subscribe.mp4';
+          if (!ok) {
+            throw new BadRequestException(
+              `Missing or invalid videoUrl for sentence ${idx + 1} on overlay tab when using video background.`,
+            );
+          }
         }
       }
 
@@ -625,13 +692,21 @@ export class RenderVideosController {
     }
 
     const kind =
-      kindRaw === 'audio' || kindRaw === 'image' ? kindRaw : null;
+      kindRaw === 'audio' || kindRaw === 'image' || kindRaw === 'video'
+        ? kindRaw
+        : null;
     if (!kind) {
-      throw new BadRequestException('`kind` must be either `audio` or `image`');
+      throw new BadRequestException(
+        '`kind` must be either `audio`, `image`, or `video`',
+      );
     }
 
     if (kind === 'image' && file.mimetype && !file.mimetype.startsWith('image/')) {
       throw new BadRequestException('Uploaded file must be an image');
+    }
+
+    if (kind === 'video' && file.mimetype && !file.mimetype.startsWith('video/')) {
+      throw new BadRequestException('Uploaded file must be a video');
     }
 
     if (
@@ -686,6 +761,16 @@ export class RenderVideosController {
         String((s as any).textBackgroundVideoUrl).trim()
           ? String((s as any).textBackgroundVideoUrl).trim()
           : undefined;
+      const overlayUrl =
+        typeof (s as any).overlayUrl === 'string' &&
+        String((s as any).overlayUrl).trim()
+          ? String((s as any).overlayUrl).trim()
+          : undefined;
+      const overlayMimeType =
+        typeof (s as any).overlayMimeType === 'string' &&
+        String((s as any).overlayMimeType).trim()
+          ? String((s as any).overlayMimeType).trim()
+          : undefined;
       const textAnimationText =
         typeof (s as any).textAnimationText === 'string' &&
         String((s as any).textAnimationText).trim()
@@ -697,11 +782,19 @@ export class RenderVideosController {
         !Array.isArray((s as any).textAnimationSettings)
           ? ((s as any).textAnimationSettings as Record<string, unknown>)
           : undefined;
+      const overlaySettings =
+        (s as any).overlaySettings &&
+        typeof (s as any).overlaySettings === 'object' &&
+        !Array.isArray((s as any).overlaySettings)
+          ? ((s as any).overlaySettings as Record<string, unknown>)
+          : undefined;
       const mediaType =
         s.mediaType === 'video'
           ? 'video'
           : s.mediaType === 'text'
             ? 'text'
+            : s.mediaType === 'overlay'
+              ? 'overlay'
             : 'image';
 
       return {
@@ -712,11 +805,14 @@ export class RenderVideosController {
         mediaType,
         ...(videoUrl ? { videoUrl } : {}),
         ...(textBackgroundVideoUrl ? { textBackgroundVideoUrl } : {}),
+        ...(overlayUrl ? { overlayUrl } : {}),
+        ...(overlayMimeType ? { overlayMimeType } : {}),
         ...(s.textAnimationEffect != null
           ? { textAnimationEffect: s.textAnimationEffect }
           : {}),
         ...(textAnimationText ? { textAnimationText } : {}),
         ...(textAnimationSettings ? { textAnimationSettings } : {}),
+        ...(overlaySettings ? { overlaySettings } : {}),
         ...(Array.isArray((s as any).soundEffects)
           ? { soundEffects: (s as any).soundEffects }
           : {}),
@@ -778,6 +874,7 @@ export class RenderVideosController {
         ...(secondaryImageUrl ? { secondaryImageUrl } : {}),
       };
     });
+    this.validateMultipartSentences(hydratedSentences, 1);
 
     const backgroundMusicVolume =
       typeof body.backgroundMusicVolume === 'number'

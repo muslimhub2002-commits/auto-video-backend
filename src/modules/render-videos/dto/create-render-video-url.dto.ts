@@ -68,8 +68,8 @@ class SentenceDto {
   secondaryImageUrl?: string | null;
 
   @IsOptional()
-  @IsIn(['image', 'video', 'text'])
-  mediaType?: 'image' | 'video' | 'text';
+  @IsIn(['image', 'video', 'text', 'overlay'])
+  mediaType?: 'image' | 'video' | 'text' | 'overlay';
 
   @IsOptional()
   @IsString()
@@ -78,6 +78,14 @@ class SentenceDto {
   @IsOptional()
   @IsString()
   textBackgroundVideoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  overlayUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  overlayMimeType?: string | null;
 
   @IsOptional()
   @IsString()
@@ -90,6 +98,10 @@ class SentenceDto {
   @IsOptional()
   @IsObject()
   textAnimationSettings?: Record<string, unknown> | null;
+
+  @IsOptional()
+  @IsObject()
+  overlaySettings?: Record<string, unknown> | null;
 
   @IsOptional()
   @IsBoolean()

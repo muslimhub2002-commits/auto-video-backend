@@ -11,8 +11,20 @@ export const TEXT_BACKGROUND_MODE_VALUES = [
   'gradient',
 ] as const;
 
+export const OVERLAY_BACKGROUND_MODE_VALUES = [
+  'image',
+  'video',
+  'solid',
+  'gradient',
+] as const;
+
+export const OVERLAY_TEXT_LAYER_VALUES = ['below', 'above'] as const;
+
 export type TextAnimationEffect = (typeof TEXT_ANIMATION_EFFECT_VALUES)[number];
 export type TextBackgroundMode = (typeof TEXT_BACKGROUND_MODE_VALUES)[number];
+export type OverlayBackgroundMode =
+  (typeof OVERLAY_BACKGROUND_MODE_VALUES)[number];
+export type OverlayTextLayer = (typeof OVERLAY_TEXT_LAYER_VALUES)[number];
 
 export type TextAnimationSettings = {
   presetKey?: TextAnimationEffect | 'custom';
@@ -45,6 +57,25 @@ export type TextAnimationSettings = {
   textCase?: 'original' | 'uppercase';
 };
 
+export type OverlaySettings = {
+  presetKey?: 'custom';
+  backgroundMode?: OverlayBackgroundMode;
+  widthPercent?: number;
+  heightPercent?: number;
+  offsetX?: number;
+  offsetY?: number;
+  opacity?: number;
+  speed?: number;
+  scale?: number;
+  rotationDeg?: number;
+  backgroundColor?: string;
+  gradientFrom?: string;
+  gradientTo?: string;
+  gradientAngleDeg?: number;
+  includeText?: boolean;
+  textLayer?: OverlayTextLayer;
+};
+
 export type SentenceInput = {
   text: string;
   isSuspense?: boolean;
@@ -55,12 +86,15 @@ export type SentenceInput = {
   motionEffectId?: string | null;
   imageMotionSettings?: Record<string, unknown> | null;
   soundEffectsAlignToSceneEnd?: boolean;
-  mediaType?: 'image' | 'video' | 'text';
+  mediaType?: 'image' | 'video' | 'text' | 'overlay';
   videoUrl?: string;
   textBackgroundVideoUrl?: string;
   textAnimationEffect?: TextAnimationEffect | null;
   textAnimationText?: string;
   textAnimationSettings?: Record<string, unknown> | TextAnimationSettings | null;
+  overlayUrl?: string;
+  overlayMimeType?: string | null;
+  overlaySettings?: Record<string, unknown> | OverlaySettings | null;
   soundEffects?: Array<{
     // Absolute URL (e.g. Cloudinary) or static publicDir path (job-scoped) for local renders.
     src: string;
@@ -141,9 +175,23 @@ export const resolveTextSceneBackgroundMode = (
     : 'inheritImage';
 };
 
+export const resolveOverlaySceneBackgroundMode = (
+  settings: SentenceInput['overlaySettings'],
+): OverlayBackgroundMode => {
+  const value = String(
+    (settings as OverlaySettings | null | undefined)?.backgroundMode ?? '',
+  ).trim();
+  return (OVERLAY_BACKGROUND_MODE_VALUES as readonly string[]).includes(value)
+    ? (value as OverlayBackgroundMode)
+    : 'image';
+};
+
 export const sentenceUsesPrimaryImageTransport = (
   sentence:
-    | Pick<SentenceInput, 'mediaType' | 'textAnimationSettings'>
+    | Pick<
+        SentenceInput,
+        'mediaType' | 'textAnimationSettings' | 'overlaySettings'
+      >
     | null
     | undefined,
 ) => {
@@ -153,6 +201,12 @@ export const sentenceUsesPrimaryImageTransport = (
       sentence.textAnimationSettings,
     );
     return backgroundMode === 'inheritImage' || backgroundMode === 'image';
+  }
+  if (sentence?.mediaType === 'overlay') {
+    const backgroundMode = resolveOverlaySceneBackgroundMode(
+      sentence.overlaySettings,
+    );
+    return backgroundMode === 'image';
   }
 
   return true;

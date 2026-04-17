@@ -13,6 +13,7 @@ import { Image } from '../images/entities/image.entity';
 import { Video } from '../videos/entities/video.entity';
 import { SentenceSoundEffect } from './entities/sentence-sound-effect.entity';
 import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
+import { Overlay } from '../overlays/entities/overlay.entity';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
       Image,
       Video,
       SoundEffect,
+      Overlay,
     ]),
     AiModule,
   ],

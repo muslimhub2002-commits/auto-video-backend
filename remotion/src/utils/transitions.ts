@@ -10,7 +10,14 @@ export type TransitionType =
   | 'chromaLeak';
 
 const hasVisualMedia = (scene?: TimelineScene) => {
-  return Boolean(scene?.imageSrc || scene?.videoSrc || scene?.mediaType === 'text');
+  return Boolean(
+    scene?.imageSrc ||
+      scene?.videoSrc ||
+      scene?.overlaySrc ||
+      scene?.overlayBackgroundVideoSrc ||
+      scene?.mediaType === 'text' ||
+      scene?.mediaType === 'overlay',
+  );
 };
 
 export const isMediaToMediaCut = (prev?: TimelineScene, next?: TimelineScene) => {

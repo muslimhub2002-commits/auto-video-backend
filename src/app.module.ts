@@ -34,12 +34,14 @@ import { MetaCredential } from './modules/meta/entities/meta-credential.entity';
 import { BackgroundSoundtrack } from './modules/background-soundtracks/entities/background-soundtrack.entity';
 import { ImageFilter } from './modules/image-filters/entities/image-filter.entity';
 import { MotionEffect } from './modules/motion-effects/entities/motion-effect.entity';
+import { Overlay } from './modules/overlays/entities/overlay.entity';
 import { TextAnimation } from './modules/text-animations/entities/text-animation.entity';
 import { VideosLibraryModule } from './modules/videos-library/videos-library.module';
 import { SoundEffectsModule } from './modules/sound-effects/sound-effects.module';
 import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entity';
 import { SoundEditPreset } from './modules/sound-effects/entities/sound-edit-preset.entity';
 import { TextAnimationsModule } from './modules/text-animations/text-animations.module';
+import { OverlaysModule } from './modules/overlays/overlays.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
@@ -76,6 +78,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
         Voice,
         ImageFilter,
         MotionEffect,
+        Overlay,
         TextAnimation,
         BackgroundSoundtrack,
         SoundEffect,
@@ -104,6 +107,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     VoicesModule,
     ImageFiltersModule,
     MotionEffectsModule,
+    OverlaysModule,
     TextAnimationsModule,
     BackgroundSoundtracksModule,
     SoundEffectsModule,

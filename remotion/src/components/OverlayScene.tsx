@@ -1,0 +1,273 @@
+import React from 'react';
+import { AbsoluteFill, Img, OffthreadVideo } from 'remotion';
+import type { OverlaySettings, TimelineScene } from '../types';
+import { resolveMediaSrc } from '../utils/media';
+import { TextScene } from './TextScene';
+
+const OVERLAY_BACKGROUND_MODE_VALUES = [
+  'image',
+  'video',
+  'solid',
+  'gradient',
+] as const;
+
+const OVERLAY_TEXT_LAYER_VALUES = ['below', 'above'] as const;
+
+const clampNumber = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const getNumeric = (
+  value: unknown,
+  fallback: number,
+  min?: number,
+  max?: number,
+) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  if (typeof min === 'number' && typeof max === 'number') {
+    return clampNumber(numeric, min, max);
+  }
+  if (typeof min === 'number') return Math.max(min, numeric);
+  if (typeof max === 'number') return Math.min(max, numeric);
+  return numeric;
+};
+
+const getBoolean = (value: unknown, fallback = false) => {
+  if (typeof value === 'boolean') return value;
+  return fallback;
+};
+
+const getString = (value: unknown, fallback: string) => {
+  const normalized = String(value ?? '').trim();
+  return normalized || fallback;
+};
+
+const getDefaultOverlaySettings = (): OverlaySettings => ({
+  backgroundMode: 'image',
+  widthPercent: 26,
+  heightPercent: 22,
+  offsetX: 0,
+  offsetY: -4,
+  opacity: 1,
+  speed: 1,
+  scale: 1,
+  rotationDeg: 0,
+  backgroundColor: '#020617',
+  gradientFrom: '#020617',
+  gradientTo: '#1d4ed8',
+  gradientAngleDeg: 135,
+  includeText: false,
+  textLayer: 'above',
+});
+
+const normalizeOverlaySettings = (
+  settings: TimelineScene['overlaySettings'],
+): OverlaySettings => {
+  const defaults = getDefaultOverlaySettings();
+  return {
+    presetKey: settings?.presetKey === 'custom' ? 'custom' : undefined,
+    backgroundMode: (OVERLAY_BACKGROUND_MODE_VALUES as readonly string[]).includes(
+      String(settings?.backgroundMode ?? ''),
+    )
+      ? (settings?.backgroundMode as OverlaySettings['backgroundMode'])
+      : defaults.backgroundMode,
+    widthPercent: getNumeric(settings?.widthPercent, defaults.widthPercent ?? 26, 5, 100),
+    heightPercent: getNumeric(settings?.heightPercent, defaults.heightPercent ?? 22, 5, 100),
+    offsetX: getNumeric(settings?.offsetX, defaults.offsetX ?? 0, -50, 50),
+    offsetY: getNumeric(settings?.offsetY, defaults.offsetY ?? 0, -50, 50),
+    opacity: getNumeric(settings?.opacity, defaults.opacity ?? 1, 0, 1),
+    speed: getNumeric(settings?.speed, defaults.speed ?? 1, 0.25, 3),
+    scale: getNumeric(settings?.scale, defaults.scale ?? 1, 0.25, 3),
+    rotationDeg: getNumeric(settings?.rotationDeg, defaults.rotationDeg ?? 0, -180, 180),
+    backgroundColor: getString(settings?.backgroundColor, defaults.backgroundColor ?? '#020617'),
+    gradientFrom: getString(settings?.gradientFrom, defaults.gradientFrom ?? '#020617'),
+    gradientTo: getString(settings?.gradientTo, defaults.gradientTo ?? '#1d4ed8'),
+    gradientAngleDeg: getNumeric(
+      settings?.gradientAngleDeg,
+      defaults.gradientAngleDeg ?? 135,
+      0,
+      360,
+    ),
+    includeText: getBoolean(settings?.includeText, defaults.includeText ?? false),
+    textLayer: (OVERLAY_TEXT_LAYER_VALUES as readonly string[]).includes(
+      String(settings?.textLayer ?? ''),
+    )
+      ? (settings?.textLayer as OverlaySettings['textLayer'])
+      : defaults.textLayer,
+  };
+};
+
+const inferOverlayIsVideo = (
+  src: string | undefined,
+  mimeType: string | null | undefined,
+) => {
+  const normalizedMimeType = String(mimeType ?? '')
+    .trim()
+    .toLowerCase();
+  if (normalizedMimeType.startsWith('video/')) return true;
+  if (normalizedMimeType.startsWith('image/')) return false;
+
+  const normalizedSrc = String(src ?? '')
+    .trim()
+    .toLowerCase();
+  return /\.(mp4|mov|m4v|webm|avi|mkv|ogv|ogg)(?:\?|#|$)/u.test(normalizedSrc);
+};
+
+export const OverlayScene: React.FC<{
+  scene: TimelineScene;
+  frame: number;
+  fps: number;
+  width: number;
+  height: number;
+  isShort: boolean;
+  fontFamily: string;
+}> = ({ scene, frame, fps, width, height, isShort, fontFamily }) => {
+  const resolvedOverlay = normalizeOverlaySettings(scene.overlaySettings);
+  const backgroundImageSrc =
+    resolvedOverlay.backgroundMode === 'image' && scene.imageSrc
+      ? resolveMediaSrc(scene.imageSrc)
+      : null;
+  const backgroundVideoSrc =
+    resolvedOverlay.backgroundMode === 'video' && scene.overlayBackgroundVideoSrc
+      ? resolveMediaSrc(scene.overlayBackgroundVideoSrc)
+      : null;
+  const overlaySrc = scene.overlaySrc ? resolveMediaSrc(scene.overlaySrc) : null;
+  const overlayIsVideo = inferOverlayIsVideo(scene.overlaySrc, scene.overlayMimeType);
+  const cycleFrames = Math.max(
+    1,
+    Math.round(clampNumber(7 / (resolvedOverlay.speed ?? 1), 2.4, 14) * fps),
+  );
+  const phase = ((frame % cycleFrames) / cycleFrames) * Math.PI * 2;
+  const floatYOffset = Math.sin(phase) * 0.8;
+  const floatRotation = Math.sin(phase + Math.PI / 2) * 1.25;
+  const overlayWidthPx = width * ((resolvedOverlay.widthPercent ?? 26) / 100);
+  const overlayHeightPx = height * ((resolvedOverlay.heightPercent ?? 22) / 100);
+
+  const textScene: TimelineScene = {
+    ...scene,
+    mediaType: 'text',
+    imageSrc: undefined,
+    videoSrc: undefined,
+    textBackgroundVideoSrc: undefined,
+    overlaySrc: undefined,
+    overlayBackgroundVideoSrc: undefined,
+    overlaySettings: undefined,
+    imageFilterSettings: undefined,
+    visualEffect: null,
+    textAnimationSettings: {
+      ...(scene.textAnimationSettings &&
+      typeof scene.textAnimationSettings === 'object' &&
+      !Array.isArray(scene.textAnimationSettings)
+        ? scene.textAnimationSettings
+        : {}),
+      backgroundMode: 'solid',
+      backgroundColor: 'transparent',
+      backgroundDim: 0,
+    },
+  };
+
+  const textLayer = resolvedOverlay.includeText ? (
+    <AbsoluteFill>
+      <TextScene
+        scene={textScene}
+        frame={frame}
+        fps={fps}
+        width={width}
+        height={height}
+        isShort={isShort}
+        fontFamily={fontFamily}
+      />
+    </AbsoluteFill>
+  ) : null;
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#020617', overflow: 'hidden' }}>
+      {resolvedOverlay.backgroundMode === 'image' && backgroundImageSrc ? (
+        <Img
+          src={backgroundImageSrc}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      ) : null}
+
+      {resolvedOverlay.backgroundMode === 'video' && backgroundVideoSrc ? (
+        <OffthreadVideo
+          src={backgroundVideoSrc}
+          muted
+          loop
+          pauseWhenBuffering
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      ) : null}
+
+      {resolvedOverlay.backgroundMode === 'solid' ? (
+        <AbsoluteFill
+          style={{ backgroundColor: resolvedOverlay.backgroundColor ?? '#020617' }}
+        />
+      ) : null}
+
+      {resolvedOverlay.backgroundMode === 'gradient' ? (
+        <AbsoluteFill
+          style={{
+            backgroundImage: `linear-gradient(${(
+              resolvedOverlay.gradientAngleDeg ?? 135
+            ).toFixed(0)}deg, ${resolvedOverlay.gradientFrom ?? '#020617'} 0%, ${
+              resolvedOverlay.gradientTo ?? '#1d4ed8'
+            } 100%)`,
+            backgroundColor: resolvedOverlay.gradientFrom ?? '#020617',
+          }}
+        />
+      ) : null}
+
+      <AbsoluteFill
+        style={{
+          background: 'rgba(0, 0, 0, 0.15)',
+        }}
+      />
+
+      {resolvedOverlay.includeText && resolvedOverlay.textLayer === 'below' ? (
+        <AbsoluteFill style={{ zIndex: 10 }}>{textLayer}</AbsoluteFill>
+      ) : null}
+
+      {overlaySrc ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: width / 2 + ((resolvedOverlay.offsetX ?? 0) / 100) * width,
+            top: height / 2 + ((resolvedOverlay.offsetY ?? 0) / 100) * height,
+            width: overlayWidthPx,
+            height: overlayHeightPx,
+            marginLeft: -overlayWidthPx / 2,
+            marginTop: -overlayHeightPx / 2,
+            opacity: resolvedOverlay.opacity ?? 1,
+            transform: `translateY(${floatYOffset.toFixed(2)}%) scale(${(
+              resolvedOverlay.scale ?? 1
+            ).toFixed(4)}) rotate(${(
+              (resolvedOverlay.rotationDeg ?? 0) + floatRotation
+            ).toFixed(2)}deg)`,
+            transformOrigin: 'center center',
+            zIndex: 20,
+          }}
+        >
+          {overlayIsVideo ? (
+            <OffthreadVideo
+              src={overlaySrc}
+              muted
+              loop
+              pauseWhenBuffering
+              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          ) : (
+            <Img
+              src={overlaySrc}
+              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          )}
+        </div>
+      ) : null}
+
+      {resolvedOverlay.includeText && resolvedOverlay.textLayer === 'above' ? (
+        <AbsoluteFill style={{ zIndex: 30 }}>{textLayer}</AbsoluteFill>
+      ) : null}
+    </AbsoluteFill>
+  );
+};

@@ -137,4 +137,103 @@ describe('buildTimeline', () => {
     });
     expect(timeline.scenes[2].imageSrc).toBeUndefined();
   });
+
+  it('preserves overlay text animation metadata when includeText is enabled', () => {
+    const timeline = buildTimeline({
+      language: 'en',
+      sentences: [
+        {
+          text: 'Overlay scene should reuse the text tab animation',
+          mediaType: 'overlay',
+          overlayUrl: 'https://example.com/overlay-hero.png',
+          overlayMimeType: 'image/png',
+          overlaySettings: {
+            backgroundMode: 'image',
+            includeText: true,
+            textLayer: 'below',
+            widthPercent: 32,
+          },
+          textAnimationEffect: 'slideCutFast',
+          textAnimationText: 'Overlay hero',
+          textAnimationSettings: {
+            animatePerWord: true,
+            wordDelaySeconds: 0.1,
+            fontSizePercent: 15,
+            offsetX: 6,
+            offsetY: -8,
+            textColor: '#f8fafc',
+            accentColor: '#22d3ee',
+          },
+        },
+        {
+          text: 'Overlay scene with a solid background should not bind an image',
+          mediaType: 'overlay',
+          overlayUrl: 'https://example.com/overlay-solid.png',
+          overlayMimeType: 'image/png',
+          overlaySettings: {
+            backgroundMode: 'solid',
+            includeText: true,
+            textLayer: 'above',
+            backgroundColor: '#020617',
+          },
+          textAnimationEffect: 'slideCutFast',
+          textAnimationText: 'Solid overlay',
+          textAnimationSettings: {
+            fontSizePercent: 11,
+            offsetY: -10,
+            textColor: '#ffffff',
+          },
+        },
+      ],
+      imagePaths: ['overlay-background.png', 'unused-image.png'],
+      scriptLength: '30 seconds',
+      audioDurationSeconds: 2,
+      audioSrc: 'audio/voiceover.mp3',
+      addSubtitles: true,
+    });
+
+    expect(timeline.scenes[0]).toMatchObject({
+      mediaType: 'overlay',
+      overlaySrc: 'https://example.com/overlay-hero.png',
+      overlayMimeType: 'image/png',
+      overlaySettings: {
+        backgroundMode: 'image',
+        includeText: true,
+        textLayer: 'below',
+        widthPercent: 32,
+      },
+      textAnimationEffect: 'slideCutFast',
+      textAnimationText: 'Overlay hero',
+      textAnimationSettings: {
+        animatePerWord: true,
+        wordDelaySeconds: 0.1,
+        fontSizePercent: 15,
+        offsetX: 6,
+        offsetY: -8,
+        textColor: '#f8fafc',
+        accentColor: '#22d3ee',
+      },
+      imageSrc: 'overlay-background.png',
+    });
+
+    expect(timeline.scenes[1]).toMatchObject({
+      mediaType: 'overlay',
+      overlaySrc: 'https://example.com/overlay-solid.png',
+      overlayMimeType: 'image/png',
+      overlaySettings: {
+        backgroundMode: 'solid',
+        includeText: true,
+        textLayer: 'above',
+        backgroundColor: '#020617',
+      },
+      textAnimationEffect: 'slideCutFast',
+      textAnimationText: 'Solid overlay',
+      textAnimationSettings: {
+        fontSizePercent: 11,
+        offsetY: -10,
+        textColor: '#ffffff',
+      },
+    });
+    expect(timeline.scenes[1].imageSrc).toBeUndefined();
+  });
 });

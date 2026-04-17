@@ -38,10 +38,29 @@ export type TextAnimationSettings = {
   textCase?: 'original' | 'uppercase';
 };
 
+export type OverlaySettings = {
+  presetKey?: 'custom';
+  backgroundMode?: 'image' | 'video' | 'solid' | 'gradient';
+  widthPercent?: number;
+  heightPercent?: number;
+  offsetX?: number;
+  offsetY?: number;
+  opacity?: number;
+  speed?: number;
+  scale?: number;
+  rotationDeg?: number;
+  backgroundColor?: string;
+  gradientFrom?: string;
+  gradientTo?: string;
+  gradientAngleDeg?: number;
+  includeText?: boolean;
+  textLayer?: 'below' | 'above';
+};
+
 export type TimelineScene = {
   index: number;
   text: string;
-  mediaType?: 'image' | 'video' | 'text';
+  mediaType?: 'image' | 'video' | 'text' | 'overlay';
   subtitleWords?: Array<{
     text: string;
     startFrame: number;
@@ -57,6 +76,10 @@ export type TimelineScene = {
   secondaryImageSrc?: string;
   videoSrc?: string; // static file path (publicDir) or absolute URL
   textBackgroundVideoSrc?: string;
+  overlaySrc?: string;
+  overlayMimeType?: string | null;
+  overlaySettings?: OverlaySettings | Record<string, unknown> | null;
+  overlayBackgroundVideoSrc?: string;
   soundEffects?: Array<{
     src: string; // static file path (publicDir) or absolute URL
     delaySeconds?: number;

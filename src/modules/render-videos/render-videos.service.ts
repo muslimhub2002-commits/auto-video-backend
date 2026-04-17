@@ -514,9 +514,26 @@ export class RenderVideosService implements OnModuleInit {
     return join(root, 'videos', `${jobId}.mp4`);
   }
 
+  private isLikelyVideoAsset(params: {
+    mimeType?: string | null;
+    originalName?: string | null;
+    url?: string | null;
+  }) {
+    const mimeType = String(params.mimeType ?? '')
+      .trim()
+      .toLowerCase();
+    if (mimeType.startsWith('video/')) return true;
+    if (mimeType.startsWith('image/')) return false;
+
+    const reference = `${String(params.originalName ?? '').trim()} ${String(
+      params.url ?? '',
+    ).trim()}`.toLowerCase();
+    return /\.(mp4|mov|m4v|webm|avi|mkv|ogv|ogg)(?:\?|#|$)/u.test(reference);
+  }
+
   async stageLocalRenderAsset(params: {
     file: UploadedAsset;
-    kind: 'audio' | 'image';
+    kind: 'audio' | 'image' | 'video';
   }) {
     if (this.isServerlessRuntime()) {
       throw new ServiceUnavailableException(
@@ -531,7 +548,12 @@ export class RenderVideosService implements OnModuleInit {
     const ext = this.inferExt({
       originalName: params.file.originalName,
       mimeType: params.file.mimeType,
-      fallback: params.kind === 'audio' ? '.mp3' : '.png',
+      fallback:
+        params.kind === 'audio'
+          ? '.mp3'
+          : params.kind === 'video'
+            ? '.mp4'
+            : '.png',
     });
 
     const fileName = `${randomUUID()}${ext}`;
@@ -579,6 +601,7 @@ export class RenderVideosService implements OnModuleInit {
     this.ensureDir(jobDir);
     this.ensureDir(join(jobDir, 'images'));
     this.ensureDir(join(jobDir, 'audio'));
+    this.ensureDir(join(jobDir, 'overlays'));
     this.ensureDir(join(jobDir, 'sfx'));
     this.ensureDir(join(jobDir, 'videos'));
 
@@ -858,6 +881,91 @@ export class RenderVideosService implements OnModuleInit {
         params.sentences[index].textBackgroundVideoUrl = stagedRel;
       };
 
+      const stageOverlayAssetForSentence = async (
+        index: number,
+        localJobDir?: string,
+      ) => {
+        const sentence = params.sentences[index];
+        if (sentence?.mediaType !== 'overlay') return;
+
+        const current = String(sentence.overlayUrl ?? '').trim();
+        if (!current) {
+          throw new Error(`Missing overlay asset for scene ${index + 1}.`);
+        }
+
+        const overlayMimeType = String(sentence.overlayMimeType ?? '').trim() || undefined;
+
+        if (useLambdaTestMode) {
+          if (this.isCloudinaryUrl(current)) return;
+
+          const localStatic = this.readLocalStaticFileToBuffer(current);
+          const downloaded =
+            localStatic ??
+            (await this.downloadUrlToBuffer({
+              url: current,
+              maxBytes: 100 * 1024 * 1024,
+              label: `overlay asset for sentence ${index + 1}`,
+            }));
+
+          const mimeType =
+            overlayMimeType ??
+            ('mimeType' in downloaded ? downloaded.mimeType : undefined);
+          const resourceType = this.isLikelyVideoAsset({
+            mimeType,
+            originalName: localStatic?.fileName ?? current,
+            url: current,
+          })
+            ? 'video'
+            : 'image';
+
+          const uploaded = await this.uploadBufferToCloudinary({
+            buffer: downloaded.buffer,
+            folder: `auto-video-generator/render-inputs/${resourceType === 'video' ? 'videos' : 'images'}`,
+            resource_type: resourceType,
+          });
+
+          params.sentences[index].overlayUrl = uploaded.secure_url;
+          if (!params.sentences[index].overlayMimeType && mimeType) {
+            params.sentences[index].overlayMimeType = mimeType;
+          }
+          return;
+        }
+
+        if (!localJobDir) {
+          throw new Error('Missing local job directory for staging overlay assets');
+        }
+
+        const localStatic = this.readLocalStaticFileToBuffer(current);
+        const downloaded =
+          localStatic ??
+          (await this.downloadUrlToBuffer({
+            url: current,
+            maxBytes: 100 * 1024 * 1024,
+            label: `overlay asset for sentence ${index + 1}`,
+          }));
+
+        const mimeType =
+          overlayMimeType ??
+          ('mimeType' in downloaded ? downloaded.mimeType : undefined);
+        const isVideo = this.isLikelyVideoAsset({
+          mimeType,
+          originalName: localStatic?.fileName ?? current,
+          url: current,
+        });
+        const ext = this.inferExt({
+          originalName: localStatic?.fileName ?? current,
+          mimeType,
+          fallback: isVideo ? '.mp4' : '.png',
+        });
+
+        const stagedRel = `overlays/scene-${String(index + 1).padStart(3, '0')}-overlay${ext}`;
+        fs.writeFileSync(join(localJobDir, stagedRel), downloaded.buffer);
+        params.sentences[index].overlayUrl = stagedRel;
+        if (!params.sentences[index].overlayMimeType && mimeType) {
+          params.sentences[index].overlayMimeType = mimeType;
+        }
+      };
+
       const hasSubscribeSentence = params.sentences.some((s) =>
         this.isSubscribeLikeSentence(s?.text || ''),
       );
@@ -879,6 +987,7 @@ export class RenderVideosService implements OnModuleInit {
             continue;
           }
 
+          await stageOverlayAssetForSentence(i);
           await stageTextBackgroundVideoForSentence(i);
 
           if (!sentenceUsesPrimaryImageTransport(params.sentences[i])) {
@@ -1109,6 +1218,7 @@ export class RenderVideosService implements OnModuleInit {
             continue;
           }
 
+          await stageOverlayAssetForSentence(i, jobDir);
           await stageTextBackgroundVideoForSentence(i, jobDir);
 
           if (!sentenceUsesPrimaryImageTransport(params.sentences[i])) {

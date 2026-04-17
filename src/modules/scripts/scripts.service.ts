@@ -98,8 +98,13 @@ export class ScriptsService implements OnModuleInit {
     return value === 'detailed' ? 'detailed' : 'quick';
   }
 
-  private normalizeSceneTab(value: unknown): 'image' | 'video' | 'text' | null {
-    return value === 'video' || value === 'text' || value === 'image'
+  private normalizeSceneTab(
+    value: unknown,
+  ): 'image' | 'video' | 'text' | 'overlay' | null {
+    return value === 'video' ||
+      value === 'text' ||
+      value === 'image' ||
+      value === 'overlay'
       ? value
       : null;
   }
@@ -959,6 +964,12 @@ export class ScriptsService implements OnModuleInit {
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_background_video_id UUID NULL',
       );
       await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS overlay_id UUID NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS overlay_settings JSONB NULL',
+      );
+      await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS voice_over_url VARCHAR(2048) NULL',
       );
       await tryAlterSentences(
@@ -1479,6 +1490,7 @@ export class ScriptsService implements OnModuleInit {
                 video_id: s.video_id ?? null,
                 text_background_image_id: s.text_background_image_id ?? null,
                 text_background_video_id: s.text_background_video_id ?? null,
+                overlay_id: this.normalizeOptionalId((s as any).overlay_id),
                 voice_over_url:
                   String((s as any).voice_over_url ?? '').trim() || null,
                 voice_over_mime_type:
@@ -1528,6 +1540,9 @@ export class ScriptsService implements OnModuleInit {
                 ),
                 text_animation_settings: this.normalizeTextAnimationSettingsObject(
                   (s as any).text_animation_settings,
+                ),
+                overlay_settings: this.normalizeSettingsObject(
+                  (s as any).overlay_settings,
                 ),
                 transition_sound_effects:
                   this.normalizeTransitionSoundEffectsInput(
@@ -2154,6 +2169,7 @@ export class ScriptsService implements OnModuleInit {
             text_background_image_id: (s as any).text_background_image_id ?? null,
             text_background_video_id:
               (s as any).text_background_video_id ?? null,
+            overlay_id: this.normalizeOptionalId((s as any).overlay_id),
             voice_over_url:
               String((s as any).voice_over_url ?? '').trim() || null,
             voice_over_mime_type:
@@ -2207,6 +2223,9 @@ export class ScriptsService implements OnModuleInit {
             ),
             text_animation_settings: this.normalizeTextAnimationSettingsObject(
               (s as any).text_animation_settings,
+            ),
+            overlay_settings: this.normalizeSettingsObject(
+              (s as any).overlay_settings,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,
@@ -2332,6 +2351,7 @@ export class ScriptsService implements OnModuleInit {
           text_background_image_id: (s as any).text_background_image_id ?? null,
           text_background_video_id:
             (s as any).text_background_video_id ?? null,
+          overlay_id: this.normalizeOptionalId((s as any).overlay_id),
           voice_over_url:
             String((s as any).voice_over_url ?? '').trim() || null,
           voice_over_mime_type:
@@ -2383,6 +2403,9 @@ export class ScriptsService implements OnModuleInit {
           ),
           text_animation_settings: this.normalizeTextAnimationSettingsObject(
             (s as any).text_animation_settings,
+          ),
+          overlay_settings: this.normalizeSettingsObject(
+            (s as any).overlay_settings,
           ),
           transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
             (s as any).transition_sound_effects,
@@ -2602,6 +2625,7 @@ export class ScriptsService implements OnModuleInit {
       .leftJoinAndSelect('sentence.image', 'image')
       .leftJoinAndSelect('sentence.textBackgroundImage', 'text_background_image')
       .leftJoinAndSelect('sentence.textBackgroundVideo', 'text_background_video')
+      .leftJoinAndSelect('sentence.overlay', 'overlay')
       .leftJoinAndSelect('sentence.secondaryImage', 'secondary_image')
       .leftJoinAndSelect('sentence.startFrameImage', 'start_frame_image')
       .leftJoinAndSelect('sentence.endFrameImage', 'end_frame_image')
@@ -2816,6 +2840,7 @@ export class ScriptsService implements OnModuleInit {
             text_background_image_id: (s as any).text_background_image_id ?? null,
             text_background_video_id:
               (s as any).text_background_video_id ?? null,
+            overlay_id: this.normalizeOptionalId((s as any).overlay_id),
             voice_over_url:
               String((s as any).voice_over_url ?? '').trim() || null,
             voice_over_mime_type:
@@ -2869,6 +2894,9 @@ export class ScriptsService implements OnModuleInit {
             ),
             text_animation_settings: this.normalizeTextAnimationSettingsObject(
               (s as any).text_animation_settings,
+            ),
+            overlay_settings: this.normalizeSettingsObject(
+              (s as any).overlay_settings,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,
@@ -3061,6 +3089,7 @@ export class ScriptsService implements OnModuleInit {
             text_background_image_id: (s as any).text_background_image_id ?? null,
             text_background_video_id:
               (s as any).text_background_video_id ?? null,
+            overlay_id: this.normalizeOptionalId((s as any).overlay_id),
             video_prompt: s.video_prompt ?? null,
             transition_to_next: s.transition_to_next ?? null,
             visual_effect: s.visual_effect ?? null,
@@ -3095,6 +3124,9 @@ export class ScriptsService implements OnModuleInit {
             ),
             text_animation_settings: this.normalizeTextAnimationSettingsObject(
               (s as any).text_animation_settings,
+            ),
+            overlay_settings: this.normalizeSettingsObject(
+              (s as any).overlay_settings,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,

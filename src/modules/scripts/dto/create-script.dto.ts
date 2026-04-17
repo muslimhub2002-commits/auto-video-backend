@@ -47,7 +47,7 @@ const ALLOWED_IMAGE_MOTION_EFFECTS = [
 ] as const;
 
 const ALLOWED_IMAGE_EFFECTS_MODES = ['quick', 'detailed'] as const;
-const ALLOWED_SCENE_TABS = ['image', 'video', 'text'] as const;
+const ALLOWED_SCENE_TABS = ['image', 'video', 'text', 'overlay'] as const;
 const ALLOWED_TEXT_ANIMATION_EFFECTS = [
   'popInBounceHook',
   'slideCutFast',
@@ -211,6 +211,10 @@ class CreateSentenceInput {
   @IsOptional()
   text_background_video_id?: string;
 
+  @IsUUID()
+  @IsOptional()
+  overlay_id?: string;
+
   @IsString()
   @IsOptional()
   video_prompt?: string;
@@ -273,6 +277,10 @@ class CreateSentenceInput {
   @IsObject()
   @IsOptional()
   text_animation_settings?: Record<string, unknown> | null;
+
+  @IsObject()
+  @IsOptional()
+  overlay_settings?: Record<string, unknown> | null;
 
   @IsBoolean()
   @IsOptional()

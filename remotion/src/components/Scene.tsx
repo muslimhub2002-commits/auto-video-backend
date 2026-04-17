@@ -43,6 +43,7 @@ import type { TransitionType } from '../utils/transitions';
 import { getChromaParams } from '../utils/transitions';
 import { GlitchImage } from './GlitchImage';
 import { ProgressiveSubtitles } from './ProgressiveSubtitles';
+import { OverlayScene } from './OverlayScene';
 import { SuspenseOverlay } from './SuspenseOverlay';
 import { TextScene } from './TextScene';
 // import { loadFont as loadNotoKufiArabic } from '@remotion/google-fonts/NotoKufiArabic';
@@ -340,6 +341,15 @@ export const Scene: React.FC<{
       normalizedLanguage.startsWith('ar_') ||
       normalizedLanguage.includes('arab');
     const isTextScene = scene.mediaType === 'text';
+    const isOverlayScene = scene.mediaType === 'overlay';
+    const overlayIncludesText =
+      isOverlayScene &&
+      !!(
+        scene.overlaySettings &&
+        typeof scene.overlaySettings === 'object' &&
+        !Array.isArray(scene.overlaySettings) &&
+        scene.overlaySettings.includeText === true
+      );
     const subtitleFontFamily = isArabic
       ? `Noto Kufi Arabic, sans-serif`
       : 'Oswald, system-ui, sans-serif';
@@ -353,9 +363,9 @@ export const Scene: React.FC<{
       ? 'grayscale(1) contrast(1.38) brightness(0.88)'
       : undefined;
 
-    const visualEffect = isTextScene ? null : scene.visualEffect ?? null;
+    const visualEffect = isTextScene || isOverlayScene ? null : scene.visualEffect ?? null;
     const resolvedLook = normalizeImageFilterSettings(
-      isTextScene ? null : scene.imageFilterSettings,
+      isTextScene || isOverlayScene ? null : scene.imageFilterSettings,
       visualEffect,
     );
 
@@ -375,7 +385,7 @@ export const Scene: React.FC<{
       .filter(Boolean)
       .join(' ');
 
-    const wrapperFilter = isTextScene
+    const wrapperFilter = isTextScene || isOverlayScene
       ? undefined
       : [suspenseFilter, lookFilter].filter(Boolean).join(' ') || undefined;
 
@@ -487,7 +497,7 @@ export const Scene: React.FC<{
       : 0;
     const whipBlur = Math.min(WHIP_MAX_BLUR_PX, blurIn + blurOut);
 
-    const shouldApplyImageMotion = !isTextScene;
+    const shouldApplyImageMotion = !isTextScene && !isOverlayScene;
     const motionEffect = (scene.imageMotionEffect ?? 'default') as SceneMotionEffect;
     const resolvedMotion = shouldApplyImageMotion
       ? normalizeImageMotionSettings(
@@ -850,6 +860,16 @@ export const Scene: React.FC<{
         isShort={isShort}
         fontFamily={subtitleFontFamily}
       />
+    ) : isOverlayScene ? (
+      <OverlayScene
+        scene={scene}
+        frame={frame}
+        fps={fps}
+        width={width}
+        height={height}
+        isShort={isShort}
+        fontFamily={subtitleFontFamily}
+      />
     ) : scene.videoSrc ? (
       <OffthreadVideo
         src={resolveMediaSrc(scene.videoSrc)}
@@ -934,7 +954,7 @@ export const Scene: React.FC<{
           />
         ) : null}
 
-        {showSubtitles && !isTextScene ? (
+        {showSubtitles && !isTextScene && !overlayIncludesText ? (
           <ProgressiveSubtitles
             text={scene.text}
             subtitleWords={scene.subtitleWords}

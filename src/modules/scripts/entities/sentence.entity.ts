@@ -9,6 +9,7 @@ import {
 import { Script } from './script.entity';
 import { Image } from '../../images/entities/image.entity';
 import { Video } from '../../videos/entities/video.entity';
+import { Overlay } from '../../overlays/entities/overlay.entity';
 import { SentenceSoundEffect } from './sentence-sound-effect.entity';
 
 @Entity('sentences')
@@ -45,6 +46,9 @@ export class Sentence {
 
   @Column({ type: 'uuid', nullable: true })
   text_background_video_id: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  overlay_id: string | null;
 
   @Column({ type: 'varchar', length: 2048, nullable: true })
   voice_over_url: string | null;
@@ -131,6 +135,9 @@ export class Sentence {
   @Column({ type: 'jsonb', nullable: true })
   text_animation_settings: Record<string, unknown> | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  overlay_settings: Record<string, unknown> | null;
+
   // Optional per-cut custom transition sounds for the cut from this sentence
   // into the next one. Stored inline so unsaved multi-sound mixes can round-trip.
   @Column({ type: 'jsonb', nullable: true })
@@ -195,6 +202,10 @@ export class Sentence {
   @ManyToOne(() => Video, { nullable: true })
   @JoinColumn({ name: 'text_background_video_id' })
   textBackgroundVideo: Video | null;
+
+  @ManyToOne(() => Overlay, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'overlay_id' })
+  overlay: Overlay | null;
 
   @OneToMany(
     () => SentenceSoundEffect,

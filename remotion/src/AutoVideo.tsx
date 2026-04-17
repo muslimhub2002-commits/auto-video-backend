@@ -144,6 +144,12 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       if (scene.secondaryImageSrc) {
         sources.add(resolveMediaSrc(scene.secondaryImageSrc));
       }
+      if (scene.overlaySrc) {
+        sources.add(resolveMediaSrc(scene.overlaySrc));
+      }
+      if (scene.overlayBackgroundVideoSrc) {
+        sources.add(resolveMediaSrc(scene.overlayBackgroundVideoSrc));
+      }
       if (scene.textBackgroundVideoSrc) {
         sources.add(resolveMediaSrc(scene.textBackgroundVideoSrc));
       }
@@ -423,7 +429,18 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       {timeline.scenes.map((scene, idx) => {
         const prev = idx > 0 ? timeline.scenes[idx - 1] : null;
         const next = idx + 1 < timeline.scenes.length ? timeline.scenes[idx + 1] : null;
-        const premountFor = scene.videoSrc ? videoScenePremountFrames : 0;
+        const overlayMimeType = String(scene.overlayMimeType ?? '')
+          .trim()
+          .toLowerCase();
+        const overlaySrc = String(scene.overlaySrc ?? '')
+          .trim()
+          .toLowerCase();
+        const sceneHasVideoMedia =
+          Boolean(scene.videoSrc || scene.overlayBackgroundVideoSrc) ||
+          (scene.mediaType === 'overlay' &&
+            (overlayMimeType.startsWith('video/') ||
+              /\.(mp4|mov|m4v|webm|avi|mkv|ogv|ogg)(?:\?|#|$)/u.test(overlaySrc)));
+        const premountFor = sceneHasVideoMedia ? videoScenePremountFrames : 0;
 
         const transitionFromPrev = idx > 0 ? (cutTransitions[idx] ?? 'none') : 'none';
         const transitionToNext =
