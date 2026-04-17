@@ -16,6 +16,33 @@ const OVERLAY_TEXT_LAYER_VALUES = ['below', 'above'] as const;
 const clampNumber = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
+const LEGACY_OVERLAY_WIDTH_PERCENT = 26;
+const LEGACY_OVERLAY_HEIGHT_PERCENT = 22;
+const LEGACY_OVERLAY_OFFSET_X = 0;
+const LEGACY_OVERLAY_OFFSET_Y = -4;
+const LEGACY_OVERLAY_SCALE = 1;
+const LEGACY_OVERLAY_ROTATION_DEG = 0;
+
+const isApproximately = (value: number | undefined, expected: number) => {
+  return Math.abs((value ?? expected) - expected) < 0.001;
+};
+
+const usesImageTabSizedOverlay = (settings: OverlaySettings) => {
+  return (
+    isApproximately(settings.widthPercent, LEGACY_OVERLAY_WIDTH_PERCENT) &&
+    isApproximately(settings.heightPercent, LEGACY_OVERLAY_HEIGHT_PERCENT)
+  );
+};
+
+const usesLegacyOverlayTransformDefaults = (settings: OverlaySettings) => {
+  return (
+    isApproximately(settings.offsetX, LEGACY_OVERLAY_OFFSET_X) &&
+    isApproximately(settings.offsetY, LEGACY_OVERLAY_OFFSET_Y) &&
+    isApproximately(settings.scale, LEGACY_OVERLAY_SCALE) &&
+    isApproximately(settings.rotationDeg, LEGACY_OVERLAY_ROTATION_DEG)
+  );
+};
+
 const getNumeric = (
   value: unknown,
   fallback: number,
@@ -133,13 +160,18 @@ export const OverlayScene: React.FC<{
       : null;
   const overlaySrc = scene.overlaySrc ? resolveMediaSrc(scene.overlaySrc) : null;
   const overlayIsVideo = inferOverlayIsVideo(scene.overlaySrc, scene.overlayMimeType);
+  const shouldUseImageTabSizing = usesImageTabSizedOverlay(resolvedOverlay);
+  const shouldUseLegacyCenteredTransform =
+    shouldUseImageTabSizing && usesLegacyOverlayTransformDefaults(resolvedOverlay);
   const cycleFrames = Math.max(
     1,
     Math.round(clampNumber(7 / (resolvedOverlay.speed ?? 1), 2.4, 14) * fps),
   );
   const phase = ((frame % cycleFrames) / cycleFrames) * Math.PI * 2;
-  const floatYOffset = Math.sin(phase) * 0.8;
-  const floatRotation = Math.sin(phase + Math.PI / 2) * 1.25;
+  const floatYOffset = shouldUseImageTabSizing ? 0 : Math.sin(phase) * 0.8;
+  const floatRotation = shouldUseImageTabSizing
+    ? 0
+    : Math.sin(phase + Math.PI / 2) * 1.25;
   const overlayWidthPx = width * ((resolvedOverlay.widthPercent ?? 26) / 100);
   const overlayHeightPx = height * ((resolvedOverlay.heightPercent ?? 22) / 100);
 
@@ -232,18 +264,32 @@ export const OverlayScene: React.FC<{
         <div
           style={{
             position: 'absolute',
-            left: width / 2 + ((resolvedOverlay.offsetX ?? 0) / 100) * width,
-            top: height / 2 + ((resolvedOverlay.offsetY ?? 0) / 100) * height,
-            width: overlayWidthPx,
-            height: overlayHeightPx,
-            marginLeft: -overlayWidthPx / 2,
-            marginTop: -overlayHeightPx / 2,
+            ...(shouldUseImageTabSizing
+              ? {
+                  inset: 0,
+                }
+              : {
+                  left: width / 2 + ((resolvedOverlay.offsetX ?? 0) / 100) * width,
+                  top: height / 2 + ((resolvedOverlay.offsetY ?? 0) / 100) * height,
+                  width: overlayWidthPx,
+                  height: overlayHeightPx,
+                  marginLeft: -overlayWidthPx / 2,
+                  marginTop: -overlayHeightPx / 2,
+                }),
             opacity: resolvedOverlay.opacity ?? 1,
-            transform: `translateY(${floatYOffset.toFixed(2)}%) scale(${(
-              resolvedOverlay.scale ?? 1
-            ).toFixed(4)}) rotate(${(
-              (resolvedOverlay.rotationDeg ?? 0) + floatRotation
-            ).toFixed(2)}deg)`,
+            transform: shouldUseImageTabSizing
+              ? shouldUseLegacyCenteredTransform
+                ? undefined
+                : `translate(${(resolvedOverlay.offsetX ?? 0).toFixed(2)}%, ${(resolvedOverlay.offsetY ?? 0).toFixed(2)}%) scale(${(
+                    resolvedOverlay.scale ?? 1
+                  ).toFixed(4)}) rotate(${(
+                    (resolvedOverlay.rotationDeg ?? 0) + floatRotation
+                  ).toFixed(2)}deg)`
+              : `translateY(${floatYOffset.toFixed(2)}%) scale(${(
+                  resolvedOverlay.scale ?? 1
+                ).toFixed(4)}) rotate(${(
+                  (resolvedOverlay.rotationDeg ?? 0) + floatRotation
+                ).toFixed(2)}deg)`,
             transformOrigin: 'center center',
             zIndex: 20,
           }}
@@ -254,12 +300,22 @@ export const OverlayScene: React.FC<{
               muted
               loop
               pauseWhenBuffering
-              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain' }}
+              style={{
+                display: 'block',
+                width: '100%',
+                height: '100%',
+                objectFit: shouldUseImageTabSizing ? 'cover' : 'contain',
+              }}
             />
           ) : (
             <Img
               src={overlaySrc}
-              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain' }}
+              style={{
+                display: 'block',
+                width: '100%',
+                height: '100%',
+                objectFit: shouldUseImageTabSizing ? 'cover' : 'contain',
+              }}
             />
           )}
         </div>
