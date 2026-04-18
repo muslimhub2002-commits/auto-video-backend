@@ -433,6 +433,200 @@ export class ScriptsService implements OnModuleInit {
     }
   }
 
+  private normalizeDetachedSoundEffectsInput(
+    value: unknown,
+  ): Array<Record<string, unknown>> | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+
+    let nextValue = value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+
+      try {
+        nextValue = JSON.parse(trimmed);
+      } catch {
+        return null;
+      }
+    }
+
+    if (!Array.isArray(nextValue)) {
+      return null;
+    }
+
+    return nextValue.filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+    );
+  }
+
+  private normalizeStoredDetachedSoundEffects(
+    value: unknown,
+  ): Array<Record<string, unknown>> | null {
+    const items = this.normalizeDetachedSoundEffectsInput(value);
+    if (!items || items.length === 0) return null;
+
+    const normalized = items
+      .map((item) => {
+        const soundEffectId = String(item.sound_effect_id ?? '').trim();
+        if (!soundEffectId) return null;
+
+        const delaySecondsRaw = Number(item.delay_seconds ?? 0);
+        const volumePercentRaw = Number(item.volume_percent ?? 100);
+        const durationSecondsRaw = this.normalizeOptionalNumber(
+          item.duration_seconds,
+        );
+
+        return {
+          sound_effect_id: soundEffectId,
+          title: String(item.title ?? '').trim() || 'Sound effect',
+          url: String(item.url ?? '').trim() || null,
+          delay_seconds: Number.isFinite(delaySecondsRaw)
+            ? Math.max(0, delaySecondsRaw)
+            : 0,
+          volume_percent: Number.isFinite(volumePercentRaw)
+            ? Math.max(0, Math.min(300, volumePercentRaw))
+            : 100,
+          timing_mode: this.normalizeSentenceSoundEffectTimingMode(
+            item.timing_mode,
+          ),
+          audio_settings_override:
+            item.audio_settings_override &&
+            typeof item.audio_settings_override === 'object' &&
+            !Array.isArray(item.audio_settings_override)
+              ? normalizeSoundEffectAudioSettings(item.audio_settings_override)
+              : null,
+          default_audio_settings:
+            item.default_audio_settings &&
+            typeof item.default_audio_settings === 'object' &&
+            !Array.isArray(item.default_audio_settings)
+              ? normalizeSoundEffectAudioSettings(item.default_audio_settings)
+              : null,
+          duration_seconds:
+            durationSecondsRaw === null ? null : Math.max(0, durationSecondsRaw),
+        };
+      })
+      .filter(Boolean) as Array<Record<string, unknown>>;
+
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private async normalizeDetachedSoundEffectsForUser(params: {
+    userId: string;
+    value: unknown;
+  }): Promise<Array<Record<string, unknown>> | null | undefined> {
+    const items = this.normalizeDetachedSoundEffectsInput(params.value);
+    if (items === undefined) return undefined;
+    if (!items || items.length === 0) return null;
+
+    const ids = items
+      .map((item) => String(item.sound_effect_id ?? '').trim())
+      .filter(Boolean);
+    if (ids.length === 0) return null;
+
+    const owned = await this.soundEffectRepository.find({
+      where: {
+        id: In(Array.from(new Set(ids))),
+        user_id: params.userId,
+      },
+      select: {
+        id: true,
+        title: true,
+        name: true,
+        url: true,
+        volume_percent: true,
+        audio_settings: true,
+        duration_seconds: true,
+      },
+    });
+    const ownedById = new Map(owned.map((soundEffect) => [soundEffect.id, soundEffect]));
+
+    const normalized = items.flatMap((item) => {
+      const soundEffectId = String(item.sound_effect_id ?? '').trim();
+      const soundEffect = ownedById.get(soundEffectId);
+      if (!soundEffect) return [];
+
+      const delaySecondsRaw = Number(item.delay_seconds ?? 0);
+      const requestedVolumePercent = this.normalizeOptionalNumber(
+        item.volume_percent,
+      );
+      const defaultAudioSettings = normalizeSoundEffectAudioSettings(
+        soundEffect.audio_settings,
+      );
+
+      return [
+        {
+          sound_effect_id: soundEffect.id,
+          title:
+            String(item.title ?? '').trim() ||
+            String(soundEffect.name ?? '').trim() ||
+            String(soundEffect.title ?? '').trim() ||
+            'Sound effect',
+          url: String(soundEffect.url ?? '').trim() || null,
+          delay_seconds: Number.isFinite(delaySecondsRaw)
+            ? Math.max(0, delaySecondsRaw)
+            : 0,
+          volume_percent:
+            requestedVolumePercent === null
+              ? Math.max(
+                  0,
+                  Math.min(300, Number(soundEffect.volume_percent ?? 100) || 100),
+                )
+              : Math.max(0, Math.min(300, requestedVolumePercent)),
+          timing_mode: this.normalizeSentenceSoundEffectTimingMode(
+            item.timing_mode,
+          ),
+          audio_settings_override:
+            item.audio_settings_override &&
+            typeof item.audio_settings_override === 'object' &&
+            !Array.isArray(item.audio_settings_override)
+              ? normalizeSoundEffectAudioSettings(item.audio_settings_override)
+              : null,
+          default_audio_settings: defaultAudioSettings,
+          duration_seconds:
+            typeof soundEffect.duration_seconds === 'number' &&
+            Number.isFinite(soundEffect.duration_seconds)
+              ? Math.max(0, soundEffect.duration_seconds)
+              : null,
+        },
+      ];
+    });
+
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private async normalizeDetachedSoundEffectsForSentenceInputs(params: {
+    userId: string;
+    sentenceInputs: Array<any>;
+  }): Promise<Array<any>> {
+    const sentenceInputs = Array.isArray(params.sentenceInputs)
+      ? params.sentenceInputs
+      : [];
+
+    return Promise.all(
+      sentenceInputs.map(async (sentenceInput) => {
+        const nextSentenceInput =
+          sentenceInput && typeof sentenceInput === 'object'
+            ? { ...sentenceInput }
+            : {};
+
+        nextSentenceInput.text_animation_sound_effects =
+          (await this.normalizeDetachedSoundEffectsForUser({
+            userId: params.userId,
+            value: (sentenceInput as any)?.text_animation_sound_effects,
+          })) ?? null;
+        nextSentenceInput.overlay_sound_effects =
+          (await this.normalizeDetachedSoundEffectsForUser({
+            userId: params.userId,
+            value: (sentenceInput as any)?.overlay_sound_effects,
+          })) ?? null;
+
+        return nextSentenceInput;
+      }),
+    );
+  }
+
   private normalizeTransitionSoundEffectsInput(items: any): Array<{
     sound_effect_id: string;
     title?: string;
@@ -581,7 +775,6 @@ export class ScriptsService implements OnModuleInit {
 
   private async ensureScriptsSchemaLazy(): Promise<void> {
     if (this.scriptsSchemaEnsured) return;
-    if (this.scriptsSchemaEnsuring) return this.scriptsSchemaEnsuring;
 
     this.scriptsSchemaEnsuring = (async () => {
       const tableExists = await this.scriptsTableExists();
@@ -958,6 +1151,9 @@ export class ScriptsService implements OnModuleInit {
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_animation_settings JSONB NULL',
       );
       await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_animation_sound_effects JSONB NULL',
+      );
+      await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS text_background_image_id UUID NULL',
       );
       await tryAlterSentences(
@@ -968,6 +1164,9 @@ export class ScriptsService implements OnModuleInit {
       );
       await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS overlay_settings JSONB NULL',
+      );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS overlay_sound_effects JSONB NULL',
       );
       await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS voice_over_url VARCHAR(2048) NULL',
@@ -1469,8 +1668,13 @@ export class ScriptsService implements OnModuleInit {
         await this.sentenceRepository.delete({ script_id: shortScript.id });
 
         if (item.sentences.length > 0) {
+          const normalizedSentenceInputs =
+            await this.normalizeDetachedSoundEffectsForSentenceInputs({
+              userId,
+              sentenceInputs: item.sentences as any,
+            });
           let suspenseAlreadyUsed = false;
-          const sentenceEntities = item.sentences.map(
+          const sentenceEntities = normalizedSentenceInputs.map(
             (s: any, index: number) => {
               const wantsSuspense = Boolean(s.isSuspense);
               const isSuspense = wantsSuspense && !suspenseAlreadyUsed;
@@ -1541,8 +1745,15 @@ export class ScriptsService implements OnModuleInit {
                 text_animation_settings: this.normalizeTextAnimationSettingsObject(
                   (s as any).text_animation_settings,
                 ),
+                text_animation_sound_effects:
+                  this.normalizeStoredDetachedSoundEffects(
+                    (s as any).text_animation_sound_effects,
+                  ),
                 overlay_settings: this.normalizeSettingsObject(
                   (s as any).overlay_settings,
+                ),
+                overlay_sound_effects: this.normalizeStoredDetachedSoundEffects(
+                  (s as any).overlay_sound_effects,
                 ),
                 transition_sound_effects:
                   this.normalizeTransitionSoundEffectsInput(
@@ -1569,7 +1780,7 @@ export class ScriptsService implements OnModuleInit {
             await this.sentenceRepository.save(sentenceEntities);
           await this.saveSentenceSoundEffectsForSentenceInputs({
             userId,
-            sentenceInputs: item.sentences as any,
+            sentenceInputs: normalizedSentenceInputs,
             savedSentences,
           });
         }
@@ -2148,8 +2359,13 @@ export class ScriptsService implements OnModuleInit {
         // Replace existing sentences with the new ones
         await this.sentenceRepository.delete({ script_id: updatedScript.id });
 
+        const normalizedSentenceInputs =
+          await this.normalizeDetachedSoundEffectsForSentenceInputs({
+            userId,
+            sentenceInputs: sentences as any,
+          });
         let suspenseAlreadyUsed = false;
-        const sentenceEntities = sentences.map((s, index) => {
+        const sentenceEntities = normalizedSentenceInputs.map((s, index) => {
           const wantsSuspense = Boolean(s.isSuspense);
           const isSuspense = wantsSuspense && !suspenseAlreadyUsed;
           if (isSuspense) suspenseAlreadyUsed = true;
@@ -2224,8 +2440,15 @@ export class ScriptsService implements OnModuleInit {
             text_animation_settings: this.normalizeTextAnimationSettingsObject(
               (s as any).text_animation_settings,
             ),
+            text_animation_sound_effects:
+              this.normalizeStoredDetachedSoundEffects(
+                (s as any).text_animation_sound_effects,
+              ),
             overlay_settings: this.normalizeSettingsObject(
               (s as any).overlay_settings,
+            ),
+            overlay_sound_effects: this.normalizeStoredDetachedSoundEffects(
+              (s as any).overlay_sound_effects,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,
@@ -2251,7 +2474,7 @@ export class ScriptsService implements OnModuleInit {
           await this.sentenceRepository.save(sentenceEntities);
         await this.saveSentenceSoundEffectsForSentenceInputs({
           userId,
-          sentenceInputs: sentences as any,
+          sentenceInputs: normalizedSentenceInputs,
           savedSentences,
         });
       }
@@ -2330,8 +2553,13 @@ export class ScriptsService implements OnModuleInit {
     const savedScript = await this.scriptRepository.save(scriptEntity);
 
     if (sentences && sentences.length > 0) {
+      const normalizedSentenceInputs =
+        await this.normalizeDetachedSoundEffectsForSentenceInputs({
+          userId,
+          sentenceInputs: sentences as any,
+        });
       let suspenseAlreadyUsed = false;
-      const sentenceEntities = sentences.map((s, index) => {
+      const sentenceEntities = normalizedSentenceInputs.map((s, index) => {
         const wantsSuspense = Boolean(s.isSuspense);
         const isSuspense = wantsSuspense && !suspenseAlreadyUsed;
         if (isSuspense) suspenseAlreadyUsed = true;
@@ -2404,8 +2632,14 @@ export class ScriptsService implements OnModuleInit {
           text_animation_settings: this.normalizeTextAnimationSettingsObject(
             (s as any).text_animation_settings,
           ),
+          text_animation_sound_effects: this.normalizeStoredDetachedSoundEffects(
+            (s as any).text_animation_sound_effects,
+          ),
           overlay_settings: this.normalizeSettingsObject(
             (s as any).overlay_settings,
+          ),
+          overlay_sound_effects: this.normalizeStoredDetachedSoundEffects(
+            (s as any).overlay_sound_effects,
           ),
           transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
             (s as any).transition_sound_effects,
@@ -2431,7 +2665,7 @@ export class ScriptsService implements OnModuleInit {
         await this.sentenceRepository.save(sentenceEntities);
       await this.saveSentenceSoundEffectsForSentenceInputs({
         userId,
-        sentenceInputs: sentences as any,
+        sentenceInputs: normalizedSentenceInputs,
         savedSentences,
       });
     }
@@ -2819,8 +3053,13 @@ export class ScriptsService implements OnModuleInit {
       await this.sentenceRepository.delete({ script_id: script.id });
 
       if (dto.sentences.length > 0) {
+        const normalizedSentenceInputs =
+          await this.normalizeDetachedSoundEffectsForSentenceInputs({
+            userId,
+            sentenceInputs: dto.sentences as any,
+          });
         let suspenseAlreadyUsed = false;
-        const sentenceEntities = dto.sentences.map((s, index) => {
+        const sentenceEntities = normalizedSentenceInputs.map((s, index) => {
           const wantsSuspense = Boolean(s.isSuspense);
           const isSuspense = wantsSuspense && !suspenseAlreadyUsed;
           if (isSuspense) suspenseAlreadyUsed = true;
@@ -2895,8 +3134,15 @@ export class ScriptsService implements OnModuleInit {
             text_animation_settings: this.normalizeTextAnimationSettingsObject(
               (s as any).text_animation_settings,
             ),
+            text_animation_sound_effects:
+              this.normalizeStoredDetachedSoundEffects(
+                (s as any).text_animation_sound_effects,
+              ),
             overlay_settings: this.normalizeSettingsObject(
               (s as any).overlay_settings,
+            ),
+            overlay_sound_effects: this.normalizeStoredDetachedSoundEffects(
+              (s as any).overlay_sound_effects,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,
@@ -2921,7 +3167,7 @@ export class ScriptsService implements OnModuleInit {
           await this.sentenceRepository.save(sentenceEntities);
         await this.saveSentenceSoundEffectsForSentenceInputs({
           userId,
-          sentenceInputs: dto.sentences as any,
+          sentenceInputs: normalizedSentenceInputs,
           savedSentences,
         });
       }
@@ -3125,8 +3371,15 @@ export class ScriptsService implements OnModuleInit {
             text_animation_settings: this.normalizeTextAnimationSettingsObject(
               (s as any).text_animation_settings,
             ),
+            text_animation_sound_effects:
+              this.normalizeStoredDetachedSoundEffects(
+                (s as any).text_animation_sound_effects,
+              ),
             overlay_settings: this.normalizeSettingsObject(
               (s as any).overlay_settings,
+            ),
+            overlay_sound_effects: this.normalizeStoredDetachedSoundEffects(
+              (s as any).overlay_sound_effects,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
               (s as any).transition_sound_effects,

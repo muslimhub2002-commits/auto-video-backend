@@ -2,6 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Img, OffthreadVideo } from 'remotion';
 import type { OverlaySettings, TimelineScene } from '../types';
 import { resolveMediaSrc } from '../utils/media';
+import { mulberry32 } from '../utils/random';
 import { TextScene } from './TextScene';
 
 const OVERLAY_BACKGROUND_MODE_VALUES = [
@@ -67,6 +68,129 @@ const getBoolean = (value: unknown, fallback = false) => {
 const getString = (value: unknown, fallback: string) => {
   const normalized = String(value ?? '').trim();
   return normalized || fallback;
+};
+
+const getDefaultImageFilterSettings = (
+  effect: TimelineScene['visualEffect'] | null | undefined,
+) => {
+  switch (effect) {
+    case 'colorGrading':
+      return {
+        saturation: 1.14,
+        contrast: 1.08,
+        brightness: 0.98,
+        blurPx: 0,
+        sepia: 0.08,
+        grayscale: 0,
+        hueRotateDeg: -6,
+        animatedLightingIntensity: 0,
+        glassOverlayOpacity: 0,
+      };
+    case 'animatedLighting':
+      return {
+        saturation: 1.05,
+        contrast: 1.06,
+        brightness: 1.02,
+        blurPx: 0,
+        sepia: 0,
+        grayscale: 0,
+        hueRotateDeg: 0,
+        animatedLightingIntensity: 0.48,
+        glassOverlayOpacity: 0,
+      };
+    case 'glassSubtle':
+      return {
+        saturation: 1,
+        contrast: 1.03,
+        brightness: 1.01,
+        blurPx: 0.2,
+        sepia: 0,
+        grayscale: 0,
+        hueRotateDeg: 0,
+        animatedLightingIntensity: 0,
+        glassOverlayOpacity: 0.12,
+      };
+    case 'glassReflections':
+      return {
+        saturation: 1.02,
+        contrast: 1.08,
+        brightness: 1,
+        blurPx: 0.6,
+        sepia: 0,
+        grayscale: 0,
+        hueRotateDeg: 0,
+        animatedLightingIntensity: 0,
+        glassOverlayOpacity: 0.22,
+      };
+    case 'glassStrong':
+      return {
+        saturation: 1.03,
+        contrast: 1.1,
+        brightness: 1,
+        blurPx: 1.2,
+        sepia: 0,
+        grayscale: 0,
+        hueRotateDeg: 0,
+        animatedLightingIntensity: 0,
+        glassOverlayOpacity: 0.32,
+      };
+    default:
+      return {
+        saturation: 1,
+        contrast: 1,
+        brightness: 1,
+        blurPx: 0,
+        sepia: 0,
+        grayscale: 0,
+        hueRotateDeg: 0,
+        animatedLightingIntensity: 0,
+        glassOverlayOpacity: 0,
+      };
+  }
+};
+
+const normalizeImageFilterSettings = (
+  settings: Record<string, unknown> | null | undefined,
+  fallbackEffect: TimelineScene['visualEffect'] | null | undefined,
+) => {
+  const defaults = getDefaultImageFilterSettings(fallbackEffect);
+  return {
+    saturation: getNumeric(settings?.saturation, defaults.saturation, 0, 2.5),
+    contrast: getNumeric(settings?.contrast, defaults.contrast, 0, 2.5),
+    brightness: getNumeric(settings?.brightness, defaults.brightness, 0, 2.5),
+    blurPx: getNumeric(settings?.blurPx, defaults.blurPx, 0, 20),
+    sepia: getNumeric(settings?.sepia, defaults.sepia, 0, 1),
+    grayscale: getNumeric(settings?.grayscale, defaults.grayscale, 0, 1),
+    hueRotateDeg: getNumeric(settings?.hueRotateDeg, defaults.hueRotateDeg, -180, 180),
+    animatedLightingIntensity: getNumeric(
+      settings?.animatedLightingIntensity,
+      defaults.animatedLightingIntensity,
+      0,
+      1,
+    ),
+    glassOverlayOpacity: getNumeric(
+      settings?.glassOverlayOpacity,
+      defaults.glassOverlayOpacity,
+      0,
+      0.4,
+    ),
+  };
+};
+
+const buildImageLookFilter = (settings: ReturnType<typeof normalizeImageFilterSettings>) => {
+  return [
+    `saturate(${settings.saturation.toFixed(3)})`,
+    `contrast(${settings.contrast.toFixed(3)})`,
+    `brightness(${settings.brightness.toFixed(3)})`,
+    settings.blurPx > 0.001 ? `blur(${settings.blurPx.toFixed(2)}px)` : null,
+    settings.sepia > 0.001 ? `sepia(${settings.sepia.toFixed(3)})` : null,
+    settings.grayscale > 0.001 ? `grayscale(${settings.grayscale.toFixed(3)})` : null,
+    Math.abs(settings.hueRotateDeg) > 0.001
+      ? `hue-rotate(${settings.hueRotateDeg.toFixed(2)}deg)`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' ') || undefined;
 };
 
 const getDefaultOverlaySettings = (): OverlaySettings => ({
@@ -174,6 +298,19 @@ export const OverlayScene: React.FC<{
     : Math.sin(phase + Math.PI / 2) * 1.25;
   const overlayWidthPx = width * ((resolvedOverlay.widthPercent ?? 26) / 100);
   const overlayHeightPx = height * ((resolvedOverlay.heightPercent ?? 22) / 100);
+  const resolvedLook = normalizeImageFilterSettings(
+    scene.imageFilterSettings,
+    scene.visualEffect ?? null,
+  );
+  const backgroundMediaFilter = buildImageLookFilter(resolvedLook);
+  const lightingSeed = mulberry32((scene.index + 1) * 4409)();
+  const lightingX = ((lightingSeed * 320) % 100 + 100) % 100;
+  const lightingY = (35 + 25 * Math.sin(lightingSeed * 8) + 100) % 100;
+  const lightingAlpha =
+    (0.22 + 0.1 * Math.sin(lightingSeed * 12)) * resolvedLook.animatedLightingIntensity;
+  const glassOverlayOpacity = clampNumber(resolvedLook.glassOverlayOpacity, 0, 0.4);
+  const animatedLightingOn = resolvedLook.animatedLightingIntensity > 0.001;
+  const glassOverlayOn = glassOverlayOpacity > 0.001;
 
   const textScene: TimelineScene = {
     ...scene,
@@ -214,21 +351,46 @@ export const OverlayScene: React.FC<{
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#020617', overflow: 'hidden' }}>
-      {resolvedOverlay.backgroundMode === 'image' && backgroundImageSrc ? (
-        <Img
-          src={backgroundImageSrc}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-      ) : null}
+      {resolvedOverlay.backgroundMode === 'image' || resolvedOverlay.backgroundMode === 'video' ? (
+        <AbsoluteFill style={{ filter: backgroundMediaFilter }}>
+          {resolvedOverlay.backgroundMode === 'image' && backgroundImageSrc ? (
+            <Img
+              src={backgroundImageSrc}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : null}
 
-      {resolvedOverlay.backgroundMode === 'video' && backgroundVideoSrc ? (
-        <OffthreadVideo
-          src={backgroundVideoSrc}
-          muted
-          loop
-          pauseWhenBuffering
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
+          {resolvedOverlay.backgroundMode === 'video' && backgroundVideoSrc ? (
+            <OffthreadVideo
+              src={backgroundVideoSrc}
+              muted
+              loop
+              pauseWhenBuffering
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : null}
+
+          {animatedLightingOn ? (
+            <AbsoluteFill
+              style={{
+                opacity: Math.max(0, Math.min(0.42, lightingAlpha)),
+                mixBlendMode: 'screen',
+                background: `radial-gradient(circle at ${lightingX.toFixed(2)}% ${lightingY.toFixed(2)}%, rgba(255, 80, 200, 0.55) 0%, rgba(80, 160, 255, 0.30) 38%, rgba(0,0,0,0) 70%)`,
+              }}
+            />
+          ) : null}
+
+          {glassOverlayOn ? (
+            <AbsoluteFill
+              style={{
+                opacity: glassOverlayOpacity,
+                mixBlendMode: 'screen',
+                background:
+                  'linear-gradient(135deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 18%, rgba(255,255,255,0.00) 45%, rgba(255,255,255,0.10) 62%, rgba(255,255,255,0.00) 100%)',
+              }}
+            />
+          ) : null}
+        </AbsoluteFill>
       ) : null}
 
       {resolvedOverlay.backgroundMode === 'solid' ? (

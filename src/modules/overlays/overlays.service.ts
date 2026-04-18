@@ -2,9 +2,12 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, In, Repository } from 'typeorm';
+import { normalizeSoundEffectAudioSettings } from '../sound-effects/audio-settings.types';
+import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
 import { UploadsService } from '../uploads/uploads.service';
 import { Overlay } from './entities/overlay.entity';
 
@@ -14,13 +17,60 @@ type OverlayUploadFile = {
   mimetype?: string;
 };
 
+type OverlaySoundEffectInput = Partial<NonNullable<Overlay['sound_effects']>[number]> &
+  Record<string, unknown>;
+
+type OverlaySoundEffectRow = NonNullable<Overlay['sound_effects']>[number];
+
 @Injectable()
-export class OverlaysService {
+export class OverlaysService implements OnModuleInit {
+  private schemaEnsuring: Promise<void> | null = null;
+  private schemaEnsured = false;
+
   constructor(
     @InjectRepository(Overlay)
     private readonly repo: Repository<Overlay>,
+    @InjectRepository(SoundEffect)
+    private readonly soundEffectRepo: Repository<SoundEffect>,
     private readonly uploadsService: UploadsService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.ensureSchema();
+  }
+
+  private async ensureSchema(): Promise<void> {
+    if (this.schemaEnsured) return;
+    if (this.schemaEnsuring) {
+      await this.schemaEnsuring;
+      return;
+    }
+
+    this.schemaEnsuring = (async () => {
+      try {
+        await this.dataSource.query(
+          'ALTER TABLE overlays ADD COLUMN IF NOT EXISTS sound_effects JSONB NULL',
+        );
+      } catch (error: any) {
+        const message = String(error?.message ?? '');
+        if (
+          message.includes('does not exist') ||
+          message.includes('permission denied')
+        ) {
+          return;
+        }
+
+        throw error;
+      } finally {
+        this.schemaEnsured = true;
+        this.schemaEnsuring = null;
+      }
+    })();
+
+    await this.schemaEnsuring;
+  }
 
   private normalizeSettings(value: unknown): Record<string, unknown> {
     if (typeof value === 'string') {
@@ -44,6 +94,121 @@ export class OverlaysService {
     }
 
     return value as Record<string, unknown>;
+  }
+
+  private normalizeOptionalNumber(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  private normalizeTimingMode(value: unknown): 'with_previous' | 'after_previous_ends' {
+    return value === 'after_previous_ends' ? 'after_previous_ends' : 'with_previous';
+  }
+
+  private parseSoundEffectsInput(
+    value: unknown,
+  ): Array<OverlaySoundEffectInput> | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+
+    let nextValue = value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+
+      try {
+        nextValue = JSON.parse(trimmed);
+      } catch {
+        throw new BadRequestException('sound_effects must be valid JSON');
+      }
+    }
+
+    if (!Array.isArray(nextValue)) {
+      return null;
+    }
+
+    return nextValue.filter(
+      (item): item is OverlaySoundEffectInput =>
+        Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+    );
+  }
+
+  private async normalizeSoundEffectsForUser(params: {
+    user_id: string;
+    sound_effects: unknown;
+  }): Promise<Array<OverlaySoundEffectRow> | null | undefined> {
+    const items = this.parseSoundEffectsInput(params.sound_effects);
+    if (items === undefined) return undefined;
+    if (!items || items.length === 0) return null;
+
+    const ids = items
+      .map((item) => String(item.sound_effect_id ?? '').trim())
+      .filter(Boolean);
+    if (ids.length === 0) return null;
+
+    const owned = await this.soundEffectRepo.find({
+      where: { id: In(Array.from(new Set(ids))), user_id: params.user_id },
+      select: {
+        id: true,
+        title: true,
+        name: true,
+        url: true,
+        volume_percent: true,
+        audio_settings: true,
+        duration_seconds: true,
+      },
+    });
+    const ownedById = new Map(owned.map((soundEffect) => [soundEffect.id, soundEffect]));
+
+    const normalized = items.flatMap((item) => {
+      const soundEffectId = String(item.sound_effect_id ?? '').trim();
+      const soundEffect = ownedById.get(soundEffectId);
+      if (!soundEffect) return [];
+
+      const volumePercentRaw = this.normalizeOptionalNumber(item.volume_percent);
+      const volumePercent =
+        volumePercentRaw === null
+          ? Math.max(0, Math.min(300, Number(soundEffect.volume_percent ?? 100) || 100))
+          : Math.max(0, Math.min(300, volumePercentRaw));
+      const delaySeconds = Math.max(
+        0,
+        this.normalizeOptionalNumber(item.delay_seconds) ?? 0,
+      );
+      const durationSecondsRaw =
+        typeof soundEffect.duration_seconds === 'number' &&
+        Number.isFinite(soundEffect.duration_seconds)
+          ? Math.max(0, soundEffect.duration_seconds)
+          : null;
+      const defaultAudioSettings = normalizeSoundEffectAudioSettings(
+        soundEffect.audio_settings,
+      );
+
+      return [
+        {
+          sound_effect_id: soundEffect.id,
+          title:
+            String(item.title ?? '').trim() ||
+            String(soundEffect.name ?? '').trim() ||
+            String(soundEffect.title ?? '').trim() ||
+            'Sound effect',
+          url: String(soundEffect.url ?? '').trim(),
+          delay_seconds: delaySeconds,
+          volume_percent: volumePercent,
+          timing_mode: this.normalizeTimingMode(item.timing_mode),
+          audio_settings_override:
+            item.audio_settings_override &&
+            typeof item.audio_settings_override === 'object' &&
+            !Array.isArray(item.audio_settings_override)
+              ? normalizeSoundEffectAudioSettings(item.audio_settings_override)
+              : null,
+          default_audio_settings: defaultAudioSettings,
+          duration_seconds: durationSecondsRaw,
+        },
+      ];
+    });
+
+    return normalized.length > 0 ? normalized : null;
   }
 
   private async resolveUpload(params: {
@@ -95,6 +260,8 @@ export class OverlaysService {
     page: number;
     limit: number;
   }> {
+    await this.ensureSchema();
+
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
     const safeLimit =
       Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 50;
@@ -127,8 +294,11 @@ export class OverlaysService {
     title: string;
     settings?: unknown;
     sourceUrl?: string | null;
+    sound_effects?: unknown;
     file?: OverlayUploadFile | null;
   }): Promise<Overlay> {
+    await this.ensureSchema();
+
     const upload = await this.resolveUpload({
       file: params.file,
       sourceUrl: params.sourceUrl,
@@ -141,6 +311,11 @@ export class OverlaysService {
       public_id: upload.providerRef,
       mime_type: upload.mimeType,
       settings: this.normalizeSettings(params.settings),
+      sound_effects:
+        (await this.normalizeSoundEffectsForUser({
+          user_id: params.user_id,
+          sound_effects: params.sound_effects,
+        })) ?? null,
     });
 
     return this.repo.save(entity);
@@ -152,8 +327,11 @@ export class OverlaysService {
     title?: string;
     settings?: unknown;
     sourceUrl?: string | null;
+    sound_effects?: unknown;
     file?: OverlayUploadFile | null;
   }): Promise<Overlay> {
+    await this.ensureSchema();
+
     const overlayId = String(params.overlayId ?? '').trim();
     if (!overlayId) {
       throw new NotFoundException('Overlay not found');
@@ -171,6 +349,13 @@ export class OverlaysService {
     }
     if (params.settings !== undefined) {
       target.settings = this.normalizeSettings(params.settings);
+    }
+    if (params.sound_effects !== undefined) {
+      target.sound_effects =
+        (await this.normalizeSoundEffectsForUser({
+          user_id: params.user_id,
+          sound_effects: params.sound_effects,
+        })) ?? null;
     }
 
     if (params.file?.buffer?.length || String(params.sourceUrl ?? '').trim()) {
@@ -210,6 +395,8 @@ export class OverlaysService {
     user_id: string;
     overlayId: string;
   }): Promise<string> {
+    await this.ensureSchema();
+
     const overlayId = String(params.overlayId ?? '').trim();
     if (!overlayId) {
       throw new NotFoundException('Overlay not found');

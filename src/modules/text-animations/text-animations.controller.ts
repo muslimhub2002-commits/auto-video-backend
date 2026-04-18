@@ -54,6 +54,7 @@ export class TextAnimationsController {
       user_id,
       title: body.title,
       settings: body.settings,
+      sound_effects: body.sound_effects,
     });
   }
 
@@ -74,6 +75,7 @@ export class TextAnimationsController {
       textAnimationId,
       title: body.title,
       settings: body.settings,
+      sound_effects: body.sound_effects,
     });
   }
 

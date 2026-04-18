@@ -75,6 +75,7 @@ export class OverlaysController {
       title: body.title,
       settings: body.settings,
       sourceUrl: body.sourceUrl,
+      sound_effects: body.sound_effects,
       file,
     });
   }
@@ -105,6 +106,7 @@ export class OverlaysController {
       title: body.title,
       settings: body.settings,
       sourceUrl: body.sourceUrl,
+      sound_effects: body.sound_effects,
       file,
     });
   }

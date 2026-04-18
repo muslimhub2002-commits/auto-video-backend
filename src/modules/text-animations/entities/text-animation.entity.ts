@@ -23,6 +23,19 @@ export class TextAnimation {
   @Column({ type: 'jsonb', nullable: false, default: () => "'{}'::jsonb" })
   settings: Record<string, unknown>;
 
+  @Column({ type: 'jsonb', nullable: true })
+  sound_effects: Array<{
+    sound_effect_id: string;
+    title?: string;
+    url?: string;
+    delay_seconds?: number;
+    volume_percent?: number;
+    timing_mode?: 'with_previous' | 'after_previous_ends';
+    audio_settings_override?: Record<string, unknown> | null;
+    default_audio_settings?: Record<string, unknown> | null;
+    duration_seconds?: number | null;
+  }> | null;
+
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;
 

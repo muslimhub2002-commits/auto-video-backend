@@ -1,20 +1,190 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import {
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, In, Repository } from 'typeorm';
+import { normalizeSoundEffectAudioSettings } from '../sound-effects/audio-settings.types';
+import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
 import { TextAnimation } from './entities/text-animation.entity';
 
+type TextAnimationSoundEffectInput = Partial<
+  NonNullable<TextAnimation['sound_effects']>[number]
+> &
+  Record<string, unknown>;
+
+type TextAnimationSoundEffectRow = NonNullable<TextAnimation['sound_effects']>[number];
+
 @Injectable()
-export class TextAnimationsService {
+export class TextAnimationsService implements OnModuleInit {
+  private schemaEnsuring: Promise<void> | null = null;
+  private schemaEnsured = false;
+
   constructor(
     @InjectRepository(TextAnimation)
     private readonly repo: Repository<TextAnimation>,
+    @InjectRepository(SoundEffect)
+    private readonly soundEffectRepo: Repository<SoundEffect>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.ensureSchema();
+  }
+
+  private async ensureSchema(): Promise<void> {
+    if (this.schemaEnsured) return;
+    if (this.schemaEnsuring) {
+      await this.schemaEnsuring;
+      return;
+    }
+
+    this.schemaEnsuring = (async () => {
+      try {
+        await this.dataSource.query(
+          'ALTER TABLE text_animations ADD COLUMN IF NOT EXISTS sound_effects JSONB NULL',
+        );
+      } catch (error: any) {
+        const message = String(error?.message ?? '');
+        if (
+          message.includes('does not exist') ||
+          message.includes('permission denied')
+        ) {
+          return;
+        }
+
+        throw error;
+      } finally {
+        this.schemaEnsured = true;
+        this.schemaEnsuring = null;
+      }
+    })();
+
+    await this.schemaEnsuring;
+  }
 
   private normalizeSettings(value: unknown): Record<string, unknown> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return {};
     }
     return value as Record<string, unknown>;
+  }
+
+  private normalizeOptionalNumber(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  private normalizeTimingMode(value: unknown): 'with_previous' | 'after_previous_ends' {
+    return value === 'after_previous_ends' ? 'after_previous_ends' : 'with_previous';
+  }
+
+  private parseSoundEffectsInput(
+    value: unknown,
+  ): Array<TextAnimationSoundEffectInput> | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+
+    let nextValue = value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+
+      try {
+        nextValue = JSON.parse(trimmed);
+      } catch {
+        return null;
+      }
+    }
+
+    if (!Array.isArray(nextValue)) {
+      return null;
+    }
+
+    return nextValue.filter(
+      (item): item is TextAnimationSoundEffectInput =>
+        Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+    );
+  }
+
+  private async normalizeSoundEffectsForUser(params: {
+    user_id: string;
+    sound_effects: unknown;
+  }): Promise<Array<TextAnimationSoundEffectRow> | null | undefined> {
+    const items = this.parseSoundEffectsInput(params.sound_effects);
+    if (items === undefined) return undefined;
+    if (!items || items.length === 0) return null;
+
+    const ids = items
+      .map((item) => String(item.sound_effect_id ?? '').trim())
+      .filter(Boolean);
+    if (ids.length === 0) return null;
+
+    const owned = await this.soundEffectRepo.find({
+      where: { id: In(Array.from(new Set(ids))), user_id: params.user_id },
+      select: {
+        id: true,
+        title: true,
+        name: true,
+        url: true,
+        volume_percent: true,
+        audio_settings: true,
+        duration_seconds: true,
+      },
+    });
+    const ownedById = new Map(owned.map((soundEffect) => [soundEffect.id, soundEffect]));
+
+    const normalized = items.flatMap((item) => {
+      const soundEffectId = String(item.sound_effect_id ?? '').trim();
+      const soundEffect = ownedById.get(soundEffectId);
+      if (!soundEffect) return [];
+
+      const volumePercentRaw = this.normalizeOptionalNumber(item.volume_percent);
+      const volumePercent =
+        volumePercentRaw === null
+          ? Math.max(0, Math.min(300, Number(soundEffect.volume_percent ?? 100) || 100))
+          : Math.max(0, Math.min(300, volumePercentRaw));
+      const delaySeconds = Math.max(
+        0,
+        this.normalizeOptionalNumber(item.delay_seconds) ?? 0,
+      );
+      const durationSecondsRaw =
+        typeof soundEffect.duration_seconds === 'number' &&
+        Number.isFinite(soundEffect.duration_seconds)
+          ? Math.max(0, soundEffect.duration_seconds)
+          : null;
+      const defaultAudioSettings = normalizeSoundEffectAudioSettings(
+        soundEffect.audio_settings,
+      );
+
+      return [
+        {
+          sound_effect_id: soundEffect.id,
+          title:
+            String(item.title ?? '').trim() ||
+            String(soundEffect.name ?? '').trim() ||
+            String(soundEffect.title ?? '').trim() ||
+            'Sound effect',
+          url: String(soundEffect.url ?? '').trim(),
+          delay_seconds: delaySeconds,
+          volume_percent: volumePercent,
+          timing_mode: this.normalizeTimingMode(item.timing_mode),
+          audio_settings_override:
+            item.audio_settings_override &&
+            typeof item.audio_settings_override === 'object' &&
+            !Array.isArray(item.audio_settings_override)
+              ? normalizeSoundEffectAudioSettings(item.audio_settings_override)
+              : null,
+          default_audio_settings: defaultAudioSettings,
+          duration_seconds: durationSecondsRaw,
+        },
+      ];
+    });
+
+    return normalized.length > 0 ? normalized : null;
   }
 
   async findAllByUser(
@@ -28,6 +198,8 @@ export class TextAnimationsService {
     page: number;
     limit: number;
   }> {
+    await this.ensureSchema();
+
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
     const safeLimit =
       Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 50;
@@ -59,11 +231,19 @@ export class TextAnimationsService {
     user_id: string;
     title: string;
     settings?: Record<string, unknown>;
+    sound_effects?: unknown;
   }): Promise<TextAnimation> {
+    await this.ensureSchema();
+
     const entity = this.repo.create({
       user_id: params.user_id,
       title: String(params.title ?? '').trim(),
       settings: this.normalizeSettings(params.settings),
+      sound_effects:
+        (await this.normalizeSoundEffectsForUser({
+          user_id: params.user_id,
+          sound_effects: params.sound_effects,
+        })) ?? null,
     });
 
     return this.repo.save(entity);
@@ -74,7 +254,10 @@ export class TextAnimationsService {
     textAnimationId: string;
     title?: string;
     settings?: Record<string, unknown>;
+    sound_effects?: unknown;
   }): Promise<TextAnimation> {
+    await this.ensureSchema();
+
     const textAnimationId = String(params.textAnimationId ?? '').trim();
     if (!textAnimationId) {
       throw new NotFoundException('Text animation preset not found');
@@ -93,6 +276,13 @@ export class TextAnimationsService {
     if (params.settings !== undefined) {
       target.settings = this.normalizeSettings(params.settings);
     }
+    if (params.sound_effects !== undefined) {
+      target.sound_effects =
+        (await this.normalizeSoundEffectsForUser({
+          user_id: params.user_id,
+          sound_effects: params.sound_effects,
+        })) ?? null;
+    }
 
     return this.repo.save(target);
   }
@@ -101,6 +291,8 @@ export class TextAnimationsService {
     user_id: string;
     textAnimationId: string;
   }): Promise<string> {
+    await this.ensureSchema();
+
     const textAnimationId = String(params.textAnimationId ?? '').trim();
     if (!textAnimationId) {
       throw new NotFoundException('Text animation preset not found');

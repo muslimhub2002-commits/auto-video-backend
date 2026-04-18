@@ -79,6 +79,12 @@ class SentenceSoundEffectInput {
   @IsObject()
   @IsOptional()
   audio_settings_override?: Record<string, unknown> | null;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  duration_seconds?: number | null;
 }
 
 class TransitionSoundEffectInput {
@@ -278,9 +284,21 @@ class CreateSentenceInput {
   @IsOptional()
   text_animation_settings?: Record<string, unknown> | null;
 
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SentenceSoundEffectInput)
+  @IsOptional()
+  text_animation_sound_effects?: SentenceSoundEffectInput[];
+
   @IsObject()
   @IsOptional()
   overlay_settings?: Record<string, unknown> | null;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SentenceSoundEffectInput)
+  @IsOptional()
+  overlay_sound_effects?: SentenceSoundEffectInput[];
 
   @IsBoolean()
   @IsOptional()
