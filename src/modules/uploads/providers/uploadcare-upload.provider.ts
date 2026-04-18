@@ -123,7 +123,9 @@ export class UploadcareUploadProvider {
     }
 
     if (!this.supportsBufferUpload(params)) {
-      throw new Error('Uploadcare direct upload only supports files up to 100 MiB');
+      throw new Error(
+        'Uploadcare direct upload only supports files up to 100 MiB',
+      );
     }
 
     const form = new FormData();
@@ -134,7 +136,8 @@ export class UploadcareUploadProvider {
     form.append(
       'file',
       new Blob([new Uint8Array(params.buffer)], {
-        type: String(params.mimeType ?? '').trim() || 'application/octet-stream',
+        type:
+          String(params.mimeType ?? '').trim() || 'application/octet-stream',
       }),
       ensureUploadFilename(params.filename, 'upload.bin'),
     );
@@ -198,7 +201,7 @@ export class UploadcareUploadProvider {
       };
     }
 
-    const token = String((payload as any)?.token ?? '').trim();
+    const token = String(payload?.token ?? '').trim();
     if (!token) {
       throw new Error('Uploadcare URL upload did not return a polling token');
     }
@@ -235,13 +238,15 @@ export class UploadcareUploadProvider {
         };
       }
 
-      const errorMessage = String((statusPayload as any)?.error ?? '').trim();
+      const errorMessage = String(statusPayload?.error ?? '').trim();
       if (errorMessage) {
         throw new Error(`Uploadcare URL upload failed: ${errorMessage}`);
       }
     }
 
-    throw new Error('Uploadcare URL upload timed out while waiting for completion');
+    throw new Error(
+      'Uploadcare URL upload timed out while waiting for completion',
+    );
   }
 
   async deleteByRef() {

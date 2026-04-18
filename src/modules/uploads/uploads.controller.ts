@@ -51,10 +51,7 @@ export class UploadsController {
   }
 
   @Post('ensure-public-url')
-  async ensurePublicUrl(
-    @Body() body: EnsurePublicUrlDto,
-    @Req() req: Request,
-  ) {
+  async ensurePublicUrl(@Body() body: EnsurePublicUrlDto, @Req() req: Request) {
     const user = (req as any).user;
     if (!user?.id) {
       throw new UnauthorizedException('User not found in request');

@@ -283,7 +283,8 @@ const getReplicateWhisperXTimeoutMs = (audioDurationSeconds: number) => {
   const safeAudioDurationSeconds = Number.isFinite(audioDurationSeconds)
     ? Math.max(0, audioDurationSeconds)
     : 0;
-  const dynamicTimeoutMs = Math.ceil(safeAudioDurationSeconds * 12_000) + 180_000;
+  const dynamicTimeoutMs =
+    Math.ceil(safeAudioDurationSeconds * 12_000) + 180_000;
 
   return Math.min(1_800_000, Math.max(420_000, dynamicTimeoutMs));
 };
@@ -452,7 +453,10 @@ const buildSentenceTimingsFromWordTimeline = (params: {
     };
   });
 
-  const pushSyntheticBlock = (startIndex: number, endIndexExclusive: number) => {
+  const pushSyntheticBlock = (
+    startIndex: number,
+    endIndexExclusive: number,
+  ) => {
     if (startIndex >= endIndexExclusive) return;
 
     const prevEnd = timings.length ? timings[timings.length - 1].endSeconds : 0;
@@ -788,10 +792,13 @@ export const alignAudioToSentences = async (params: {
       );
       const indexedWhisperXWords = toIndexedWordsTimeline(whisperXWords);
       if (indexedWhisperXWords.length > 0) {
-        console.log('[RenderVideosService] Using Replicate WhisperX alignment', {
-          alignedWords: indexedWhisperXWords.length,
-          timeoutMs: whisperXTimeoutMs,
-        });
+        console.log(
+          '[RenderVideosService] Using Replicate WhisperX alignment',
+          {
+            alignedWords: indexedWhisperXWords.length,
+            timeoutMs: whisperXTimeoutMs,
+          },
+        );
 
         return buildSentenceTimingsFromWordTimeline({
           sentences: params.sentences,

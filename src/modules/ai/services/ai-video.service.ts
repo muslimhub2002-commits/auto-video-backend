@@ -99,11 +99,17 @@ export class AiVideoService {
     label: string,
   ) {
     if (!file) return null;
-    if (!file.buffer || !(file.buffer instanceof Buffer) || file.buffer.length === 0) {
+    if (
+      !file.buffer ||
+      !(file.buffer instanceof Buffer) ||
+      file.buffer.length === 0
+    ) {
       throw new BadRequestException(`${label} is missing file data`);
     }
 
-    const mimeType = String(file.mimetype ?? '').trim().toLowerCase();
+    const mimeType = String(file.mimetype ?? '')
+      .trim()
+      .toLowerCase();
     if (mimeType.startsWith('image/')) {
       return { buffer: file.buffer, mimeType };
     }
@@ -629,7 +635,7 @@ export class AiVideoService {
     const end = isLooping
       ? undefined
       : (this.normalizeUploadedImage(params.endFrameFile, 'End frame') ??
-          undefined);
+        undefined);
     if (!isLooping && !end) {
       throw new BadRequestException('End frame image is required');
     }

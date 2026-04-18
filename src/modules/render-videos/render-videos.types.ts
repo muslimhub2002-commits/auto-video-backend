@@ -1,6 +1,4 @@
-export const TEXT_ANIMATION_EFFECT_VALUES = [
-  'slideCutFast',
-] as const;
+export const TEXT_ANIMATION_EFFECT_VALUES = ['slideCutFast'] as const;
 
 export const TEXT_BACKGROUND_MODE_VALUES = [
   'inheritImage',
@@ -91,7 +89,10 @@ export type SentenceInput = {
   textBackgroundVideoUrl?: string;
   textAnimationEffect?: TextAnimationEffect | null;
   textAnimationText?: string;
-  textAnimationSettings?: Record<string, unknown> | TextAnimationSettings | null;
+  textAnimationSettings?:
+    | Record<string, unknown>
+    | TextAnimationSettings
+    | null;
   overlayUrl?: string;
   overlayMimeType?: string | null;
   overlaySettings?: Record<string, unknown> | OverlaySettings | null;
@@ -168,8 +169,10 @@ export type SentenceTiming = {
 export const resolveTextSceneBackgroundMode = (
   settings: SentenceInput['textAnimationSettings'],
 ): TextBackgroundMode => {
-  const value = String((settings as TextAnimationSettings | null | undefined)?.backgroundMode ?? '')
-    .trim();
+  const value = String(
+    (settings as TextAnimationSettings | null | undefined)?.backgroundMode ??
+      '',
+  ).trim();
   return (TEXT_BACKGROUND_MODE_VALUES as readonly string[]).includes(value)
     ? (value as TextBackgroundMode)
     : 'inheritImage';

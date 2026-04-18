@@ -13,7 +13,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { FileFieldsInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import {
+  FileFieldsInterceptor,
+  FilesInterceptor,
+} from '@nestjs/platform-express';
 import { AiService } from './ai.service';
 import { GenerateScriptDto } from './dto/generate-script.dto';
 import { GenerateScriptIdeasDto } from './dto/generate-script-ideas.dto';
@@ -190,9 +193,7 @@ export class AiController {
   @Post('generate-bulk-motion-effects')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
-  async generateBulkMotionEffects(
-    @Body() body: GenerateBulkMotionEffectsDto,
-  ) {
+  async generateBulkMotionEffects(@Body() body: GenerateBulkMotionEffectsDto) {
     return this.aiService.generateBulkMotionEffects(body);
   }
 
@@ -405,7 +406,9 @@ export class AiController {
       }
     }
 
-    const preferredOutput = String(outputFormat ?? '').trim().toLowerCase();
+    const preferredOutput = String(outputFormat ?? '')
+      .trim()
+      .toLowerCase();
     const result = await this.aiService.mergeVoiceAudioChunks({
       chunks: audioFiles.map((file) => ({
         buffer: file.buffer,

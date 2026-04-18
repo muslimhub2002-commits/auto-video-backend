@@ -17,7 +17,9 @@ type OverlayUploadFile = {
   mimetype?: string;
 };
 
-type OverlaySoundEffectInput = Partial<NonNullable<Overlay['sound_effects']>[number]> &
+type OverlaySoundEffectInput = Partial<
+  NonNullable<Overlay['sound_effects']>[number]
+> &
   Record<string, unknown>;
 
 type OverlaySoundEffectRow = NonNullable<Overlay['sound_effects']>[number];
@@ -102,8 +104,12 @@ export class OverlaysService implements OnModuleInit {
     return Number.isFinite(numeric) ? numeric : null;
   }
 
-  private normalizeTimingMode(value: unknown): 'with_previous' | 'after_previous_ends' {
-    return value === 'after_previous_ends' ? 'after_previous_ends' : 'with_previous';
+  private normalizeTimingMode(
+    value: unknown,
+  ): 'with_previous' | 'after_previous_ends' {
+    return value === 'after_previous_ends'
+      ? 'after_previous_ends'
+      : 'with_previous';
   }
 
   private parseSoundEffectsInput(
@@ -159,17 +165,24 @@ export class OverlaysService implements OnModuleInit {
         duration_seconds: true,
       },
     });
-    const ownedById = new Map(owned.map((soundEffect) => [soundEffect.id, soundEffect]));
+    const ownedById = new Map(
+      owned.map((soundEffect) => [soundEffect.id, soundEffect]),
+    );
 
     const normalized = items.flatMap((item) => {
       const soundEffectId = String(item.sound_effect_id ?? '').trim();
       const soundEffect = ownedById.get(soundEffectId);
       if (!soundEffect) return [];
 
-      const volumePercentRaw = this.normalizeOptionalNumber(item.volume_percent);
+      const volumePercentRaw = this.normalizeOptionalNumber(
+        item.volume_percent,
+      );
       const volumePercent =
         volumePercentRaw === null
-          ? Math.max(0, Math.min(300, Number(soundEffect.volume_percent ?? 100) || 100))
+          ? Math.max(
+              0,
+              Math.min(300, Number(soundEffect.volume_percent ?? 100) || 100),
+            )
           : Math.max(0, Math.min(300, volumePercentRaw));
       const delaySeconds = Math.max(
         0,
@@ -214,11 +227,17 @@ export class OverlaysService implements OnModuleInit {
   private async resolveUpload(params: {
     file?: OverlayUploadFile | null;
     sourceUrl?: string | null;
-  }): Promise<{ url: string; providerRef: string | null; mimeType: string | null }> {
+  }): Promise<{
+    url: string;
+    providerRef: string | null;
+    mimeType: string | null;
+  }> {
     if (params.file?.buffer?.length) {
       const upload = await this.uploadsService.uploadBuffer({
         buffer: params.file.buffer,
-        filename: String(params.file.originalname ?? 'overlay.mp4').trim() || 'overlay.mp4',
+        filename:
+          String(params.file.originalname ?? 'overlay.mp4').trim() ||
+          'overlay.mp4',
         mimeType: params.file.mimetype ?? null,
         folder: 'auto-video-generator/overlays',
         resourceType: 'video',
@@ -369,10 +388,7 @@ export class OverlaysService implements OnModuleInit {
       target.public_id = upload.providerRef;
       target.mime_type = upload.mimeType;
 
-      if (
-        previousProviderRef &&
-        previousProviderRef !== upload.providerRef
-      ) {
+      if (previousProviderRef && previousProviderRef !== upload.providerRef) {
         try {
           await this.uploadsService.deleteByRef({
             providerRef: previousProviderRef,

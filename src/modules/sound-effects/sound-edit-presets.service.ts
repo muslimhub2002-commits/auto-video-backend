@@ -99,7 +99,8 @@ export class SoundEditPresetsService {
 
   async findAllByUser(user_id: string, page = 1, limit = 20, q?: string) {
     const safePage = Number.isFinite(page) && page > 0 ? page : 1;
-    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 20) : 20;
+    const safeLimit =
+      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 20) : 20;
     const search = String(q ?? '').trim();
 
     const where = search

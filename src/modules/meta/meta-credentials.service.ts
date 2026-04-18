@@ -68,7 +68,8 @@ export class MetaCredentialsService {
 
   async upsertSharedCredentials(user: User, dto: UpsertMetaCredentialsDto) {
     const credentials = await this.getOrCreateSharedCredentials(true);
-    const next = credentials ?? this.metaCredentialRepository.create({ scope: 'shared' });
+    const next =
+      credentials ?? this.metaCredentialRepository.create({ scope: 'shared' });
 
     const nextAccessToken =
       dto.accessToken !== undefined
@@ -82,7 +83,9 @@ export class MetaCredentialsService {
       next.meta_token_type = this.normalizeNullableString(dto.tokenType);
     }
     if (dto.accessTokenExpiresAt !== undefined) {
-      next.meta_token_expires_at = this.normalizeOptionalDate(dto.accessTokenExpiresAt);
+      next.meta_token_expires_at = this.normalizeOptionalDate(
+        dto.accessTokenExpiresAt,
+      );
     }
     if (dto.facebookPageAccessToken !== undefined) {
       next.facebook_page_access_token = this.normalizeNullableString(
@@ -98,7 +101,9 @@ export class MetaCredentialsService {
       next.facebook_page_id = this.normalizeNullableString(dto.facebookPageId);
     }
     if (dto.instagramAccountId !== undefined) {
-      next.instagram_account_id = this.normalizeNullableString(dto.instagramAccountId);
+      next.instagram_account_id = this.normalizeNullableString(
+        dto.instagramAccountId,
+      );
     }
 
     if (dto.accessToken !== undefined) {
@@ -152,23 +157,28 @@ export class MetaCredentialsService {
       token_type?: string;
       expires_in?: number;
     }>(
-      `https://graph.facebook.com/${version}/oauth/access_token?${new URLSearchParams({
-        grant_type: 'fb_exchange_token',
-        client_id: appId,
-        client_secret: appSecret,
-        fb_exchange_token: shortLivedToken,
-      }).toString()}`,
+      `https://graph.facebook.com/${version}/oauth/access_token?${new URLSearchParams(
+        {
+          grant_type: 'fb_exchange_token',
+          client_id: appId,
+          client_secret: appSecret,
+          fb_exchange_token: shortLivedToken,
+        },
+      ).toString()}`,
       { method: 'GET' },
       'Failed to exchange Meta access token. Verify the short-lived token is valid and not already expired.',
     );
 
     const longLivedToken = this.normalizeNullableString(result.access_token);
     if (!longLivedToken) {
-      throw new BadRequestException('Meta did not return a long-lived access token.');
+      throw new BadRequestException(
+        'Meta did not return a long-lived access token.',
+      );
     }
 
     const existing = await this.getOrCreateSharedCredentials(true);
-    const next = existing ?? this.metaCredentialRepository.create({ scope: 'shared' });
+    const next =
+      existing ?? this.metaCredentialRepository.create({ scope: 'shared' });
     const refreshedAt = new Date();
 
     next.meta_access_token = longLivedToken;
@@ -191,10 +201,11 @@ export class MetaCredentialsService {
       this.getOptionalConfig('META_FACEBOOK_PAGE_ID');
     if (pageId) {
       try {
-        next.facebook_page_access_token = await this.resolveFacebookPageAccessToken({
-          pageId,
-          userAccessToken: longLivedToken,
-        });
+        next.facebook_page_access_token =
+          await this.resolveFacebookPageAccessToken({
+            pageId,
+            userAccessToken: longLivedToken,
+          });
       } catch (error: unknown) {
         next.last_error = this.getErrorMessage(error);
         next.last_refresh_error_at = new Date();
@@ -221,7 +232,9 @@ export class MetaCredentialsService {
       allowRefresh: this.canAutoRefresh(),
       reason: 'upload',
     });
-    const metaAccessToken = this.normalizeNullableString(prepared.meta_access_token);
+    const metaAccessToken = this.normalizeNullableString(
+      prepared.meta_access_token,
+    );
     if (!metaAccessToken) {
       throw new BadRequestException(
         'Missing Meta credentials. Configure the shared Meta connection first.',
@@ -336,24 +349,31 @@ export class MetaCredentialsService {
         token_type?: string;
         expires_in?: number;
       }>(
-        `https://graph.facebook.com/${version}/oauth/access_token?${new URLSearchParams({
-          grant_type: 'fb_exchange_token',
-          client_id: appId,
-          client_secret: appSecret,
-          fb_exchange_token: credentials.meta_access_token,
-        }).toString()}`,
+        `https://graph.facebook.com/${version}/oauth/access_token?${new URLSearchParams(
+          {
+            grant_type: 'fb_exchange_token',
+            client_id: appId,
+            client_secret: appSecret,
+            fb_exchange_token: credentials.meta_access_token,
+          },
+        ).toString()}`,
         { method: 'GET' },
         `Failed to refresh Meta access token during ${options.reason}.`,
       );
 
-      const nextAccessToken = this.normalizeNullableString(refreshed.access_token);
+      const nextAccessToken = this.normalizeNullableString(
+        refreshed.access_token,
+      );
       if (!nextAccessToken) {
-        throw new BadRequestException('Meta refresh did not return an access token.');
+        throw new BadRequestException(
+          'Meta refresh did not return an access token.',
+        );
       }
 
       credentials.meta_access_token = nextAccessToken;
       credentials.meta_token_type =
-        this.normalizeNullableString(refreshed.token_type) ?? credentials.meta_token_type;
+        this.normalizeNullableString(refreshed.token_type) ??
+        credentials.meta_token_type;
       credentials.meta_token_expires_at = Number.isFinite(refreshed.expires_in)
         ? new Date(Date.now() + Number(refreshed.expires_in) * 1000)
         : credentials.meta_token_expires_at;
@@ -410,7 +430,9 @@ export class MetaCredentialsService {
     return now - lastSuccessMs >= refreshCadenceMs;
   }
 
-  private deriveLifecycleState(credentials: MetaCredential): DerivedLifecycleState {
+  private deriveLifecycleState(
+    credentials: MetaCredential,
+  ): DerivedLifecycleState {
     const now = Date.now();
     const expiresAtMs = credentials.meta_token_expires_at?.getTime() ?? null;
     const daysUntilExpiry =
@@ -449,7 +471,10 @@ export class MetaCredentialsService {
       credentials.connected_at?.getTime() ??
       now;
     const cadenceRefreshDueAt = new Date(cadenceBaseMs + refreshCadenceMs);
-    const nextRefreshDueAt = this.getEarlierDate(expiryRefreshDueAt, cadenceRefreshDueAt);
+    const nextRefreshDueAt = this.getEarlierDate(
+      expiryRefreshDueAt,
+      cadenceRefreshDueAt,
+    );
 
     const isExpired = expiresAtMs !== null && expiresAtMs <= now;
     const underMinimumLifetime =
@@ -536,8 +561,11 @@ export class MetaCredentialsService {
     let changed = false;
 
     changed =
-      this.assignDateField(credentials, 'next_refresh_due_at', derived.nextRefreshDueAt) ||
-      changed;
+      this.assignDateField(
+        credentials,
+        'next_refresh_due_at',
+        derived.nextRefreshDueAt,
+      ) || changed;
     changed =
       this.assignDateField(
         credentials,
@@ -555,9 +583,7 @@ export class MetaCredentialsService {
 
   private assignDateField(
     credentials: MetaCredential,
-    key:
-      | 'next_refresh_due_at'
-      | 'requires_reconnect_at',
+    key: 'next_refresh_due_at' | 'requires_reconnect_at',
     nextValue: Date | null,
   ): boolean {
     const currentValue = credentials[key];
@@ -581,9 +607,12 @@ export class MetaCredentialsService {
       metaTokenExpiresAt: credentials.meta_token_expires_at,
       daysUntilExpiry: derived.daysUntilExpiry,
       hasMetaAccessToken: Boolean(credentials.meta_access_token),
-      hasFacebookPageAccessToken: Boolean(credentials.facebook_page_access_token),
+      hasFacebookPageAccessToken: Boolean(
+        credentials.facebook_page_access_token,
+      ),
       facebookPageId:
-        credentials.facebook_page_id ?? this.getOptionalConfig('META_FACEBOOK_PAGE_ID'),
+        credentials.facebook_page_id ??
+        this.getOptionalConfig('META_FACEBOOK_PAGE_ID'),
       instagramAccountId:
         credentials.instagram_account_id ??
         this.getOptionalConfig('META_INSTAGRAM_ACCOUNT_ID'),
@@ -667,9 +696,13 @@ export class MetaCredentialsService {
     const envAccessToken =
       this.getOptionalConfig('META_ACCESS_TOKEN') ??
       this.getOptionalConfig('META_API_KEY');
-    const envPageToken = this.getOptionalConfig('META_FACEBOOK_PAGE_ACCESS_TOKEN');
+    const envPageToken = this.getOptionalConfig(
+      'META_FACEBOOK_PAGE_ACCESS_TOKEN',
+    );
     const envFacebookPageId = this.getOptionalConfig('META_FACEBOOK_PAGE_ID');
-    const envInstagramAccountId = this.getOptionalConfig('META_INSTAGRAM_ACCOUNT_ID');
+    const envInstagramAccountId = this.getOptionalConfig(
+      'META_INSTAGRAM_ACCOUNT_ID',
+    );
     const envAccessTokenExpiresAt = this.normalizeOptionalDate(
       this.getOptionalConfig('META_ACCESS_TOKEN_EXPIRES_AT'),
     );
@@ -769,15 +802,18 @@ export class MetaCredentialsService {
     const { pageId, userAccessToken } = params;
     const version = this.getApiVersion();
 
-    let accountsPayload: { data?: Array<Record<string, unknown>> } | null = null;
+    let accountsPayload: { data?: Array<Record<string, unknown>> } | null =
+      null;
     try {
       accountsPayload = await this.fetchJson<{
         data?: Array<Record<string, unknown>>;
       }>(
-        `https://graph.facebook.com/${version}/me/accounts?${new URLSearchParams({
-          fields: 'id,name,access_token,tasks',
-          access_token: userAccessToken,
-        }).toString()}`,
+        `https://graph.facebook.com/${version}/me/accounts?${new URLSearchParams(
+          {
+            fields: 'id,name,access_token,tasks',
+            access_token: userAccessToken,
+          },
+        ).toString()}`,
         { method: 'GET' },
         'Failed to list Facebook Pages for the provided Meta access token.',
       );
@@ -803,7 +839,11 @@ export class MetaCredentialsService {
 
     const tasks = Array.isArray(pageRecord.tasks)
       ? pageRecord.tasks
-          .map((task) => String(task ?? '').trim().toUpperCase())
+          .map((task) =>
+            String(task ?? '')
+              .trim()
+              .toUpperCase(),
+          )
           .filter(Boolean)
       : [];
     const requiredTasks = ['CREATE_CONTENT'];
@@ -829,7 +869,9 @@ export class MetaCredentialsService {
   }
 
   private getApiVersion(): string {
-    const configured = String(this.configService.get<string>('META_API_VERSION') ?? '').trim();
+    const configured = String(
+      this.configService.get<string>('META_API_VERSION') ?? '',
+    ).trim();
     return configured || 'v25.0';
   }
 

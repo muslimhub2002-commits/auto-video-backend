@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   InternalServerErrorException,
@@ -189,6 +190,66 @@ export class VideosLibraryService {
     @InjectRepository(Video)
     private readonly videosRepository: Repository<Video>,
   ) {}
+
+  async createFromUrl(params: {
+    videoUrl: string;
+    user_id: string;
+    video_type?: string;
+    video_size?: Video['video_size'];
+    width?: number | null;
+    height?: number | null;
+  }): Promise<Video> {
+    const videoUrl = String(params.videoUrl ?? '').trim();
+    if (!videoUrl) {
+      throw new BadRequestException('video is required');
+    }
+
+    const width = Number.isFinite(Number(params.width))
+      ? Number(params.width)
+      : null;
+    const height = Number.isFinite(Number(params.height))
+      ? Number(params.height)
+      : null;
+    const videoType = String(params.video_type ?? '').trim() || 'user-upload';
+    const orientation =
+      normalizeOrientation(params.video_size) ??
+      inferVideoOrientation(width, height) ??
+      null;
+
+    const existing = await this.videosRepository.findOne({
+      where: {
+        user_id: params.user_id,
+        video: videoUrl,
+      },
+    });
+
+    if (existing) {
+      if (videoType) {
+        existing.video_type = videoType;
+      }
+      if (orientation) {
+        existing.video_size = orientation;
+      }
+      if (width) {
+        existing.width = width;
+      }
+      if (height) {
+        existing.height = height;
+      }
+      return this.videosRepository.save(existing);
+    }
+
+    const videoEntity = this.videosRepository.create({
+      video: videoUrl,
+      user_id: params.user_id,
+      video_type: videoType,
+      video_size: orientation,
+      width,
+      height,
+    } as Partial<Video>);
+
+    return this.videosRepository.save(videoEntity);
+  }
 
   async findAllByUser(
     user_id: string,

@@ -149,9 +149,7 @@ export class AiTextService {
           ? String(value)
           : '';
 
-    return normalized
-      .replace(/\s+/g, ' ')
-      .trim();
+    return normalized.replace(/\s+/g, ' ').trim();
   }
 
   private dedupeScriptIdeas(
@@ -278,7 +276,12 @@ export class AiTextService {
     return { targetWords, minWords, maxWords };
   }
 
-  private clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  private clampNumber(
+    value: unknown,
+    min: number,
+    max: number,
+    fallback: number,
+  ): number {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return fallback;
     return Math.min(max, Math.max(min, numeric));
@@ -298,7 +301,10 @@ export class AiTextService {
       const text = getText(item);
       const itemChars = text.length + 2;
 
-      if (current.length > 0 && (current.length >= maxItems || currentChars + itemChars > maxChars)) {
+      if (
+        current.length > 0 &&
+        (current.length >= maxItems || currentChars + itemChars > maxChars)
+      ) {
         chunks.push(current);
         current = [];
         currentChars = 0;
@@ -331,7 +337,12 @@ export class AiTextService {
         1,
         0,
       ),
-      glassOverlayOpacity: this.clampNumber(value?.glassOverlayOpacity, 0, 0.4, 0),
+      glassOverlayOpacity: this.clampNumber(
+        value?.glassOverlayOpacity,
+        0,
+        0.4,
+        0,
+      ),
     };
   }
 
@@ -371,41 +382,44 @@ export class AiTextService {
     };
   }
 
-  async generateBulkLookEffects(
-    dto: GenerateBulkLookEffectsDto,
-  ): Promise<{
+  async generateBulkLookEffects(dto: GenerateBulkLookEffectsDto): Promise<{
     items: Array<{
       sentenceId: string;
       index: number;
       visualEffect:
-      | 'colorGrading'
-      | 'animatedLighting'
-      | 'glassSubtle'
-      | 'glassReflections'
-      | 'glassStrong';
+        | 'colorGrading'
+        | 'animatedLighting'
+        | 'glassSubtle'
+        | 'glassReflections'
+        | 'glassStrong';
       imageFilterSettings: Record<string, unknown>;
     }>;
   }> {
     const sentences = Array.isArray(dto?.sentences)
       ? dto.sentences
-        .map((item) => ({
-          index: Number(item?.index),
-          sentenceId: String(item?.sentenceId ?? '').trim(),
-          imagePrompt: String(item?.imagePrompt ?? '').trim(),
-          visualEffect: item?.visualEffect ?? null,
-          imageFilterSettings:
-            item?.imageFilterSettings && typeof item.imageFilterSettings === 'object'
-              ? item.imageFilterSettings
-              : null,
-        }))
-        .filter(
-          (item) =>
-            Number.isFinite(item.index) && item.sentenceId.length > 0 && item.imagePrompt.length > 0,
-        )
+          .map((item) => ({
+            index: Number(item?.index),
+            sentenceId: String(item?.sentenceId ?? '').trim(),
+            imagePrompt: String(item?.imagePrompt ?? '').trim(),
+            visualEffect: item?.visualEffect ?? null,
+            imageFilterSettings:
+              item?.imageFilterSettings &&
+              typeof item.imageFilterSettings === 'object'
+                ? item.imageFilterSettings
+                : null,
+          }))
+          .filter(
+            (item) =>
+              Number.isFinite(item.index) &&
+              item.sentenceId.length > 0 &&
+              item.imagePrompt.length > 0,
+          )
       : [];
 
     if (!sentences.length) {
-      throw new BadRequestException('At least one eligible sentence is required');
+      throw new BadRequestException(
+        'At least one eligible sentence is required',
+      );
     }
 
     const model = dto.model?.trim() || this.cheapModel;
@@ -465,7 +479,9 @@ export class AiTextService {
               ],
             });
 
-            const bySentenceId = new Map(chunk.map((item) => [item.sentenceId, item]));
+            const bySentenceId = new Map(
+              chunk.map((item) => [item.sentenceId, item]),
+            );
 
             return (Array.isArray(parsed?.items) ? parsed.items : [])
               .map((item) => {
@@ -482,22 +498,30 @@ export class AiTextService {
                   index: source.index,
                   visualEffect,
                   imageFilterSettings: this.normalizeLookSettings(
-                    item?.imageFilterSettings as Record<string, unknown> | null | undefined,
-                    this.clampNumber(source.imageFilterSettings?.blurPx, 0, 20, 0),
+                    item?.imageFilterSettings as
+                      | Record<string, unknown>
+                      | null
+                      | undefined,
+                    this.clampNumber(
+                      source.imageFilterSettings?.blurPx,
+                      0,
+                      20,
+                      0,
+                    ),
                   ),
                 };
               })
               .filter(Boolean) as Array<{
-                sentenceId: string;
-                index: number;
-                visualEffect:
+              sentenceId: string;
+              index: number;
+              visualEffect:
                 | 'colorGrading'
                 | 'animatedLighting'
                 | 'glassSubtle'
                 | 'glassReflections'
                 | 'glassStrong';
-                imageFilterSettings: Record<string, unknown>;
-              }>;
+              imageFilterSettings: Record<string, unknown>;
+            }>;
           } catch (error) {
             console.warn('generateBulkLookEffects chunk fallback:', error);
             return [];
@@ -508,50 +532,60 @@ export class AiTextService {
       return { items: chunkResults.flat() };
     } catch (error) {
       console.error('Failed to generate bulk look effects:', error);
-      throw new InternalServerErrorException('Failed to generate bulk look effects');
+      throw new InternalServerErrorException(
+        'Failed to generate bulk look effects',
+      );
     }
   }
 
-  async generateBulkMotionEffects(
-    dto: GenerateBulkMotionEffectsDto,
-  ): Promise<{
+  async generateBulkMotionEffects(dto: GenerateBulkMotionEffectsDto): Promise<{
     items: Array<{
       sentenceId: string;
       index: number;
       imageMotionEffect:
-      | 'slowZoomIn'
-      | 'slowZoomOut'
-      | 'diagonalDrift'
-      | 'cinematicPan'
-      | 'focusShift'
-      | 'parallaxMotion'
-      | 'shakeMicroMotion'
-      | 'splitMotion'
-      | 'rotationDrift';
+        | 'slowZoomIn'
+        | 'slowZoomOut'
+        | 'diagonalDrift'
+        | 'cinematicPan'
+        | 'focusShift'
+        | 'parallaxMotion'
+        | 'shakeMicroMotion'
+        | 'splitMotion'
+        | 'rotationDrift';
       imageMotionSettings: Record<string, unknown>;
     }>;
   }> {
     const sentences = Array.isArray(dto?.sentences)
       ? dto.sentences
-        .map((item) => ({
-          index: Number(item?.index),
-          sentenceId: String(item?.sentenceId ?? '').trim(),
-          imagePrompt: String(item?.imagePrompt ?? '').trim(),
-          imageMotionEffect: item?.imageMotionEffect ?? null,
-          imageMotionSpeed: this.clampNumber(item?.imageMotionSpeed, 0.5, 2.5, 1.2),
-          imageMotionSettings:
-            item?.imageMotionSettings && typeof item.imageMotionSettings === 'object'
-              ? item.imageMotionSettings
-              : null,
-        }))
-        .filter(
-          (item) =>
-            Number.isFinite(item.index) && item.sentenceId.length > 0 && item.imagePrompt.length > 0,
-        )
+          .map((item) => ({
+            index: Number(item?.index),
+            sentenceId: String(item?.sentenceId ?? '').trim(),
+            imagePrompt: String(item?.imagePrompt ?? '').trim(),
+            imageMotionEffect: item?.imageMotionEffect ?? null,
+            imageMotionSpeed: this.clampNumber(
+              item?.imageMotionSpeed,
+              0.5,
+              2.5,
+              1.2,
+            ),
+            imageMotionSettings:
+              item?.imageMotionSettings &&
+              typeof item.imageMotionSettings === 'object'
+                ? item.imageMotionSettings
+                : null,
+          }))
+          .filter(
+            (item) =>
+              Number.isFinite(item.index) &&
+              item.sentenceId.length > 0 &&
+              item.imagePrompt.length > 0,
+          )
       : [];
 
     if (!sentences.length) {
-      throw new BadRequestException('At least one eligible sentence is required');
+      throw new BadRequestException(
+        'At least one eligible sentence is required',
+      );
     }
 
     const model = dto.model?.trim() || this.cheapModel;
@@ -611,7 +645,9 @@ export class AiTextService {
               ],
             });
 
-            const bySentenceId = new Map(chunk.map((item) => [item.sentenceId, item]));
+            const bySentenceId = new Map(
+              chunk.map((item) => [item.sentenceId, item]),
+            );
 
             return (Array.isArray(parsed?.items) ? parsed.items : [])
               .map((item) => {
@@ -628,15 +664,18 @@ export class AiTextService {
                   index: source.index,
                   imageMotionEffect,
                   imageMotionSettings: this.normalizeMotionSettings(
-                    item?.imageMotionSettings as Record<string, unknown> | null | undefined,
+                    item?.imageMotionSettings as
+                      | Record<string, unknown>
+                      | null
+                      | undefined,
                     source.imageMotionSpeed,
                   ),
                 };
               })
               .filter(Boolean) as Array<{
-                sentenceId: string;
-                index: number;
-                imageMotionEffect:
+              sentenceId: string;
+              index: number;
+              imageMotionEffect:
                 | 'slowZoomIn'
                 | 'slowZoomOut'
                 | 'diagonalDrift'
@@ -646,8 +685,8 @@ export class AiTextService {
                 | 'shakeMicroMotion'
                 | 'splitMotion'
                 | 'rotationDrift';
-                imageMotionSettings: Record<string, unknown>;
-              }>;
+              imageMotionSettings: Record<string, unknown>;
+            }>;
           } catch (error) {
             console.warn('generateBulkMotionEffects chunk fallback:', error);
             return [];
@@ -658,7 +697,9 @@ export class AiTextService {
       return { items: chunkResults.flat() };
     } catch (error) {
       console.error('Failed to generate bulk motion effects:', error);
-      throw new InternalServerErrorException('Failed to generate bulk motion effects');
+      throw new InternalServerErrorException(
+        'Failed to generate bulk motion effects',
+      );
     }
   }
 
@@ -677,7 +718,9 @@ export class AiTextService {
     const referenceScripts = this.normalizeReferenceScripts(
       options.referenceScripts,
     );
-    const selectedIdeaTitle = this.normalizeIdeaText(options.selectedIdea?.title);
+    const selectedIdeaTitle = this.normalizeIdeaText(
+      options.selectedIdea?.title,
+    );
 
     const haveReferences = referenceScripts.length > 0;
     const techniqueBlock = this.getTechniquePromptBlock(technique);
@@ -758,7 +801,9 @@ export class AiTextService {
     const count = this.clampNumber(dto.count, 5, 5, 5);
     const wordRange = this.getStrictWordRange(length);
     const customSystemPrompt = String(dto.systemPrompt ?? '').trim();
-    const referenceScripts = this.normalizeReferenceScripts(dto.referenceScripts);
+    const referenceScripts = this.normalizeReferenceScripts(
+      dto.referenceScripts,
+    );
     const techniqueBlock = this.getTechniquePromptBlock(technique);
 
     const messages: LlmMessage[] = [
@@ -803,9 +848,7 @@ export class AiTextService {
         `Generate ${count} script ideas.\n` +
         `Language: ${languageDesc}.\n` +
         `Subject: ${subject}.\n` +
-        (subjectContent
-          ? `Subject content focus: ${subjectContent}.\n`
-          : '') +
+        (subjectContent ? `Subject content focus: ${subjectContent}.\n` : '') +
         `Target duration: ${length}.\n` +
         `Target script word range: ${wordRange.minWords}-${wordRange.maxWords} words.\n` +
         (referenceScripts.length > 0
@@ -858,9 +901,7 @@ export class AiTextService {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new InternalServerErrorException(
-        'Failed to generate script ideas',
-      );
+      throw new InternalServerErrorException('Failed to generate script ideas');
     }
   }
 
@@ -987,8 +1028,8 @@ export class AiTextService {
               item?.locationKey === null
                 ? null
                 : String(item?.locationKey ?? '')
-                  .trim()
-                  .toUpperCase() || null,
+                    .trim()
+                    .toUpperCase() || null,
             normalizedText,
           });
           previousNormalizedText = normalizedText;
@@ -1234,8 +1275,8 @@ export class AiTextService {
       }> => {
         const raw =
           parsed &&
-            typeof parsed === 'object' &&
-            Array.isArray((parsed as any).sentences)
+          typeof parsed === 'object' &&
+          Array.isArray((parsed as any).sentences)
             ? ((parsed as any).sentences as unknown[])
             : [];
 
@@ -1373,8 +1414,8 @@ export class AiTextService {
       const normalizeCharacters = (parsed: unknown): ScriptCharacter[] => {
         const raw =
           parsed &&
-            typeof parsed === 'object' &&
-            Array.isArray((parsed as any).characters)
+          typeof parsed === 'object' &&
+          Array.isArray((parsed as any).characters)
             ? ((parsed as any).characters as unknown[])
             : [];
 
@@ -1419,8 +1460,8 @@ export class AiTextService {
       const normalizeLocations = (parsed: unknown): ScriptLocation[] => {
         const raw =
           parsed &&
-            typeof parsed === 'object' &&
-            Array.isArray((parsed as any).locations)
+          typeof parsed === 'object' &&
+          Array.isArray((parsed as any).locations)
             ? ((parsed as any).locations as unknown[])
             : [];
 
@@ -1521,7 +1562,7 @@ export class AiTextService {
         '- Do NOT include Allah/God as a character.\n' +
         '- If the script mentions Sahaba (companions of Prophet Muhammad), still extract them but set the boolean flags accordingly.\n' +
         '- Each character.description MUST be only two lines max & include detailed facial + physical + clothing attributes.\n' +
-        '- DO NOT INCLUDE ANYTHING BESIDE FACIAL, PHYSICAL & CLOTHING ATTRIBUTES'
+        '- DO NOT INCLUDE ANYTHING BESIDE FACIAL, PHYSICAL & CLOTHING ATTRIBUTES';
       '- For any character with isProphet=true or isSahaba=true: DO NOT describe face details.\n' +
         '- Character keys must be short like C1, C2, C3... in first-appearance order.\n' +
         '- If unsure about any boolean flag, set it to false.\n' +
@@ -2118,8 +2159,8 @@ export class AiTextService {
 
       const rangesRaw =
         parsed &&
-          typeof parsed === 'object' &&
-          Array.isArray((parsed as any).ranges)
+        typeof parsed === 'object' &&
+        Array.isArray((parsed as any).ranges)
           ? ((parsed as any).ranges as any[])
           : null;
 
@@ -2403,7 +2444,8 @@ export class AiTextService {
     }
 
     const model = String(dto?.model ?? '').trim() || this.cheapModel;
-    const instructionMode = dto?.instructionMode === 'tone-only' ? 'tone-only' : 'full';
+    const instructionMode =
+      dto?.instructionMode === 'tone-only' ? 'tone-only' : 'full';
 
     const systemPrompt =
       instructionMode === 'tone-only'

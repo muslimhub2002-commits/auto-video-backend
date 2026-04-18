@@ -8,10 +8,7 @@ jest.mock('./replicate-whisperx-alignment', () => ({
   isReplicateWhisperXEnabled: jest.fn(),
 }));
 
-import {
-  alignAudioToSentences,
-  alignByWordCount,
-} from './audio-alignment';
+import { alignAudioToSentences, alignByWordCount } from './audio-alignment';
 import {
   alignWithAssemblyAi,
   isAssemblyAiEnabled,
@@ -23,7 +20,9 @@ import {
 
 const mockedAlignWithAssemblyAi = jest.mocked(alignWithAssemblyAi);
 const mockedIsAssemblyAiEnabled = jest.mocked(isAssemblyAiEnabled);
-const mockedAlignWithReplicateWhisperX = jest.mocked(alignWithReplicateWhisperX);
+const mockedAlignWithReplicateWhisperX = jest.mocked(
+  alignWithReplicateWhisperX,
+);
 const mockedIsReplicateWhisperXEnabled = jest.mocked(
   isReplicateWhisperXEnabled,
 );
@@ -181,9 +180,15 @@ describe('alignByWordCount', () => {
     });
 
     expect(timings).toHaveLength(3);
-    expect(timings[0].words?.map((word) => word.text)).toEqual(['Alpha', 'beta']);
+    expect(timings[0].words?.map((word) => word.text)).toEqual([
+      'Alpha',
+      'beta',
+    ]);
     expect(timings[1].words?.length).toBeGreaterThan(0);
-    expect(timings[2].words?.map((word) => word.text)).toEqual(['Gamma', 'delta']);
+    expect(timings[2].words?.map((word) => word.text)).toEqual([
+      'Gamma',
+      'delta',
+    ]);
     expect(timings[2].startSeconds).toBeCloseTo(1.5, 5);
     expect(timings[2].words?.[0].startSeconds).toBeCloseTo(1.5, 5);
   });

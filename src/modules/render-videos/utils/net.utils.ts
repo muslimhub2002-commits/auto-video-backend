@@ -18,7 +18,10 @@ const resolveDownloadTimeoutMs = (params: {
   maxBytes: number;
   timeoutMs?: number;
 }) => {
-  if (Number.isFinite(Number(params.timeoutMs)) && Number(params.timeoutMs) > 0) {
+  if (
+    Number.isFinite(Number(params.timeoutMs)) &&
+    Number(params.timeoutMs) > 0
+  ) {
     return Number(params.timeoutMs);
   }
 
@@ -141,7 +144,10 @@ export const downloadUrlToBuffer = async (params: {
       reader.releaseLock();
     }
 
-    return { buffer: Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))), mimeType };
+    return {
+      buffer: Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))),
+      mimeType,
+    };
   } finally {
     if (timeout) clearTimeout(timeout);
   }

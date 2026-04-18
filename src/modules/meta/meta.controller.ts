@@ -38,7 +38,10 @@ export class MetaController {
 
   @UseGuards(JwtAuthGuard)
   @Post('credentials/exchange-token')
-  async exchangeToken(@GetUser() user: User, @Body() body: ExchangeMetaTokenDto) {
+  async exchangeToken(
+    @GetUser() user: User,
+    @Body() body: ExchangeMetaTokenDto,
+  ) {
     return this.metaCredentialsService.exchangeToken(user, body);
   }
 

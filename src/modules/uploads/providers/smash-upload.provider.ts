@@ -1,9 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { SmashUploader } from '@smash-sdk/uploader';
-import {
-  UploadBufferParams,
-  UploadResult,
-} from '../uploads.types';
+import { UploadBufferParams, UploadResult } from '../uploads.types';
 import {
   buildProviderRef,
   deriveSmashRegionFromToken,
@@ -57,7 +54,8 @@ export class SmashUploadProvider {
       provider: this.name,
       url: transferUrl,
       providerRef: buildProviderRef(this.name, result?.transfer?.id),
-      expiresAt: String(result?.transfer?.availabilityEndDate ?? '').trim() || null,
+      expiresAt:
+        String(result?.transfer?.availabilityEndDate ?? '').trim() || null,
     };
   }
 

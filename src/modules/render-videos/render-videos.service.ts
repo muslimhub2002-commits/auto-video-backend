@@ -497,7 +497,9 @@ export class RenderVideosService implements OnModuleInit {
 
   private getPublicAudioUrl(params: { jobId: string; ext: string }) {
     const safeExt = params.ext.startsWith('.') ? params.ext : `.${params.ext}`;
-    return this.getPublicStorageUrl(`render-inputs/audio/${params.jobId}${safeExt}`);
+    return this.getPublicStorageUrl(
+      `render-inputs/audio/${params.jobId}${safeExt}`,
+    );
   }
 
   private getAudioFsPath(params: { jobId: string; ext: string }) {
@@ -560,7 +562,9 @@ export class RenderVideosService implements OnModuleInit {
     fs.writeFileSync(join(dir, fileName), params.file.buffer);
 
     return {
-      url: this.getPublicStorageUrl(`render-inputs/staged/${params.kind}/${fileName}`),
+      url: this.getPublicStorageUrl(
+        `render-inputs/staged/${params.kind}/${fileName}`,
+      ),
     };
   }
 
@@ -718,9 +722,10 @@ export class RenderVideosService implements OnModuleInit {
       const longFormSubscribeOverlaySrc = wantsLongFormSubscribeOverlay
         ? REMOTION_SUBSCRIBE_LONG_FORM_VIDEO_REL
         : null;
-      const longFormSubscribeOverlayDurationSeconds = wantsLongFormSubscribeOverlay
-        ? await this.getLongFormSubscribeOverlayDurationSeconds()
-        : null;
+      const longFormSubscribeOverlayDurationSeconds =
+        wantsLongFormSubscribeOverlay
+          ? await this.getLongFormSubscribeOverlayDurationSeconds()
+          : null;
 
       // In Lambda test-mode, we must use public URLs (Lambda can't access our local filesystem).
       // In local mode, we keep the job-scoped publicDir approach.
@@ -756,7 +761,9 @@ export class RenderVideosService implements OnModuleInit {
       ) => {
         if (params.sentences[index]?.mediaType === 'text') return;
 
-        const current = String(params.sentences[index]?.secondaryImageUrl ?? '').trim();
+        const current = String(
+          params.sentences[index]?.secondaryImageUrl ?? '',
+        ).trim();
         if (!current) return;
 
         if (useLambdaTestMode) {
@@ -792,7 +799,9 @@ export class RenderVideosService implements OnModuleInit {
 
         const rel = `images/scene-${String(index + 1).padStart(3, '0')}-secondary${ext}`;
         if (!localJobDir) {
-          throw new Error('Missing local job directory for staging secondary images');
+          throw new Error(
+            'Missing local job directory for staging secondary images',
+          );
         }
 
         fs.writeFileSync(join(localJobDir, rel), downloaded.buffer);
@@ -854,7 +863,8 @@ export class RenderVideosService implements OnModuleInit {
 
           const ext = this.inferExt({
             originalName: localStatic?.fileName ?? current,
-            mimeType: 'mimeType' in downloaded ? downloaded.mimeType : undefined,
+            mimeType:
+              'mimeType' in downloaded ? downloaded.mimeType : undefined,
             fallback: '.mp4',
           });
 
@@ -893,7 +903,8 @@ export class RenderVideosService implements OnModuleInit {
           throw new Error(`Missing overlay asset for scene ${index + 1}.`);
         }
 
-        const overlayMimeType = String(sentence.overlayMimeType ?? '').trim() || undefined;
+        const overlayMimeType =
+          String(sentence.overlayMimeType ?? '').trim() || undefined;
 
         if (useLambdaTestMode) {
           if (this.isCloudinaryUrl(current)) return;
@@ -932,7 +943,9 @@ export class RenderVideosService implements OnModuleInit {
         }
 
         if (!localJobDir) {
-          throw new Error('Missing local job directory for staging overlay assets');
+          throw new Error(
+            'Missing local job directory for staging overlay assets',
+          );
         }
 
         const localStatic = this.readLocalStaticFileToBuffer(current);
@@ -1024,9 +1037,7 @@ export class RenderVideosService implements OnModuleInit {
 
           const file = params.imageFiles[i];
           if (!file?.buffer) {
-            throw new Error(
-              `Missing image upload for scene ${i + 1}.`,
-            );
+            throw new Error(`Missing image upload for scene ${i + 1}.`);
           }
 
           const uploaded = await this.uploadBufferToCloudinary({
@@ -1253,9 +1264,7 @@ export class RenderVideosService implements OnModuleInit {
 
           const file = params.imageFiles[i];
           if (!file?.buffer) {
-            throw new Error(
-              `Missing image upload for scene ${i + 1}.`,
-            );
+            throw new Error(`Missing image upload for scene ${i + 1}.`);
           }
 
           const ext = this.inferExt({

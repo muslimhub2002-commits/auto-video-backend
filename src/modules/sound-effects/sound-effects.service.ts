@@ -383,7 +383,7 @@ export class SoundEffectsService implements OnModuleInit {
     soundEffectId: string;
   }): Promise<SoundEffect> {
     const target = await this.findOwnedSoundEffectOrThrow(params);
-    target.fromFavorites = !Boolean(target.fromFavorites);
+    target.fromFavorites = !target.fromFavorites;
     return this.normalizeStoredSoundEffect(await this.repo.save(target));
   }
 

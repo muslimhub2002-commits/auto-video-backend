@@ -7,7 +7,7 @@ import { AiRuntimeService } from './ai-runtime.service';
 
 @Injectable()
 export class AiYoutubeService {
-  constructor(private readonly runtime: AiRuntimeService) { }
+  constructor(private readonly runtime: AiRuntimeService) {}
 
   private describeLanguage(languageCode: string): string {
     switch (languageCode.toLowerCase()) {
@@ -64,7 +64,11 @@ export class AiYoutubeService {
     title?: string;
     promptModel?: string;
     safeCharacters?: Array<{ key: string; name: string; description: string }>;
-    selectedSafeCharacters?: Array<{ key: string; name: string; description: string }>;
+    selectedSafeCharacters?: Array<{
+      key: string;
+      name: string;
+      description: string;
+    }>;
   }): Promise<{ headline: string; prompt: string; characterKeys: string[] }> {
     const script = String(params?.script ?? '').trim();
     const trimmed = script.length > 3000 ? script.slice(0, 3000) : script;
@@ -79,34 +83,35 @@ export class AiYoutubeService {
 
     const safeChars = Array.isArray(params?.safeCharacters)
       ? params.safeCharacters
-        .map((c) => ({
-          key: String(c?.key ?? '').trim(),
-          name: String(c?.name ?? '').trim(),
-          description: String(c?.description ?? '').trim(),
-        }))
-        .filter((c) => c.key && c.name && c.description)
-        .slice(0, 12)
+          .map((c) => ({
+            key: String(c?.key ?? '').trim(),
+            name: String(c?.name ?? '').trim(),
+            description: String(c?.description ?? '').trim(),
+          }))
+          .filter((c) => c.key && c.name && c.description)
+          .slice(0, 12)
       : [];
 
     const selectedSafeChars = Array.isArray(params?.selectedSafeCharacters)
       ? params.selectedSafeCharacters
-        .map((c) => ({
-          key: String(c?.key ?? '').trim(),
-          name: String(c?.name ?? '').trim(),
-          description: String(c?.description ?? '').trim(),
-        }))
-        .filter((c) => c.key && c.name && c.description)
-        .filter((c) => safeChars.some((safeChar) => safeChar.key === c.key))
-        .slice(0, 4)
+          .map((c) => ({
+            key: String(c?.key ?? '').trim(),
+            name: String(c?.name ?? '').trim(),
+            description: String(c?.description ?? '').trim(),
+          }))
+          .filter((c) => c.key && c.name && c.description)
+          .filter((c) => safeChars.some((safeChar) => safeChar.key === c.key))
+          .slice(0, 4)
       : [];
 
-    const promptSafeChars = selectedSafeChars.length > 0 ? selectedSafeChars : safeChars;
+    const promptSafeChars =
+      selectedSafeChars.length > 0 ? selectedSafeChars : safeChars;
 
     const safeCharBlock = promptSafeChars.length
       ? 'SAFE CHARACTERS (ONLY these may be depicted as humans):\n' +
-      promptSafeChars
-        .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
-        .join('\n')
+        promptSafeChars
+          .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
+          .join('\n')
       : 'SAFE CHARACTERS: (none provided)';
 
     const selectedCharBlock = selectedSafeChars.length
@@ -407,7 +412,7 @@ export class AiYoutubeService {
         attempt === 1
           ? baseSystem
           : baseSystem +
-          '\n\nIMPORTANT: Your previous response was invalid. Return ONLY valid JSON (no prose, no markdown, no code fences).';
+            '\n\nIMPORTANT: Your previous response was invalid. Return ONLY valid JSON (no prose, no markdown, no code fences).';
 
       try {
         const msg: any = await anthropic.messages.create({

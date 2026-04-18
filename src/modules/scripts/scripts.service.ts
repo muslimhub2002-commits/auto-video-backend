@@ -169,7 +169,9 @@ export class ScriptsService implements OnModuleInit {
 
     next.animatePerWord = next.animatePerWord === true;
 
-    const wordDelaySeconds = this.normalizeOptionalNumber(next.wordDelaySeconds);
+    const wordDelaySeconds = this.normalizeOptionalNumber(
+      next.wordDelaySeconds,
+    );
     if (wordDelaySeconds === null) {
       delete next.wordDelaySeconds;
     } else {
@@ -199,13 +201,13 @@ export class ScriptsService implements OnModuleInit {
 
     const normalized = value
       .map((item, index) => {
-        const url = String((item as any)?.url ?? '').trim();
-        const text = String((item as any)?.text ?? '').trim();
+        const url = String(item?.url ?? '').trim();
+        const text = String(item?.text ?? '').trim();
         if (!url || !text) return null;
 
-        const rawIndex = this.normalizeOptionalNumber((item as any)?.index);
-        const sentences = Array.isArray((item as any)?.sentences)
-          ? (item as any).sentences
+        const rawIndex = this.normalizeOptionalNumber(item?.index);
+        const sentences = Array.isArray(item?.sentences)
+          ? item.sentences
               .map((sentence: unknown) => String(sentence ?? '').trim())
               .filter(Boolean)
           : [];
@@ -215,26 +217,23 @@ export class ScriptsService implements OnModuleInit {
             rawIndex !== null && rawIndex >= 0 ? Math.floor(rawIndex) : index,
           text,
           sentences,
-          provider: String((item as any)?.provider ?? '').trim() || null,
-          providerVoiceId:
-            String((item as any)?.providerVoiceId ?? '').trim() || null,
+          provider: String(item?.provider ?? '').trim() || null,
+          providerVoiceId: String(item?.providerVoiceId ?? '').trim() || null,
           providerVoiceName:
-            String((item as any)?.providerVoiceName ?? '').trim() || null,
-          mimeType: String((item as any)?.mimeType ?? '').trim() || null,
+            String(item?.providerVoiceName ?? '').trim() || null,
+          mimeType: String(item?.mimeType ?? '').trim() || null,
           styleInstructions:
-            String((item as any)?.styleInstructions ?? '').trim() || null,
-          durationSeconds: this.normalizeOptionalNumber(
-            (item as any)?.durationSeconds,
-          ),
+            String(item?.styleInstructions ?? '').trim() || null,
+          durationSeconds: this.normalizeOptionalNumber(item?.durationSeconds),
           estimatedSeconds: this.normalizeOptionalNumber(
-            (item as any)?.estimatedSeconds,
+            item?.estimatedSeconds,
           ),
           url,
-          fileName: String((item as any)?.fileName ?? '').trim() || null,
-          createdAt: String((item as any)?.createdAt ?? '').trim() || null,
+          fileName: String(item?.fileName ?? '').trim() || null,
+          createdAt: String(item?.createdAt ?? '').trim() || null,
           elevenLabsSettings:
             this.normalizeElevenLabsVoiceSettingsInput(
-              (item as any)?.elevenLabsSettings,
+              item?.elevenLabsSettings,
             ) ?? null,
         } satisfies NormalizedVoiceOverChunk;
       })
@@ -504,7 +503,9 @@ export class ScriptsService implements OnModuleInit {
               ? normalizeSoundEffectAudioSettings(item.default_audio_settings)
               : null,
           duration_seconds:
-            durationSecondsRaw === null ? null : Math.max(0, durationSecondsRaw),
+            durationSecondsRaw === null
+              ? null
+              : Math.max(0, durationSecondsRaw),
         };
       })
       .filter(Boolean) as Array<Record<string, unknown>>;
@@ -540,7 +541,9 @@ export class ScriptsService implements OnModuleInit {
         duration_seconds: true,
       },
     });
-    const ownedById = new Map(owned.map((soundEffect) => [soundEffect.id, soundEffect]));
+    const ownedById = new Map(
+      owned.map((soundEffect) => [soundEffect.id, soundEffect]),
+    );
 
     const normalized = items.flatMap((item) => {
       const soundEffectId = String(item.sound_effect_id ?? '').trim();
@@ -571,7 +574,10 @@ export class ScriptsService implements OnModuleInit {
             requestedVolumePercent === null
               ? Math.max(
                   0,
-                  Math.min(300, Number(soundEffect.volume_percent ?? 100) || 100),
+                  Math.min(
+                    300,
+                    Number(soundEffect.volume_percent ?? 100) || 100,
+                  ),
                 )
               : Math.max(0, Math.min(300, requestedVolumePercent)),
           timing_mode: this.normalizeSentenceSoundEffectTimingMode(
@@ -614,12 +620,12 @@ export class ScriptsService implements OnModuleInit {
         nextSentenceInput.text_animation_sound_effects =
           (await this.normalizeDetachedSoundEffectsForUser({
             userId: params.userId,
-            value: (sentenceInput as any)?.text_animation_sound_effects,
+            value: sentenceInput?.text_animation_sound_effects,
           })) ?? null;
         nextSentenceInput.overlay_sound_effects =
           (await this.normalizeDetachedSoundEffectsForUser({
             userId: params.userId,
-            value: (sentenceInput as any)?.overlay_sound_effects,
+            value: sentenceInput?.overlay_sound_effects,
           })) ?? null;
 
         return nextSentenceInput;
@@ -788,9 +794,8 @@ export class ScriptsService implements OnModuleInit {
       const hasTiktokUrl = await this.scriptsColumnExists('tiktok_url');
       const hasLocations = await this.scriptsColumnExists('locations');
       const hasLanguage = await this.scriptsColumnExists('language');
-      const hasVoiceOverChunks = await this.scriptsColumnExists(
-        'voice_over_chunks',
-      );
+      const hasVoiceOverChunks =
+        await this.scriptsColumnExists('voice_over_chunks');
 
       const sentencesTableExists = await this.sentencesTableExists();
       const hasSentenceCharacterKeys = sentencesTableExists
@@ -846,18 +851,15 @@ export class ScriptsService implements OnModuleInit {
       const finalHasShortsScripts =
         await this.scriptsColumnExists('shorts_scripts');
       const finalHasYoutubeUrl = await this.scriptsColumnExists('youtube_url');
-      const finalHasFacebookUrl = await this.scriptsColumnExists(
-        'facebook_url',
-      );
-      const finalHasInstagramUrl = await this.scriptsColumnExists(
-        'instagram_url',
-      );
+      const finalHasFacebookUrl =
+        await this.scriptsColumnExists('facebook_url');
+      const finalHasInstagramUrl =
+        await this.scriptsColumnExists('instagram_url');
       const finalHasTiktokUrl = await this.scriptsColumnExists('tiktok_url');
       const finalHasLocations = await this.scriptsColumnExists('locations');
       const finalHasLanguage = await this.scriptsColumnExists('language');
-      const finalHasVoiceOverChunks = await this.scriptsColumnExists(
-        'voice_over_chunks',
-      );
+      const finalHasVoiceOverChunks =
+        await this.scriptsColumnExists('voice_over_chunks');
 
       const finalSentencesTableExists = await this.sentencesTableExists();
       const finalHasSentenceCharacterKeys = finalSentencesTableExists
@@ -1303,8 +1305,14 @@ export class ScriptsService implements OnModuleInit {
       .createQueryBuilder('script')
       .leftJoinAndSelect('script.sentences', 'sentence')
       .leftJoinAndSelect('sentence.image', 'image')
-      .leftJoinAndSelect('sentence.textBackgroundImage', 'text_background_image')
-      .leftJoinAndSelect('sentence.textBackgroundVideo', 'text_background_video')
+      .leftJoinAndSelect(
+        'sentence.textBackgroundImage',
+        'text_background_image',
+      )
+      .leftJoinAndSelect(
+        'sentence.textBackgroundVideo',
+        'text_background_video',
+      )
       .leftJoinAndSelect('sentence.secondaryImage', 'secondary_image')
       .leftJoinAndSelect('sentence.startFrameImage', 'start_frame_image')
       .leftJoinAndSelect('sentence.endFrameImage', 'end_frame_image')
@@ -1694,25 +1702,24 @@ export class ScriptsService implements OnModuleInit {
                 video_id: s.video_id ?? null,
                 text_background_image_id: s.text_background_image_id ?? null,
                 text_background_video_id: s.text_background_video_id ?? null,
-                overlay_id: this.normalizeOptionalId((s as any).overlay_id),
-                voice_over_url:
-                  String((s as any).voice_over_url ?? '').trim() || null,
+                overlay_id: this.normalizeOptionalId(s.overlay_id),
+                voice_over_url: String(s.voice_over_url ?? '').trim() || null,
                 voice_over_mime_type:
-                  String((s as any).voice_over_mime_type ?? '').trim() || null,
+                  String(s.voice_over_mime_type ?? '').trim() || null,
                 voice_over_duration_seconds: this.normalizeOptionalNumber(
-                  (s as any).voice_over_duration_seconds,
+                  s.voice_over_duration_seconds,
                 ),
                 voice_over_provider:
-                  String((s as any).voice_over_provider ?? '').trim() || null,
+                  String(s.voice_over_provider ?? '').trim() || null,
                 voice_over_voice_id:
-                  String((s as any).voice_over_voice_id ?? '').trim() || null,
+                  String(s.voice_over_voice_id ?? '').trim() || null,
                 voice_over_voice_name:
-                  String((s as any).voice_over_voice_name ?? '').trim() || null,
+                  String(s.voice_over_voice_name ?? '').trim() || null,
                 voice_over_style_instructions:
-                  String((s as any).voice_over_style_instructions ?? '').trim() || null,
+                  String(s.voice_over_style_instructions ?? '').trim() || null,
                 eleven_labs_settings:
                   this.normalizeElevenLabsVoiceSettingsInput(
-                    (s as any).eleven_labs_settings,
+                    s.eleven_labs_settings,
                   ) ?? null,
                 video_prompt: String(s.video_prompt ?? '').trim() || null,
                 transition_to_next: s.transition_to_next ?? null,
@@ -1724,7 +1731,7 @@ export class ScriptsService implements OnModuleInit {
                 image_effects_mode: this.normalizeImageEffectsMode(
                   s.image_effects_mode,
                 ),
-                scene_tab: this.normalizeSceneTab((s as any).scene_tab),
+                scene_tab: this.normalizeSceneTab(s.scene_tab),
                 image_filter_id: this.normalizeOptionalId(s.image_filter_id),
                 image_filter_settings: this.normalizeSettingsObject(
                   s.image_filter_settings,
@@ -1734,26 +1741,27 @@ export class ScriptsService implements OnModuleInit {
                   s.image_motion_settings,
                 ),
                 text_animation_text: this.normalizeTextAnimationText(
-                  (s as any).text_animation_text,
+                  s.text_animation_text,
                 ),
                 text_animation_effect: this.normalizeTextAnimationEffect(
-                  (s as any).text_animation_effect,
+                  s.text_animation_effect,
                 ),
                 text_animation_id: this.normalizeOptionalId(
-                  (s as any).text_animation_id,
+                  s.text_animation_id,
                 ),
-                text_animation_settings: this.normalizeTextAnimationSettingsObject(
-                  (s as any).text_animation_settings,
-                ),
+                text_animation_settings:
+                  this.normalizeTextAnimationSettingsObject(
+                    s.text_animation_settings,
+                  ),
                 text_animation_sound_effects:
                   this.normalizeStoredDetachedSoundEffects(
-                    (s as any).text_animation_sound_effects,
+                    s.text_animation_sound_effects,
                   ),
                 overlay_settings: this.normalizeSettingsObject(
-                  (s as any).overlay_settings,
+                  s.overlay_settings,
                 ),
                 overlay_sound_effects: this.normalizeStoredDetachedSoundEffects(
-                  (s as any).overlay_sound_effects,
+                  s.overlay_sound_effects,
                 ),
                 transition_sound_effects:
                   this.normalizeTransitionSoundEffectsInput(
@@ -1809,7 +1817,8 @@ export class ScriptsService implements OnModuleInit {
     dto: SaveSentenceVideoDto,
     files?: { videoFile?: UploadedVideoFile },
   ): Promise<{ id: string; video: string }> {
-    const target = dto?.target === 'textBackground' ? 'textBackground' : 'primary';
+    const target =
+      dto?.target === 'textBackground' ? 'textBackground' : 'primary';
 
     const script = await this.scriptRepository.findOne({
       where: { id: scriptId, user_id: userId },
@@ -2222,9 +2231,8 @@ export class ScriptsService implements OnModuleInit {
       style === undefined ? undefined : (style ?? '').trim() || null;
     const cleanedTechnique =
       technique === undefined ? undefined : (technique ?? '').trim() || null;
-    const normalizedVoiceOverChunks = this.normalizeVoiceOverChunksInput(
-      voice_over_chunks,
-    );
+    const normalizedVoiceOverChunks =
+      this.normalizeVoiceOverChunksInput(voice_over_chunks);
     const normalizedVoiceGenerationConfig =
       this.normalizeVoiceGenerationConfigInput(voice_generation_config);
 
@@ -2375,98 +2383,87 @@ export class ScriptsService implements OnModuleInit {
             index,
             script_id: updatedScript.id,
             align_sound_effects_to_scene_end: Boolean(
-              (s as any).align_sound_effects_to_scene_end,
+              s.align_sound_effects_to_scene_end,
             ),
             image_id: s.image_id ?? null,
             secondary_image_id: s.secondary_image_id ?? null,
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
-            text_background_image_id: (s as any).text_background_image_id ?? null,
-            text_background_video_id:
-              (s as any).text_background_video_id ?? null,
-            overlay_id: this.normalizeOptionalId((s as any).overlay_id),
-            voice_over_url:
-              String((s as any).voice_over_url ?? '').trim() || null,
+            text_background_image_id: s.text_background_image_id ?? null,
+            text_background_video_id: s.text_background_video_id ?? null,
+            overlay_id: this.normalizeOptionalId(s.overlay_id),
+            voice_over_url: String(s.voice_over_url ?? '').trim() || null,
             voice_over_mime_type:
-              String((s as any).voice_over_mime_type ?? '').trim() || null,
+              String(s.voice_over_mime_type ?? '').trim() || null,
             voice_over_duration_seconds: this.normalizeOptionalNumber(
-              (s as any).voice_over_duration_seconds,
+              s.voice_over_duration_seconds,
             ),
             voice_over_provider:
-              String((s as any).voice_over_provider ?? '').trim() || null,
+              String(s.voice_over_provider ?? '').trim() || null,
             voice_over_voice_id:
-              String((s as any).voice_over_voice_id ?? '').trim() || null,
+              String(s.voice_over_voice_id ?? '').trim() || null,
             voice_over_voice_name:
-              String((s as any).voice_over_voice_name ?? '').trim() || null,
+              String(s.voice_over_voice_name ?? '').trim() || null,
             voice_over_style_instructions:
-              String((s as any).voice_over_style_instructions ?? '').trim() || null,
+              String(s.voice_over_style_instructions ?? '').trim() || null,
             eleven_labs_settings:
               this.normalizeElevenLabsVoiceSettingsInput(
-                (s as any).eleven_labs_settings,
+                s.eleven_labs_settings,
               ) ?? null,
-            video_prompt: String((s as any).video_prompt ?? '').trim() || null,
-            transition_to_next: (s as any).transition_to_next ?? null,
-            visual_effect: (s as any).visual_effect ?? null,
-            image_motion_effect: (s as any).image_motion_effect ?? 'default',
+            video_prompt: String(s.video_prompt ?? '').trim() || null,
+            transition_to_next: s.transition_to_next ?? null,
+            visual_effect: s.visual_effect ?? null,
+            image_motion_effect: s.image_motion_effect ?? 'default',
             image_motion_speed: this.normalizeImageMotionSpeed(
-              (s as any).image_motion_speed,
+              s.image_motion_speed,
             ),
             image_effects_mode: this.normalizeImageEffectsMode(
-              (s as any).image_effects_mode,
+              s.image_effects_mode,
             ),
-            scene_tab: this.normalizeSceneTab((s as any).scene_tab),
-            image_filter_id: this.normalizeOptionalId(
-              (s as any).image_filter_id,
-            ),
+            scene_tab: this.normalizeSceneTab(s.scene_tab),
+            image_filter_id: this.normalizeOptionalId(s.image_filter_id),
             image_filter_settings: this.normalizeSettingsObject(
-              (s as any).image_filter_settings,
+              s.image_filter_settings,
             ),
-            motion_effect_id: this.normalizeOptionalId(
-              (s as any).motion_effect_id,
-            ),
+            motion_effect_id: this.normalizeOptionalId(s.motion_effect_id),
             image_motion_settings: this.normalizeSettingsObject(
-              (s as any).image_motion_settings,
+              s.image_motion_settings,
             ),
             text_animation_text: this.normalizeTextAnimationText(
-              (s as any).text_animation_text,
+              s.text_animation_text,
             ),
             text_animation_effect: this.normalizeTextAnimationEffect(
-              (s as any).text_animation_effect,
+              s.text_animation_effect,
             ),
-            text_animation_id: this.normalizeOptionalId(
-              (s as any).text_animation_id,
-            ),
+            text_animation_id: this.normalizeOptionalId(s.text_animation_id),
             text_animation_settings: this.normalizeTextAnimationSettingsObject(
-              (s as any).text_animation_settings,
+              s.text_animation_settings,
             ),
             text_animation_sound_effects:
               this.normalizeStoredDetachedSoundEffects(
-                (s as any).text_animation_sound_effects,
+                s.text_animation_sound_effects,
               ),
-            overlay_settings: this.normalizeSettingsObject(
-              (s as any).overlay_settings,
-            ),
+            overlay_settings: this.normalizeSettingsObject(s.overlay_settings),
             overlay_sound_effects: this.normalizeStoredDetachedSoundEffects(
-              (s as any).overlay_sound_effects,
+              s.overlay_sound_effects,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
-              (s as any).transition_sound_effects,
+              s.transition_sound_effects,
             ),
             isSuspense,
             forced_character_keys:
-              Array.isArray((s as any).forced_character_keys) &&
-              (s as any).forced_character_keys.length > 0
-                ? (s as any).forced_character_keys
+              Array.isArray(s.forced_character_keys) &&
+              s.forced_character_keys.length > 0
+                ? s.forced_character_keys
                 : null,
             character_keys:
-              Array.isArray((s as any).character_keys) &&
-              (s as any).character_keys.length > 0
-                ? (s as any).character_keys
+              Array.isArray(s.character_keys) && s.character_keys.length > 0
+                ? s.character_keys
                 : null,
-            location_key: String((s as any).location_key ?? '').trim() || null,
+            location_key: String(s.location_key ?? '').trim() || null,
             forced_location_key:
-              String((s as any).forced_location_key ?? '').trim() || null,
+              String(s.forced_location_key ?? '').trim() || null,
           });
         });
 
@@ -2569,95 +2566,87 @@ export class ScriptsService implements OnModuleInit {
           index,
           script_id: savedScript.id,
           align_sound_effects_to_scene_end: Boolean(
-            (s as any).align_sound_effects_to_scene_end,
+            s.align_sound_effects_to_scene_end,
           ),
           image_id: s.image_id ?? null,
           secondary_image_id: s.secondary_image_id ?? null,
           start_frame_image_id: s.start_frame_image_id ?? null,
           end_frame_image_id: s.end_frame_image_id ?? null,
           video_id: s.video_id ?? null,
-          text_background_image_id: (s as any).text_background_image_id ?? null,
-          text_background_video_id:
-            (s as any).text_background_video_id ?? null,
-          overlay_id: this.normalizeOptionalId((s as any).overlay_id),
-          voice_over_url:
-            String((s as any).voice_over_url ?? '').trim() || null,
+          text_background_image_id: s.text_background_image_id ?? null,
+          text_background_video_id: s.text_background_video_id ?? null,
+          overlay_id: this.normalizeOptionalId(s.overlay_id),
+          voice_over_url: String(s.voice_over_url ?? '').trim() || null,
           voice_over_mime_type:
-            String((s as any).voice_over_mime_type ?? '').trim() || null,
+            String(s.voice_over_mime_type ?? '').trim() || null,
           voice_over_duration_seconds: this.normalizeOptionalNumber(
-            (s as any).voice_over_duration_seconds,
+            s.voice_over_duration_seconds,
           ),
           voice_over_provider:
-            String((s as any).voice_over_provider ?? '').trim() || null,
+            String(s.voice_over_provider ?? '').trim() || null,
           voice_over_voice_id:
-            String((s as any).voice_over_voice_id ?? '').trim() || null,
+            String(s.voice_over_voice_id ?? '').trim() || null,
           voice_over_voice_name:
-            String((s as any).voice_over_voice_name ?? '').trim() || null,
+            String(s.voice_over_voice_name ?? '').trim() || null,
           voice_over_style_instructions:
-            String((s as any).voice_over_style_instructions ?? '').trim() || null,
+            String(s.voice_over_style_instructions ?? '').trim() || null,
           eleven_labs_settings:
             this.normalizeElevenLabsVoiceSettingsInput(
-              (s as any).eleven_labs_settings,
+              s.eleven_labs_settings,
             ) ?? null,
-          video_prompt: String((s as any).video_prompt ?? '').trim() || null,
-          transition_to_next: (s as any).transition_to_next ?? null,
-          visual_effect: (s as any).visual_effect ?? null,
-          image_motion_effect: (s as any).image_motion_effect ?? 'default',
+          video_prompt: String(s.video_prompt ?? '').trim() || null,
+          transition_to_next: s.transition_to_next ?? null,
+          visual_effect: s.visual_effect ?? null,
+          image_motion_effect: s.image_motion_effect ?? 'default',
           image_motion_speed: this.normalizeImageMotionSpeed(
-            (s as any).image_motion_speed,
+            s.image_motion_speed,
           ),
           image_effects_mode: this.normalizeImageEffectsMode(
-            (s as any).image_effects_mode,
+            s.image_effects_mode,
           ),
-          scene_tab: this.normalizeSceneTab((s as any).scene_tab),
-          image_filter_id: this.normalizeOptionalId((s as any).image_filter_id),
+          scene_tab: this.normalizeSceneTab(s.scene_tab),
+          image_filter_id: this.normalizeOptionalId(s.image_filter_id),
           image_filter_settings: this.normalizeSettingsObject(
-            (s as any).image_filter_settings,
+            s.image_filter_settings,
           ),
-          motion_effect_id: this.normalizeOptionalId(
-            (s as any).motion_effect_id,
-          ),
+          motion_effect_id: this.normalizeOptionalId(s.motion_effect_id),
           image_motion_settings: this.normalizeSettingsObject(
-            (s as any).image_motion_settings,
+            s.image_motion_settings,
           ),
           text_animation_text: this.normalizeTextAnimationText(
-            (s as any).text_animation_text,
+            s.text_animation_text,
           ),
           text_animation_effect: this.normalizeTextAnimationEffect(
-            (s as any).text_animation_effect,
+            s.text_animation_effect,
           ),
-          text_animation_id: this.normalizeOptionalId(
-            (s as any).text_animation_id,
-          ),
+          text_animation_id: this.normalizeOptionalId(s.text_animation_id),
           text_animation_settings: this.normalizeTextAnimationSettingsObject(
-            (s as any).text_animation_settings,
+            s.text_animation_settings,
           ),
-          text_animation_sound_effects: this.normalizeStoredDetachedSoundEffects(
-            (s as any).text_animation_sound_effects,
-          ),
-          overlay_settings: this.normalizeSettingsObject(
-            (s as any).overlay_settings,
-          ),
+          text_animation_sound_effects:
+            this.normalizeStoredDetachedSoundEffects(
+              s.text_animation_sound_effects,
+            ),
+          overlay_settings: this.normalizeSettingsObject(s.overlay_settings),
           overlay_sound_effects: this.normalizeStoredDetachedSoundEffects(
-            (s as any).overlay_sound_effects,
+            s.overlay_sound_effects,
           ),
           transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
-            (s as any).transition_sound_effects,
+            s.transition_sound_effects,
           ),
           isSuspense,
           forced_character_keys:
-            Array.isArray((s as any).forced_character_keys) &&
-            (s as any).forced_character_keys.length > 0
-              ? (s as any).forced_character_keys
+            Array.isArray(s.forced_character_keys) &&
+            s.forced_character_keys.length > 0
+              ? s.forced_character_keys
               : null,
           character_keys:
-            Array.isArray((s as any).character_keys) &&
-            (s as any).character_keys.length > 0
-              ? (s as any).character_keys
+            Array.isArray(s.character_keys) && s.character_keys.length > 0
+              ? s.character_keys
               : null,
-          location_key: String((s as any).location_key ?? '').trim() || null,
+          location_key: String(s.location_key ?? '').trim() || null,
           forced_location_key:
-            String((s as any).forced_location_key ?? '').trim() || null,
+            String(s.forced_location_key ?? '').trim() || null,
         });
       });
 
@@ -2857,8 +2846,14 @@ export class ScriptsService implements OnModuleInit {
       .leftJoinAndSelect('sentence.sound_effects', 'sentence_sound_effect')
       .leftJoinAndSelect('sentence_sound_effect.sound_effect', 'sound_effect')
       .leftJoinAndSelect('sentence.image', 'image')
-      .leftJoinAndSelect('sentence.textBackgroundImage', 'text_background_image')
-      .leftJoinAndSelect('sentence.textBackgroundVideo', 'text_background_video')
+      .leftJoinAndSelect(
+        'sentence.textBackgroundImage',
+        'text_background_image',
+      )
+      .leftJoinAndSelect(
+        'sentence.textBackgroundVideo',
+        'text_background_video',
+      )
       .leftJoinAndSelect('sentence.overlay', 'overlay')
       .leftJoinAndSelect('sentence.secondaryImage', 'secondary_image')
       .leftJoinAndSelect('sentence.startFrameImage', 'start_frame_image')
@@ -3038,7 +3033,9 @@ export class ScriptsService implements OnModuleInit {
     }
 
     if ((dto as any).instagram_url !== undefined) {
-      const cleanedInstagramUrl = String((dto as any).instagram_url ?? '').trim();
+      const cleanedInstagramUrl = String(
+        (dto as any).instagram_url ?? '',
+      ).trim();
       script.instagram_url = cleanedInstagramUrl ? cleanedInstagramUrl : null;
     }
 
@@ -3069,98 +3066,87 @@ export class ScriptsService implements OnModuleInit {
             index,
             script_id: script.id,
             align_sound_effects_to_scene_end: Boolean(
-              (s as any).align_sound_effects_to_scene_end,
+              s.align_sound_effects_to_scene_end,
             ),
             image_id: s.image_id ?? null,
             secondary_image_id: s.secondary_image_id ?? null,
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
-            text_background_image_id: (s as any).text_background_image_id ?? null,
-            text_background_video_id:
-              (s as any).text_background_video_id ?? null,
-            overlay_id: this.normalizeOptionalId((s as any).overlay_id),
-            voice_over_url:
-              String((s as any).voice_over_url ?? '').trim() || null,
+            text_background_image_id: s.text_background_image_id ?? null,
+            text_background_video_id: s.text_background_video_id ?? null,
+            overlay_id: this.normalizeOptionalId(s.overlay_id),
+            voice_over_url: String(s.voice_over_url ?? '').trim() || null,
             voice_over_mime_type:
-              String((s as any).voice_over_mime_type ?? '').trim() || null,
+              String(s.voice_over_mime_type ?? '').trim() || null,
             voice_over_duration_seconds: this.normalizeOptionalNumber(
-              (s as any).voice_over_duration_seconds,
+              s.voice_over_duration_seconds,
             ),
             voice_over_provider:
-              String((s as any).voice_over_provider ?? '').trim() || null,
+              String(s.voice_over_provider ?? '').trim() || null,
             voice_over_voice_id:
-              String((s as any).voice_over_voice_id ?? '').trim() || null,
+              String(s.voice_over_voice_id ?? '').trim() || null,
             voice_over_voice_name:
-              String((s as any).voice_over_voice_name ?? '').trim() || null,
+              String(s.voice_over_voice_name ?? '').trim() || null,
             voice_over_style_instructions:
-              String((s as any).voice_over_style_instructions ?? '').trim() || null,
+              String(s.voice_over_style_instructions ?? '').trim() || null,
             eleven_labs_settings:
               this.normalizeElevenLabsVoiceSettingsInput(
-                (s as any).eleven_labs_settings,
+                s.eleven_labs_settings,
               ) ?? null,
-            video_prompt: String((s as any).video_prompt ?? '').trim() || null,
-            transition_to_next: (s as any).transition_to_next ?? null,
-            visual_effect: (s as any).visual_effect ?? null,
-            image_motion_effect: (s as any).image_motion_effect ?? 'default',
+            video_prompt: String(s.video_prompt ?? '').trim() || null,
+            transition_to_next: s.transition_to_next ?? null,
+            visual_effect: s.visual_effect ?? null,
+            image_motion_effect: s.image_motion_effect ?? 'default',
             image_motion_speed: this.normalizeImageMotionSpeed(
-              (s as any).image_motion_speed,
+              s.image_motion_speed,
             ),
             image_effects_mode: this.normalizeImageEffectsMode(
-              (s as any).image_effects_mode,
+              s.image_effects_mode,
             ),
-            scene_tab: this.normalizeSceneTab((s as any).scene_tab),
-            image_filter_id: this.normalizeOptionalId(
-              (s as any).image_filter_id,
-            ),
+            scene_tab: this.normalizeSceneTab(s.scene_tab),
+            image_filter_id: this.normalizeOptionalId(s.image_filter_id),
             image_filter_settings: this.normalizeSettingsObject(
-              (s as any).image_filter_settings,
+              s.image_filter_settings,
             ),
-            motion_effect_id: this.normalizeOptionalId(
-              (s as any).motion_effect_id,
-            ),
+            motion_effect_id: this.normalizeOptionalId(s.motion_effect_id),
             image_motion_settings: this.normalizeSettingsObject(
-              (s as any).image_motion_settings,
+              s.image_motion_settings,
             ),
             text_animation_text: this.normalizeTextAnimationText(
-              (s as any).text_animation_text,
+              s.text_animation_text,
             ),
             text_animation_effect: this.normalizeTextAnimationEffect(
-              (s as any).text_animation_effect,
+              s.text_animation_effect,
             ),
-            text_animation_id: this.normalizeOptionalId(
-              (s as any).text_animation_id,
-            ),
+            text_animation_id: this.normalizeOptionalId(s.text_animation_id),
             text_animation_settings: this.normalizeTextAnimationSettingsObject(
-              (s as any).text_animation_settings,
+              s.text_animation_settings,
             ),
             text_animation_sound_effects:
               this.normalizeStoredDetachedSoundEffects(
-                (s as any).text_animation_sound_effects,
+                s.text_animation_sound_effects,
               ),
-            overlay_settings: this.normalizeSettingsObject(
-              (s as any).overlay_settings,
-            ),
+            overlay_settings: this.normalizeSettingsObject(s.overlay_settings),
             overlay_sound_effects: this.normalizeStoredDetachedSoundEffects(
-              (s as any).overlay_sound_effects,
+              s.overlay_sound_effects,
             ),
             transition_sound_effects: this.normalizeTransitionSoundEffectsInput(
-              (s as any).transition_sound_effects,
+              s.transition_sound_effects,
             ),
             isSuspense,
             forced_character_keys:
-              Array.isArray((s as any).forced_character_keys) &&
-              (s as any).forced_character_keys.length > 0
-                ? (s as any).forced_character_keys
+              Array.isArray(s.forced_character_keys) &&
+              s.forced_character_keys.length > 0
+                ? s.forced_character_keys
                 : null,
             character_keys:
-              Array.isArray((s as any).character_keys) &&
-              (s as any).character_keys.length > 0
-                ? (s as any).character_keys
+              Array.isArray(s.character_keys) && s.character_keys.length > 0
+                ? s.character_keys
                 : null,
-            location_key: String((s as any).location_key ?? '').trim() || null,
+            location_key: String(s.location_key ?? '').trim() || null,
             forced_location_key:
-              String((s as any).forced_location_key ?? '').trim() || null,
+              String(s.forced_location_key ?? '').trim() || null,
           });
         });
         const savedSentences =
@@ -3332,7 +3318,8 @@ export class ScriptsService implements OnModuleInit {
             start_frame_image_id: s.start_frame_image_id ?? null,
             end_frame_image_id: s.end_frame_image_id ?? null,
             video_id: s.video_id ?? null,
-            text_background_image_id: (s as any).text_background_image_id ?? null,
+            text_background_image_id:
+              (s as any).text_background_image_id ?? null,
             text_background_video_id:
               (s as any).text_background_video_id ?? null,
             overlay_id: this.normalizeOptionalId((s as any).overlay_id),

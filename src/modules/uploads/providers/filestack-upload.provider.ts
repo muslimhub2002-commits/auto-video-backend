@@ -122,6 +122,8 @@ export class FilestackUploadProvider {
   }
 
   async deleteByRef() {
-    throw new Error('Filestack delete requires additional security credentials');
+    throw new Error(
+      'Filestack delete requires additional security credentials',
+    );
   }
 }

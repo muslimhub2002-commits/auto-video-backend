@@ -71,11 +71,7 @@ export class AiVoiceService {
     return /timed out after/i.test(error.message);
   }
 
-  private clampNumber(
-    value: unknown,
-    min: number,
-    max: number,
-  ): number | null {
+  private clampNumber(value: unknown, min: number, max: number): number | null {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return null;
     return Math.min(max, Math.max(min, parsed));
@@ -130,8 +126,7 @@ export class AiVoiceService {
     if (
       stability !== null &&
       !omitted.has('stability') &&
-      Math.abs(stability - ELEVENLABS_DEFAULT_VOICE_SETTINGS.stability) >
-        0.0001
+      Math.abs(stability - ELEVENLABS_DEFAULT_VOICE_SETTINGS.stability) > 0.0001
     ) {
       payload.stability = stability;
     }
@@ -463,7 +458,8 @@ export class AiVoiceService {
 
     if (chunks.length === 1) {
       const only = chunks[0];
-      const mimeType = this.normalizeMimeType(String(only.mimeType ?? '')) || 'audio/mpeg';
+      const mimeType =
+        this.normalizeMimeType(String(only.mimeType ?? '')) || 'audio/mpeg';
       const ext = this.extensionFromMimeType(mimeType) || 'mp3';
       return {
         buffer: only.buffer,
@@ -472,12 +468,17 @@ export class AiVoiceService {
       };
     }
 
-    const tmpDir = path.join(os.tmpdir(), `auto-video-voice-merge-${randomUUID()}`);
+    const tmpDir = path.join(
+      os.tmpdir(),
+      `auto-video-voice-merge-${randomUUID()}`,
+    );
     fs.mkdirSync(tmpDir, { recursive: true });
 
     try {
       const inputPaths = chunks.map((chunk, index) => {
-        const mimeExt = this.extensionFromMimeType(String(chunk.mimeType ?? ''));
+        const mimeExt = this.extensionFromMimeType(
+          String(chunk.mimeType ?? ''),
+        );
         const nameExt = this.inferExtFromFilename(chunk.filename);
         const ext = mimeExt || nameExt.replace(/^\./u, '') || 'mp3';
         const filePath = path.join(
@@ -560,7 +561,9 @@ export class AiVoiceService {
       if (this.isTimeoutError(error)) {
         throw new InternalServerErrorException('Voice chunk merge timed out');
       }
-      throw new InternalServerErrorException('Failed to merge generated voice chunks');
+      throw new InternalServerErrorException(
+        'Failed to merge generated voice chunks',
+      );
     } finally {
       try {
         fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -662,9 +665,7 @@ export class AiVoiceService {
             {
               voiceId: params.voiceId,
               omittedKeys: fallbackOmitKeys,
-              initialError: this.extractApiErrorMessage(
-                firstAttempt.errorText,
-              ),
+              initialError: this.extractApiErrorMessage(firstAttempt.errorText),
             },
           );
           return retryAttempt.buffer;
@@ -789,7 +790,9 @@ export class AiVoiceService {
                   parts: [
                     {
                       text: (() => {
-                        const style = String(params.styleInstructions ?? '').trim();
+                        const style = String(
+                          params.styleInstructions ?? '',
+                        ).trim();
                         if (!style) return params.text;
 
                         return (

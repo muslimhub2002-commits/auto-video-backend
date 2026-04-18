@@ -23,7 +23,9 @@ export class CloudinaryUploadProvider {
   private deliveryAvailabilityCheckedAt = 0;
   private deliveryAvailabilityCached: boolean | null = null;
 
-  private isChunkedMediaUpload(resourceType: UploadBufferParams['resourceType']) {
+  private isChunkedMediaUpload(
+    resourceType: UploadBufferParams['resourceType'],
+  ) {
     return resourceType !== 'image';
   }
 
@@ -40,8 +42,8 @@ export class CloudinaryUploadProvider {
   isConfigured() {
     return Boolean(
       process.env.CLOUDINARY_CLOUD_NAME &&
-        process.env.CLOUDINARY_API_KEY &&
-        process.env.CLOUDINARY_CLOUD_SECRET,
+      process.env.CLOUDINARY_API_KEY &&
+      process.env.CLOUDINARY_CLOUD_SECRET,
     );
   }
 
@@ -92,7 +94,7 @@ export class CloudinaryUploadProvider {
 
     const uploadPromise = this.isChunkedMediaUpload(params.resourceType)
       ? new Promise<any>((resolve, reject) => {
-          const stream = (cloudinary.uploader as any).upload_large_stream(
+          const stream = cloudinary.uploader.upload_large_stream(
             {
               folder,
               resource_type: resourceType,
@@ -162,7 +164,7 @@ export class CloudinaryUploadProvider {
 
     const uploadResult: any = await withTimeout(
       this.isChunkedMediaUpload(params.resourceType)
-        ? (cloudinary.uploader as any).upload_large(params.sourceUrl, {
+        ? cloudinary.uploader.upload_large(params.sourceUrl, {
             folder: sanitizeUploadFolder(params.folder),
             resource_type: resourceType,
             overwrite: false,
@@ -191,7 +193,10 @@ export class CloudinaryUploadProvider {
     };
   }
 
-  async deleteByRef(providerRef: string, resourceType: UploadBufferParams['resourceType']) {
+  async deleteByRef(
+    providerRef: string,
+    resourceType: UploadBufferParams['resourceType'],
+  ) {
     this.ensureConfigured();
 
     const normalizedRef = String(providerRef ?? '').trim();

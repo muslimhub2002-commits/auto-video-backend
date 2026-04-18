@@ -49,7 +49,9 @@ const LOCAL_RENDER_ASSET_MAX_BYTES = Math.max(
 export class RenderVideosController {
   constructor(private readonly renderVideosService: RenderVideosService) {}
 
-  private parseMultipartSentences(body: { sentences: string }): SentenceInput[] {
+  private parseMultipartSentences(body: {
+    sentences: string;
+  }): SentenceInput[] {
     let sentences: Array<Record<string, unknown>>;
 
     try {
@@ -65,7 +67,8 @@ export class RenderVideosController {
           ? sentence.secondaryImageUrl.trim()
           : undefined;
       const videoUrl =
-        typeof sentence.videoUrl === 'string' && sentence.videoUrl.trim().length > 0
+        typeof sentence.videoUrl === 'string' &&
+        sentence.videoUrl.trim().length > 0
           ? sentence.videoUrl.trim()
           : undefined;
       const textBackgroundVideoUrl =
@@ -187,9 +190,7 @@ export class RenderVideosController {
       'rotationDrift',
     ] as const);
 
-    const allowedTextAnimationEffects = new Set(
-      TEXT_ANIMATION_EFFECT_VALUES,
-    );
+    const allowedTextAnimationEffects = new Set(TEXT_ANIMATION_EFFECT_VALUES);
 
     for (const [idx, s] of sentences.entries()) {
       const mediaType = s?.mediaType;
@@ -217,10 +218,7 @@ export class RenderVideosController {
       }
 
       const textAnimationText = s?.textAnimationText;
-      if (
-        textAnimationText != null &&
-        typeof textAnimationText !== 'string'
-      ) {
+      if (textAnimationText != null && typeof textAnimationText !== 'string') {
         throw new BadRequestException(
           `Invalid textAnimationText for sentence ${idx + 1}.`,
         );
@@ -701,11 +699,19 @@ export class RenderVideosController {
       );
     }
 
-    if (kind === 'image' && file.mimetype && !file.mimetype.startsWith('image/')) {
+    if (
+      kind === 'image' &&
+      file.mimetype &&
+      !file.mimetype.startsWith('image/')
+    ) {
       throw new BadRequestException('Uploaded file must be an image');
     }
 
-    if (kind === 'video' && file.mimetype && !file.mimetype.startsWith('video/')) {
+    if (
+      kind === 'video' &&
+      file.mimetype &&
+      !file.mimetype.startsWith('video/')
+    ) {
       throw new BadRequestException('Uploaded file must be a video');
     }
 
@@ -795,7 +801,7 @@ export class RenderVideosController {
             ? 'text'
             : s.mediaType === 'overlay'
               ? 'overlay'
-            : 'image';
+              : 'image';
 
       return {
         text: s.text,
@@ -836,7 +842,9 @@ export class RenderVideosController {
         ...(s.imageFilterSettings != null
           ? { imageFilterSettings: s.imageFilterSettings }
           : {}),
-        ...(s.motionEffectId != null ? { motionEffectId: s.motionEffectId } : {}),
+        ...(s.motionEffectId != null
+          ? { motionEffectId: s.motionEffectId }
+          : {}),
         ...(s.imageMotionSettings != null
           ? { imageMotionSettings: s.imageMotionSettings }
           : {}),
@@ -862,18 +870,20 @@ export class RenderVideosController {
       );
     }
 
-    const hydratedSentences: SentenceInput[] = sentences.map((sentence, index) => {
-      const secondaryImageUrl =
-        typeof secondaryImageUrls[index] === 'string' &&
-        String(secondaryImageUrls[index]).trim()
-          ? String(secondaryImageUrls[index]).trim()
-          : undefined;
+    const hydratedSentences: SentenceInput[] = sentences.map(
+      (sentence, index) => {
+        const secondaryImageUrl =
+          typeof secondaryImageUrls[index] === 'string' &&
+          String(secondaryImageUrls[index]).trim()
+            ? String(secondaryImageUrls[index]).trim()
+            : undefined;
 
-      return {
-        ...sentence,
-        ...(secondaryImageUrl ? { secondaryImageUrl } : {}),
-      };
-    });
+        return {
+          ...sentence,
+          ...(secondaryImageUrl ? { secondaryImageUrl } : {}),
+        };
+      },
+    );
     this.validateMultipartSentences(hydratedSentences, 1);
 
     const backgroundMusicVolume =

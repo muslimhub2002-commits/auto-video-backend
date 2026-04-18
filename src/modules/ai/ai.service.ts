@@ -235,7 +235,9 @@ export class AiService {
       }))
       .filter((c) => c.key && c.name && c.description);
 
-    const safeCharacterKeys = new Set(safeCharacters.map((character) => character.key));
+    const safeCharacterKeys = new Set(
+      safeCharacters.map((character) => character.key),
+    );
     const selectedCharacterKeys = Array.isArray(dto?.selectedCharacterKeys)
       ? Array.from(
           new Set(
@@ -247,7 +249,9 @@ export class AiService {
       : [];
 
     if (selectedCharacterKeys.length > 4) {
-      throw new BadRequestException('You can select up to 4 wallpaper characters.');
+      throw new BadRequestException(
+        'You can select up to 4 wallpaper characters.',
+      );
     }
 
     if (selectedCharacterKeys.some((key) => !safeCharacterKeys.has(key))) {
@@ -257,7 +261,9 @@ export class AiService {
     }
 
     const selectedSafeCharacters = selectedCharacterKeys.length
-      ? safeCharacters.filter((character) => selectedCharacterKeys.includes(character.key))
+      ? safeCharacters.filter((character) =>
+          selectedCharacterKeys.includes(character.key),
+        )
       : [];
 
     const wallpaper = await this.youtubeService.generateYoutubeWallpaperPrompt({
@@ -293,7 +299,9 @@ export class AiService {
     return {
       headline: wallpaper.headline,
       usedCharacterKeys: wallpaper.characterKeys,
-      safeCharacters: selectedSafeCharacters.length ? selectedSafeCharacters : safeCharacters,
+      safeCharacters: selectedSafeCharacters.length
+        ? selectedSafeCharacters
+        : safeCharacters,
       prompt: imageResult?.prompt,
       imageUrl: (imageResult as any)?.imageUrl,
       imageBase64: (imageResult as any)?.imageBase64,

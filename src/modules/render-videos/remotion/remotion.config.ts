@@ -33,8 +33,7 @@ export const REMOTION_WHOOSH_SFX_REL = 'sfx/whoosh.mp3';
 export const REMOTION_CAMERA_CLICK_SFX_REL = 'sfx/camera_click.mp3';
 export const REMOTION_CHROMA_LEAK_SFX_REL = 'sfx/whoosh-end.mp3';
 export const REMOTION_SUSPENSE_GLITCH_SFX_REL = 'sfx/suspense-glitch.mp3';
-export const REMOTION_SUBSCRIBE_LONG_FORM_VIDEO_REL =
-  'subscribe_long_form.mp4';
+export const REMOTION_SUBSCRIBE_LONG_FORM_VIDEO_REL = 'subscribe_long_form.mp4';
 // Keep this aligned with the actual asset in remotion/public.
 // NOTE: The source file lives at `remotion/public/subscribe.mp4`.
 export const REMOTION_SUBSCRIBE_VIDEO_REL = 'subscribe.mp4';

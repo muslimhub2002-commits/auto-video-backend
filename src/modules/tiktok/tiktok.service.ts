@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
@@ -57,7 +61,8 @@ function isPrivateOrLocalHost(hostname: string): boolean {
   const host = (hostname || '').toLowerCase();
   if (!host) return true;
 
-  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1')
+    return true;
   if (host.endsWith('.local')) return true;
 
   const ipv4Match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
@@ -126,7 +131,9 @@ function createCodeChallenge(codeVerifier: string): string {
 
 function buildTiktokUploadPlan(videoSize: number): TiktokUploadPlan {
   if (!Number.isFinite(videoSize) || videoSize <= 0) {
-    throw new BadRequestException('TikTok video upload size must be greater than 0 bytes.');
+    throw new BadRequestException(
+      'TikTok video upload size must be greater than 0 bytes.',
+    );
   }
 
   if (videoSize > TIKTOK_MAX_VIDEO_SIZE_BYTES) {
@@ -164,15 +171,24 @@ function buildTiktokUploadPlan(videoSize: number): TiktokUploadPlan {
   const chunkSize = TIKTOK_DEFAULT_CHUNK_SIZE_BYTES;
   const totalChunkCount = Math.floor(videoSize / chunkSize);
   if (totalChunkCount > TIKTOK_MAX_CHUNK_COUNT) {
-    throw new BadRequestException('TikTok upload requires too many chunks for this video size.');
+    throw new BadRequestException(
+      'TikTok upload requires too many chunks for this video size.',
+    );
   }
 
   if (totalChunkCount < 2) {
-    throw new BadRequestException('Unable to calculate a valid TikTok upload chunk count.');
+    throw new BadRequestException(
+      'Unable to calculate a valid TikTok upload chunk count.',
+    );
   }
 
-  if (chunkSize < TIKTOK_MIN_CHUNK_SIZE_BYTES || chunkSize > TIKTOK_MAX_CHUNK_SIZE_BYTES) {
-    throw new BadRequestException('Unable to calculate a valid TikTok upload chunk size.');
+  if (
+    chunkSize < TIKTOK_MIN_CHUNK_SIZE_BYTES ||
+    chunkSize > TIKTOK_MAX_CHUNK_SIZE_BYTES
+  ) {
+    throw new BadRequestException(
+      'Unable to calculate a valid TikTok upload chunk size.',
+    );
   }
 
   const chunks: TiktokUploadChunk[] = [];
@@ -183,11 +199,15 @@ function buildTiktokUploadPlan(videoSize: number): TiktokUploadPlan {
     const size = isFinalChunk ? videoSize - start : chunkSize;
 
     if (!isFinalChunk && size < TIKTOK_MIN_CHUNK_SIZE_BYTES) {
-      throw new BadRequestException('Unable to calculate a valid TikTok upload chunk size.');
+      throw new BadRequestException(
+        'Unable to calculate a valid TikTok upload chunk size.',
+      );
     }
 
     if (isFinalChunk && size > TIKTOK_MAX_FINAL_CHUNK_SIZE_BYTES) {
-      throw new BadRequestException('TikTok final upload chunk would exceed the allowed size.');
+      throw new BadRequestException(
+        'TikTok final upload chunk would exceed the allowed size.',
+      );
     }
 
     const end = start + size - 1;
@@ -230,7 +250,8 @@ export class TiktokService {
 
   private getRedirectUri(redirectUriOverride?: string): string {
     return normalizeRedirectUri(
-      redirectUriOverride ?? this.configService.get<string>('TIKTOK_REDIRECT_URI'),
+      redirectUriOverride ??
+        this.configService.get<string>('TIKTOK_REDIRECT_URI'),
     );
   }
 
@@ -243,22 +264,30 @@ export class TiktokService {
     scope?: string;
     token_type?: string;
   }> {
-    const response = await fetch(`${TIKTOK_OPEN_API_BASE_URL}/v2/oauth/token/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Cache-Control': 'no-cache',
+    const response = await fetch(
+      `${TIKTOK_OPEN_API_BASE_URL}/v2/oauth/token/`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cache-Control': 'no-cache',
+        },
+        body: params.toString(),
       },
-      body: params.toString(),
-    });
+    );
 
-    const data = (await response.json().catch(() => null)) as
-      | Record<string, any>
-      | null;
+    const data = (await response.json().catch(() => null)) as Record<
+      string,
+      any
+    > | null;
 
     if (!response.ok || !data?.access_token) {
       throw new BadRequestException(
-        String(data?.error_description || data?.message || 'TikTok token exchange failed.'),
+        String(
+          data?.error_description ||
+            data?.message ||
+            'TikTok token exchange failed.',
+        ),
       );
     }
 
@@ -287,8 +316,11 @@ export class TiktokService {
       body: params.body ? JSON.stringify(params.body) : undefined,
     });
 
-    const data = (await response.json().catch(() => null)) as TiktokApiEnvelope<T> | null;
-    const errorCode = data?.error?.code ?? (response.ok ? 'ok' : 'request_failed');
+    const data = (await response
+      .json()
+      .catch(() => null)) as TiktokApiEnvelope<T> | null;
+    const errorCode =
+      data?.error?.code ?? (response.ok ? 'ok' : 'request_failed');
     const errorMessage = data?.error?.message || 'TikTok request failed.';
 
     if (!response.ok || errorCode !== 'ok') {
@@ -296,7 +328,9 @@ export class TiktokService {
     }
 
     if (!data?.data) {
-      throw new InternalServerErrorException('TikTok returned an empty response.');
+      throw new InternalServerErrorException(
+        'TikTok returned an empty response.',
+      );
     }
 
     return data.data;
@@ -304,14 +338,18 @@ export class TiktokService {
 
   private async refreshAccessToken(user: User): Promise<User> {
     if (!user.tiktok_refresh_token) {
-      throw new BadRequestException('TikTok is not connected for this account. Connect first.');
+      throw new BadRequestException(
+        'TikTok is not connected for this account. Connect first.',
+      );
     }
 
     if (
       user.tiktok_refresh_token_expiry &&
       user.tiktok_refresh_token_expiry.getTime() <= Date.now() + 60_000
     ) {
-      throw new BadRequestException('TikTok connection expired. Reconnect TikTok and try again.');
+      throw new BadRequestException(
+        'TikTok connection expired. Reconnect TikTok and try again.',
+      );
     }
 
     const tokenData = await this.exchangeToken(
@@ -324,8 +362,11 @@ export class TiktokService {
     );
 
     user.tiktok_access_token = tokenData.access_token;
-    user.tiktok_refresh_token = tokenData.refresh_token || user.tiktok_refresh_token;
-    user.tiktok_token_expiry = new Date(Date.now() + Number(tokenData.expires_in || 0) * 1000);
+    user.tiktok_refresh_token =
+      tokenData.refresh_token || user.tiktok_refresh_token;
+    user.tiktok_token_expiry = new Date(
+      Date.now() + Number(tokenData.expires_in || 0) * 1000,
+    );
     user.tiktok_refresh_token_expiry = new Date(
       Date.now() + Number(tokenData.refresh_expires_in || 0) * 1000,
     );
@@ -336,9 +377,13 @@ export class TiktokService {
     return this.usersRepository.save(user);
   }
 
-  private async getValidAccessToken(user: User): Promise<{ accessToken: string; user: User }> {
+  private async getValidAccessToken(
+    user: User,
+  ): Promise<{ accessToken: string; user: User }> {
     if (!user.tiktok_access_token && !user.tiktok_refresh_token) {
-      throw new BadRequestException('TikTok is not connected for this account. Connect first.');
+      throw new BadRequestException(
+        'TikTok is not connected for this account. Connect first.',
+      );
     }
 
     if (
@@ -351,13 +396,20 @@ export class TiktokService {
 
     const refreshedUser = await this.refreshAccessToken(user);
     if (!refreshedUser.tiktok_access_token) {
-      throw new BadRequestException('Unable to refresh TikTok access token. Reconnect TikTok.');
+      throw new BadRequestException(
+        'Unable to refresh TikTok access token. Reconnect TikTok.',
+      );
     }
 
-    return { accessToken: refreshedUser.tiktok_access_token, user: refreshedUser };
+    return {
+      accessToken: refreshedUser.tiktok_access_token,
+      user: refreshedUser,
+    };
   }
 
-  private async fetchCreatorInfoWithAccessToken(accessToken: string): Promise<TiktokCreatorInfo> {
+  private async fetchCreatorInfoWithAccessToken(
+    accessToken: string,
+  ): Promise<TiktokCreatorInfo> {
     return this.requestTikTok<TiktokCreatorInfo>({
       accessToken,
       path: '/v2/post/publish/creator_info/query/',
@@ -406,7 +458,9 @@ export class TiktokService {
       where: { tiktok_oauth_state: state },
     });
     if (!user || !user.tiktok_code_verifier) {
-      throw new BadRequestException('Invalid TikTok OAuth state. Start the connection again.');
+      throw new BadRequestException(
+        'Invalid TikTok OAuth state. Start the connection again.',
+      );
     }
 
     const tokenData = await this.exchangeToken(
@@ -422,7 +476,9 @@ export class TiktokService {
 
     user.tiktok_access_token = tokenData.access_token;
     user.tiktok_refresh_token = tokenData.refresh_token;
-    user.tiktok_token_expiry = new Date(Date.now() + Number(tokenData.expires_in || 0) * 1000);
+    user.tiktok_token_expiry = new Date(
+      Date.now() + Number(tokenData.expires_in || 0) * 1000,
+    );
     user.tiktok_refresh_token_expiry = new Date(
       Date.now() + Number(tokenData.refresh_expires_in || 0) * 1000,
     );
@@ -441,7 +497,9 @@ export class TiktokService {
     return this.fetchCreatorInfoWithAccessToken(accessToken);
   }
 
-  private async downloadVideo(videoUrl: string): Promise<{ buffer: Buffer; contentType: string }> {
+  private async downloadVideo(
+    videoUrl: string,
+  ): Promise<{ buffer: Buffer; contentType: string }> {
     assertVideoUrlIsPubliclyReachable(videoUrl);
 
     let response: Response;
@@ -466,7 +524,9 @@ export class TiktokService {
       throw new BadRequestException('Downloaded video is empty.');
     }
 
-    const rawContentType = String(response.headers.get('content-type') || 'video/mp4').trim();
+    const rawContentType = String(
+      response.headers.get('content-type') || 'video/mp4',
+    ).trim();
     const contentType =
       rawContentType === 'video/mp4' ||
       rawContentType === 'video/quicktime' ||
@@ -477,7 +537,11 @@ export class TiktokService {
     return { buffer, contentType };
   }
 
-  private async uploadVideoBytes(uploadUrl: string, buffer: Buffer, contentType: string): Promise<void> {
+  private async uploadVideoBytes(
+    uploadUrl: string,
+    buffer: Buffer,
+    contentType: string,
+  ): Promise<void> {
     const uploadPlan = buildTiktokUploadPlan(buffer.length);
 
     for (let index = 0; index < uploadPlan.chunks.length; index += 1) {
@@ -502,7 +566,10 @@ export class TiktokService {
     }
   }
 
-  private async pollPublishResult(accessToken: string, publishId: string): Promise<{
+  private async pollPublishResult(
+    accessToken: string,
+    publishId: string,
+  ): Promise<{
     status: string;
     fail_reason?: string;
     publicPostId?: string | null;
@@ -591,12 +658,14 @@ export class TiktokService {
 
     if (!dto.consentConfirmed) {
       throw new BadRequestException(
-        'You must confirm TikTok\'s publishing declaration before posting.',
+        "You must confirm TikTok's publishing declaration before posting.",
       );
     }
 
     if (!dto.privacyLevel) {
-      throw new BadRequestException('Select a TikTok privacy setting before posting.');
+      throw new BadRequestException(
+        'Select a TikTok privacy setting before posting.',
+      );
     }
 
     if (
@@ -609,31 +678,46 @@ export class TiktokService {
     }
 
     const privacyOptions = Array.isArray(creatorInfo.privacy_level_options)
-      ? creatorInfo.privacy_level_options.map((value) => String(value || '').trim())
+      ? creatorInfo.privacy_level_options.map((value) =>
+          String(value || '').trim(),
+        )
       : [];
     if (!privacyOptions.includes(dto.privacyLevel)) {
-      throw new BadRequestException('Selected TikTok privacy setting is no longer available for this account.');
+      throw new BadRequestException(
+        'Selected TikTok privacy setting is no longer available for this account.',
+      );
     }
 
     const caption = String(dto.caption ?? '').trim();
     if (caption.length > 2200) {
-      throw new BadRequestException('TikTok caption must be 2200 characters or fewer.');
+      throw new BadRequestException(
+        'TikTok caption must be 2200 characters or fewer.',
+      );
     }
 
     const { buffer, contentType } = await this.downloadVideo(dto.videoUrl);
     const uploadPlan = buildTiktokUploadPlan(buffer.length);
     let initData: { publish_id: string; upload_url: string };
     try {
-      initData = await this.requestTikTok<{ publish_id: string; upload_url: string }>({
+      initData = await this.requestTikTok<{
+        publish_id: string;
+        upload_url: string;
+      }>({
         accessToken,
         path: '/v2/post/publish/video/init/',
         body: {
           post_info: {
             ...(caption ? { title: caption } : {}),
             privacy_level: dto.privacyLevel,
-            disable_comment: creatorInfo.comment_disabled ? true : Boolean(dto.disableComment),
-            disable_duet: creatorInfo.duet_disabled ? true : Boolean(dto.disableDuet),
-            disable_stitch: creatorInfo.stitch_disabled ? true : Boolean(dto.disableStitch),
+            disable_comment: creatorInfo.comment_disabled
+              ? true
+              : Boolean(dto.disableComment),
+            disable_duet: creatorInfo.duet_disabled
+              ? true
+              : Boolean(dto.disableDuet),
+            disable_stitch: creatorInfo.stitch_disabled
+              ? true
+              : Boolean(dto.disableStitch),
             brand_content_toggle: Boolean(dto.brandContentToggle),
             brand_organic_toggle: Boolean(dto.brandOrganicToggle),
             is_aigc: true,
@@ -654,11 +738,16 @@ export class TiktokService {
     }
 
     if (!initData.publish_id || !initData.upload_url) {
-      throw new InternalServerErrorException('TikTok did not return an upload URL.');
+      throw new InternalServerErrorException(
+        'TikTok did not return an upload URL.',
+      );
     }
 
     await this.uploadVideoBytes(initData.upload_url, buffer, contentType);
-    const publishResult = await this.pollPublishResult(accessToken, initData.publish_id);
+    const publishResult = await this.pollPublishResult(
+      accessToken,
+      initData.publish_id,
+    );
 
     if (publishResult.status === 'FAILED') {
       throw new BadRequestException(
@@ -666,7 +755,8 @@ export class TiktokService {
       );
     }
 
-    const creatorUsername = String(creatorInfo.creator_username ?? '').trim() || null;
+    const creatorUsername =
+      String(creatorInfo.creator_username ?? '').trim() || null;
     const tiktokUrl =
       creatorUsername && publishResult.publicPostId
         ? `https://www.tiktok.com/@${creatorUsername}/video/${publishResult.publicPostId}`

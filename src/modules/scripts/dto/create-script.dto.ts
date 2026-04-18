@@ -274,7 +274,9 @@ class CreateSentenceInput {
 
   @IsIn(ALLOWED_TEXT_ANIMATION_EFFECTS)
   @IsOptional()
-  text_animation_effect?: (typeof ALLOWED_TEXT_ANIMATION_EFFECTS)[number] | null;
+  text_animation_effect?:
+    | (typeof ALLOWED_TEXT_ANIMATION_EFFECTS)[number]
+    | null;
 
   @IsUUID()
   @IsOptional()

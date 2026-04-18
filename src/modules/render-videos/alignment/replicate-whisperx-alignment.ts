@@ -23,7 +23,8 @@ type WhisperXSegment = {
   word_segments?: WhisperXWord[];
 };
 
-const getReplicateToken = () => String(process.env.REPLICATE_TOKEN ?? '').trim();
+const getReplicateToken = () =>
+  String(process.env.REPLICATE_TOKEN ?? '').trim();
 
 export const isReplicateWhisperXEnabled = () => !!getReplicateToken();
 
@@ -99,7 +100,9 @@ const toSegments = (output: unknown): WhisperXSegment[] => {
     }
   }
 
-  throw new Error('Replicate WhisperX output did not contain transcript segments');
+  throw new Error(
+    'Replicate WhisperX output did not contain transcript segments',
+  );
 };
 
 export const parseReplicateWhisperXOutput = (output: unknown): WordTiming[] => {
@@ -161,22 +164,19 @@ export const alignWithReplicateWhisperX = async (
 
   let output: unknown;
   try {
-    output = await replicate.run(
-      getModelIdentifier(),
-      {
-        input: {
-          audio_file: audioBuffer,
-          debug: false,
-          batch_size: getBatchSize(),
-          temperature: 0,
-          align_output: true,
-        },
-        wait: {
-          mode: 'poll',
-          interval: getPollIntervalMs(),
-        },
+    output = await replicate.run(getModelIdentifier(), {
+      input: {
+        audio_file: audioBuffer,
+        debug: false,
+        batch_size: getBatchSize(),
+        temperature: 0,
+        align_output: true,
       },
-    );
+      wait: {
+        mode: 'poll',
+        interval: getPollIntervalMs(),
+      },
+    });
   } catch (error: unknown) {
     throw new Error(toReplicateErrorMessage(error));
   }

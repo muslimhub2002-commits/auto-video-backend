@@ -1,7 +1,4 @@
-import {
-  UploadProviderName,
-  UploadResourceType,
-} from './uploads.types';
+import { UploadProviderName, UploadResourceType } from './uploads.types';
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -180,10 +177,7 @@ export const isManagedUploadUrl = (rawUrl: string) => {
   return detectManagedUploadProvider(rawUrl) !== null;
 };
 
-export const inferFilenameFromUrl = (
-  rawUrl: string,
-  fallback: string,
-) => {
+export const inferFilenameFromUrl = (rawUrl: string, fallback: string) => {
   try {
     const parsed = new URL(rawUrl);
     const fileName = String(parsed.pathname.split('/').pop() ?? '').trim();
@@ -197,7 +191,9 @@ export const sleep = async (ms: number) => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-export const deriveSmashRegionFromToken = (token: string | null | undefined) => {
+export const deriveSmashRegionFromToken = (
+  token: string | null | undefined,
+) => {
   const rawToken = String(token ?? '').trim();
   if (!rawToken) return null;
 

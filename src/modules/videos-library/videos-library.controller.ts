@@ -14,6 +14,7 @@ import {
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { VideosLibraryService } from './videos-library.service';
+import { CreateVideoUrlDto } from './dto/create-video-url.dto';
 
 @Controller('videos-library')
 export class VideosLibraryController {
@@ -116,6 +117,26 @@ export class VideosLibraryController {
     }
 
     return this.videosLibraryService.importFreestockVideo(user_id, body);
+  }
+
+  @Post('url')
+  @UseGuards(JwtAuthGuard)
+  async createFromUrl(@Body() body: CreateVideoUrlDto, @Req() req: Request) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    return this.videosLibraryService.createFromUrl({
+      videoUrl: body.video,
+      user_id,
+      video_type: body.video_type,
+      video_size: body.video_size,
+      width: body.width,
+      height: body.height,
+    });
   }
 
   @Delete(':id')

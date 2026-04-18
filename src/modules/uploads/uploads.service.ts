@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { downloadUrlToBuffer } from '../render-videos/utils/net.utils';
 import { CloudinaryUploadProvider } from './providers/cloudinary-upload.provider';
 import { FilestackUploadProvider } from './providers/filestack-upload.provider';
@@ -126,9 +123,10 @@ export class UploadsService {
 
     const downloaded = await downloadUrlToBuffer({
       url: normalizedParams.sourceUrl,
-      maxBytes: normalizedParams.resourceType === 'image'
-        ? 25 * 1024 * 1024
-        : 250 * 1024 * 1024,
+      maxBytes:
+        normalizedParams.resourceType === 'image'
+          ? 25 * 1024 * 1024
+          : 250 * 1024 * 1024,
       label: `upload source ${normalizedParams.resourceType}`,
     });
 

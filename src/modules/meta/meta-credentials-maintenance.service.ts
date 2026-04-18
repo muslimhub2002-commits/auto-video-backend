@@ -21,7 +21,8 @@ export class MetaCredentialsMaintenanceService implements OnModuleInit {
 
   private async runMaintenance(reason: string): Promise<void> {
     try {
-      const status = await this.metaCredentialsService.runScheduledMaintenance(reason);
+      const status =
+        await this.metaCredentialsService.runScheduledMaintenance(reason);
       if (status) {
         this.logger.log(
           `Meta credential maintenance (${reason}) finished with status=${status.connectionStatus}.`,

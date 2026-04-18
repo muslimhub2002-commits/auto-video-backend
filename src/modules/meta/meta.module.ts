@@ -9,9 +9,17 @@ import { ScriptsModule } from '../scripts/scripts.module';
 import { MetaCredential } from './entities/meta-credential.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([MetaCredential]), MessagesModule, ScriptsModule],
+  imports: [
+    TypeOrmModule.forFeature([MetaCredential]),
+    MessagesModule,
+    ScriptsModule,
+  ],
   controllers: [MetaController],
-  providers: [MetaCredentialsMaintenanceService, MetaCredentialsService, MetaService],
+  providers: [
+    MetaCredentialsMaintenanceService,
+    MetaCredentialsService,
+    MetaService,
+  ],
   exports: [MetaCredentialsService, MetaService],
 })
 export class MetaModule {}

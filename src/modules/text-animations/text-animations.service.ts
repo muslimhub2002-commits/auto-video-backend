@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { normalizeSoundEffectAudioSettings } from '../sound-effects/audio-settings.types';
@@ -14,7 +10,9 @@ type TextAnimationSoundEffectInput = Partial<
 > &
   Record<string, unknown>;
 
-type TextAnimationSoundEffectRow = NonNullable<TextAnimation['sound_effects']>[number];
+type TextAnimationSoundEffectRow = NonNullable<
+  TextAnimation['sound_effects']
+>[number];
 
 @Injectable()
 export class TextAnimationsService implements OnModuleInit {
@@ -78,8 +76,12 @@ export class TextAnimationsService implements OnModuleInit {
     return Number.isFinite(numeric) ? numeric : null;
   }
 
-  private normalizeTimingMode(value: unknown): 'with_previous' | 'after_previous_ends' {
-    return value === 'after_previous_ends' ? 'after_previous_ends' : 'with_previous';
+  private normalizeTimingMode(
+    value: unknown,
+  ): 'with_previous' | 'after_previous_ends' {
+    return value === 'after_previous_ends'
+      ? 'after_previous_ends'
+      : 'with_previous';
   }
 
   private parseSoundEffectsInput(
@@ -135,17 +137,24 @@ export class TextAnimationsService implements OnModuleInit {
         duration_seconds: true,
       },
     });
-    const ownedById = new Map(owned.map((soundEffect) => [soundEffect.id, soundEffect]));
+    const ownedById = new Map(
+      owned.map((soundEffect) => [soundEffect.id, soundEffect]),
+    );
 
     const normalized = items.flatMap((item) => {
       const soundEffectId = String(item.sound_effect_id ?? '').trim();
       const soundEffect = ownedById.get(soundEffectId);
       if (!soundEffect) return [];
 
-      const volumePercentRaw = this.normalizeOptionalNumber(item.volume_percent);
+      const volumePercentRaw = this.normalizeOptionalNumber(
+        item.volume_percent,
+      );
       const volumePercent =
         volumePercentRaw === null
-          ? Math.max(0, Math.min(300, Number(soundEffect.volume_percent ?? 100) || 100))
+          ? Math.max(
+              0,
+              Math.min(300, Number(soundEffect.volume_percent ?? 100) || 100),
+            )
           : Math.max(0, Math.min(300, volumePercentRaw));
       const delaySeconds = Math.max(
         0,

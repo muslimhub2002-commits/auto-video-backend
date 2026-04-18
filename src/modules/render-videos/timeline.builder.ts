@@ -142,14 +142,18 @@ export const buildTimeline = (params: {
     const isTextScene = !isSubscribeLike && s.mediaType === 'text';
     const isOverlayScene = !isSubscribeLike && s.mediaType === 'overlay';
     const isImageScene =
-      !isSubscribeLike && !wantsSentenceVideo && !isTextScene && !isOverlayScene;
-    const sceneMediaType = isSubscribeLike || wantsSentenceVideo
-      ? 'video'
-      : isTextScene
-        ? 'text'
-        : isOverlayScene
-          ? 'overlay'
-        : 'image';
+      !isSubscribeLike &&
+      !wantsSentenceVideo &&
+      !isTextScene &&
+      !isOverlayScene;
+    const sceneMediaType =
+      isSubscribeLike || wantsSentenceVideo
+        ? 'video'
+        : isTextScene
+          ? 'text'
+          : isOverlayScene
+            ? 'overlay'
+            : 'image';
     const primaryImageSrc = sentenceUsesPrimaryImageTransport(s)
       ? String(params.imagePaths[index] ?? '').trim() || undefined
       : undefined;
@@ -176,7 +180,8 @@ export const buildTimeline = (params: {
       isOverlayScene && overlayBackgroundMode === 'video'
         ? String(s.videoUrl ?? '').trim() || undefined
         : undefined;
-    const textAnimationText = String(s.textAnimationText ?? '').trim() || undefined;
+    const textAnimationText =
+      String(s.textAnimationText ?? '').trim() || undefined;
     const textBackgroundMode = isTextScene
       ? resolveTextSceneBackgroundMode(s.textAnimationSettings)
       : undefined;
