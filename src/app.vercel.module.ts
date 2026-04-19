@@ -18,6 +18,7 @@ import { ChatsModule } from './modules/chats/chats.module';
 import { YoutubeModule } from './modules/youtube/youtube.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { TiktokModule } from './modules/tiktok/tiktok.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 /**
  * Vercel deployment module.
@@ -50,6 +51,7 @@ import { TiktokModule } from './modules/tiktok/tiktok.module';
     }),
 
     AuthModule,
+    UploadsModule,
     AiModule,
     VoiceOversModule,
     ImagesModule,
