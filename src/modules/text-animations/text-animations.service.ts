@@ -3,6 +3,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { normalizeSoundEffectAudioSettings } from '../sound-effects/audio-settings.types';
 import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
+import { Sentence } from '../scripts/entities/sentence.entity';
 import { TextAnimation } from './entities/text-animation.entity';
 
 type TextAnimationSoundEffectInput = Partial<
@@ -13,6 +14,12 @@ type TextAnimationSoundEffectInput = Partial<
 type TextAnimationSoundEffectRow = NonNullable<
   TextAnimation['sound_effects']
 >[number];
+
+type SyncLinkedTextAnimationSentencesParams = {
+  textAnimationId: string;
+  settings?: Record<string, unknown>;
+  sound_effects?: Array<TextAnimationSoundEffectRow> | null;
+};
 
 @Injectable()
 export class TextAnimationsService implements OnModuleInit {
@@ -196,6 +203,35 @@ export class TextAnimationsService implements OnModuleInit {
     return normalized.length > 0 ? normalized : null;
   }
 
+  private async syncLinkedSentences(
+    sentenceRepo: Repository<Sentence>,
+    params: SyncLinkedTextAnimationSentencesParams,
+  ): Promise<void> {
+    const sentencePatch: {
+      text_animation_effect?: string | null;
+      text_animation_settings?: Record<string, unknown> | null;
+      text_animation_sound_effects?: Sentence['text_animation_sound_effects'];
+    } = {};
+
+    if (params.settings !== undefined) {
+      sentencePatch.text_animation_effect = 'slideCutFast';
+      sentencePatch.text_animation_settings = params.settings ?? null;
+    }
+
+    if (params.sound_effects !== undefined) {
+      sentencePatch.text_animation_sound_effects = params.sound_effects ?? null;
+    }
+
+    if (Object.keys(sentencePatch).length === 0) {
+      return;
+    }
+
+    await sentenceRepo.update(
+      { text_animation_id: params.textAnimationId } as any,
+      sentencePatch as any,
+    );
+  }
+
   async findAllByUser(
     user_id: string,
     page = 1,
@@ -293,7 +329,18 @@ export class TextAnimationsService implements OnModuleInit {
         })) ?? null;
     }
 
-    return this.repo.save(target);
+    return this.dataSource.transaction(async (manager) => {
+      const saved = await manager.getRepository(TextAnimation).save(target);
+
+      await this.syncLinkedSentences(manager.getRepository(Sentence), {
+        textAnimationId: saved.id,
+        settings: params.settings !== undefined ? saved.settings : undefined,
+        sound_effects:
+          params.sound_effects !== undefined ? saved.sound_effects ?? null : undefined,
+      });
+
+      return saved;
+    });
   }
 
   async deleteById(params: {

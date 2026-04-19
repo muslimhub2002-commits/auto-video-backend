@@ -33,6 +33,7 @@ export type TextAnimationSettings = {
   gradientAngleDeg?: number;
   backgroundDim?: number;
   animationIntensity?: number;
+  startDelaySeconds?: number;
   animatePerWord?: boolean;
   wordDelaySeconds?: number;
   textCase?: 'original' | 'uppercase';
@@ -53,6 +54,7 @@ export type OverlaySettings = {
   gradientFrom?: string;
   gradientTo?: string;
   gradientAngleDeg?: number;
+  startDelaySeconds?: number;
   includeText?: boolean;
   textLayer?: 'below' | 'above';
 };

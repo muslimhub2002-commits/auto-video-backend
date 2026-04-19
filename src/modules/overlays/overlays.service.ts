@@ -8,6 +8,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { normalizeSoundEffectAudioSettings } from '../sound-effects/audio-settings.types';
 import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
+import { Sentence } from '../scripts/entities/sentence.entity';
 import { UploadsService } from '../uploads/uploads.service';
 import { Overlay } from './entities/overlay.entity';
 
@@ -23,6 +24,12 @@ type OverlaySoundEffectInput = Partial<
   Record<string, unknown>;
 
 type OverlaySoundEffectRow = NonNullable<Overlay['sound_effects']>[number];
+
+type SyncLinkedOverlaySentencesParams = {
+  overlayId: string;
+  settings?: Record<string, unknown>;
+  sound_effects?: Array<OverlaySoundEffectRow> | null;
+};
 
 @Injectable()
 export class OverlaysService implements OnModuleInit {
@@ -224,6 +231,33 @@ export class OverlaysService implements OnModuleInit {
     return normalized.length > 0 ? normalized : null;
   }
 
+  private async syncLinkedSentences(
+    sentenceRepo: Repository<Sentence>,
+    params: SyncLinkedOverlaySentencesParams,
+  ): Promise<void> {
+    const sentencePatch: {
+      overlay_settings?: Record<string, unknown> | null;
+      overlay_sound_effects?: Sentence['overlay_sound_effects'];
+    } = {};
+
+    if (params.settings !== undefined) {
+      sentencePatch.overlay_settings = params.settings ?? null;
+    }
+
+    if (params.sound_effects !== undefined) {
+      sentencePatch.overlay_sound_effects = params.sound_effects ?? null;
+    }
+
+    if (Object.keys(sentencePatch).length === 0) {
+      return;
+    }
+
+    await sentenceRepo.update(
+      { overlay_id: params.overlayId } as any,
+      sentencePatch as any,
+    );
+  }
+
   private async resolveUpload(params: {
     file?: OverlayUploadFile | null;
     sourceUrl?: string | null;
@@ -404,7 +438,18 @@ export class OverlaysService implements OnModuleInit {
       }
     }
 
-    return this.repo.save(target);
+    return this.dataSource.transaction(async (manager) => {
+      const saved = await manager.getRepository(Overlay).save(target);
+
+      await this.syncLinkedSentences(manager.getRepository(Sentence), {
+        overlayId: saved.id,
+        settings: params.settings !== undefined ? saved.settings : undefined,
+        sound_effects:
+          params.sound_effects !== undefined ? saved.sound_effects ?? null : undefined,
+      });
+
+      return saved;
+    });
   }
 
   async deleteById(params: {

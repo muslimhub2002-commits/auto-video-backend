@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, Img, OffthreadVideo } from 'remotion';
+import { AbsoluteFill, Img, OffthreadVideo, Sequence } from 'remotion';
 import type { OverlaySettings, TimelineScene } from '../types';
 import { resolveMediaSrc } from '../utils/media';
 import { mulberry32 } from '../utils/random';
@@ -23,6 +23,10 @@ const LEGACY_OVERLAY_OFFSET_X = 0;
 const LEGACY_OVERLAY_OFFSET_Y = -4;
 const LEGACY_OVERLAY_SCALE = 1;
 const LEGACY_OVERLAY_ROTATION_DEG = 0;
+const DEFAULT_OVERLAY_START_DELAY = 0;
+const OVERLAY_START_DELAY_MIN = 0;
+const OVERLAY_START_DELAY_MAX = 10;
+const OVERLAY_MOTION_RAMP_SECONDS = 0.35;
 
 const isApproximately = (value: number | undefined, expected: number) => {
   return Math.abs((value ?? expected) - expected) < 0.001;
@@ -207,6 +211,7 @@ const getDefaultOverlaySettings = (): OverlaySettings => ({
   gradientFrom: '#020617',
   gradientTo: '#1d4ed8',
   gradientAngleDeg: 135,
+  startDelaySeconds: DEFAULT_OVERLAY_START_DELAY,
   includeText: false,
   textLayer: 'above',
 });
@@ -238,6 +243,12 @@ const normalizeOverlaySettings = (
       defaults.gradientAngleDeg ?? 135,
       0,
       360,
+    ),
+    startDelaySeconds: getNumeric(
+      settings?.startDelaySeconds,
+      defaults.startDelaySeconds ?? DEFAULT_OVERLAY_START_DELAY,
+      OVERLAY_START_DELAY_MIN,
+      OVERLAY_START_DELAY_MAX,
     ),
     includeText: getBoolean(settings?.includeText, defaults.includeText ?? false),
     textLayer: (OVERLAY_TEXT_LAYER_VALUES as readonly string[]).includes(
@@ -287,17 +298,40 @@ export const OverlayScene: React.FC<{
   const shouldUseImageTabSizing = usesImageTabSizedOverlay(resolvedOverlay);
   const shouldUseLegacyCenteredTransform =
     shouldUseImageTabSizing && usesLegacyOverlayTransformDefaults(resolvedOverlay);
+  const overlayStartDelayFrames = Math.max(
+    0,
+    Math.round(
+      getNumeric(
+        resolvedOverlay.startDelaySeconds,
+        DEFAULT_OVERLAY_START_DELAY,
+        OVERLAY_START_DELAY_MIN,
+        OVERLAY_START_DELAY_MAX,
+      ) * fps,
+    ),
+  );
+  const delayedMotionFrame = Math.max(0, frame - overlayStartDelayFrames);
   const cycleFrames = Math.max(
     1,
     Math.round(clampNumber(7 / (resolvedOverlay.speed ?? 1), 2.4, 14) * fps),
   );
-  const phase = ((frame % cycleFrames) / cycleFrames) * Math.PI * 2;
-  const floatYOffset = shouldUseImageTabSizing ? 0 : Math.sin(phase) * 0.8;
+  const phase = ((delayedMotionFrame % cycleFrames) / cycleFrames) * Math.PI * 2;
+  const motionRamp = shouldUseImageTabSizing
+    ? 0
+    : clampNumber(
+        delayedMotionFrame / Math.max(1, Math.round(OVERLAY_MOTION_RAMP_SECONDS * fps)),
+        0,
+        1,
+      );
+  const floatYOffset = shouldUseImageTabSizing
+    ? 0
+    : Math.sin(phase) * 0.8 * motionRamp;
   const floatRotation = shouldUseImageTabSizing
     ? 0
-    : Math.sin(phase + Math.PI / 2) * 1.25;
+    : Math.sin(phase + Math.PI / 2) * 1.25 * motionRamp;
   const overlayWidthPx = width * ((resolvedOverlay.widthPercent ?? 26) / 100);
   const overlayHeightPx = height * ((resolvedOverlay.heightPercent ?? 22) / 100);
+  const shouldRenderOverlayAsset =
+    Boolean(overlaySrc) && overlayStartDelayFrames < scene.durationFrames;
   const resolvedLook = normalizeImageFilterSettings(
     scene.imageFilterSettings,
     scene.visualEffect ?? null,
@@ -422,65 +456,70 @@ export const OverlayScene: React.FC<{
         <AbsoluteFill style={{ zIndex: 10 }}>{textLayer}</AbsoluteFill>
       ) : null}
 
-      {overlaySrc ? (
-        <div
-          style={{
-            position: 'absolute',
-            ...(shouldUseImageTabSizing
-              ? {
-                  inset: 0,
-                }
-              : {
-                  left: width / 2 + ((resolvedOverlay.offsetX ?? 0) / 100) * width,
-                  top: height / 2 + ((resolvedOverlay.offsetY ?? 0) / 100) * height,
-                  width: overlayWidthPx,
-                  height: overlayHeightPx,
-                  marginLeft: -overlayWidthPx / 2,
-                  marginTop: -overlayHeightPx / 2,
-                }),
-            opacity: resolvedOverlay.opacity ?? 1,
-            transform: shouldUseImageTabSizing
-              ? shouldUseLegacyCenteredTransform
-                ? undefined
-                : `translate(${(resolvedOverlay.offsetX ?? 0).toFixed(2)}%, ${(resolvedOverlay.offsetY ?? 0).toFixed(2)}%) scale(${(
+      {shouldRenderOverlayAsset ? (
+        <Sequence
+          from={overlayStartDelayFrames}
+          durationInFrames={Math.max(1, scene.durationFrames - overlayStartDelayFrames)}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              ...(shouldUseImageTabSizing
+                ? {
+                    inset: 0,
+                  }
+                : {
+                    left: width / 2 + ((resolvedOverlay.offsetX ?? 0) / 100) * width,
+                    top: height / 2 + ((resolvedOverlay.offsetY ?? 0) / 100) * height,
+                    width: overlayWidthPx,
+                    height: overlayHeightPx,
+                    marginLeft: -overlayWidthPx / 2,
+                    marginTop: -overlayHeightPx / 2,
+                  }),
+              opacity: resolvedOverlay.opacity ?? 1,
+              transform: shouldUseImageTabSizing
+                ? shouldUseLegacyCenteredTransform
+                  ? undefined
+                  : `translate(${(resolvedOverlay.offsetX ?? 0).toFixed(2)}%, ${(resolvedOverlay.offsetY ?? 0).toFixed(2)}%) scale(${(
+                      resolvedOverlay.scale ?? 1
+                    ).toFixed(4)}) rotate(${(
+                      resolvedOverlay.rotationDeg ?? 0
+                    ).toFixed(2)}deg)`
+                : `translateY(${floatYOffset.toFixed(2)}%) scale(${(
                     resolvedOverlay.scale ?? 1
                   ).toFixed(4)}) rotate(${(
                     (resolvedOverlay.rotationDeg ?? 0) + floatRotation
-                  ).toFixed(2)}deg)`
-              : `translateY(${floatYOffset.toFixed(2)}%) scale(${(
-                  resolvedOverlay.scale ?? 1
-                ).toFixed(4)}) rotate(${(
-                  (resolvedOverlay.rotationDeg ?? 0) + floatRotation
-                ).toFixed(2)}deg)`,
-            transformOrigin: 'center center',
-            zIndex: 20,
-          }}
-        >
-          {overlayIsVideo ? (
-            <OffthreadVideo
-              src={overlaySrc}
-              muted
-              loop
-              pauseWhenBuffering
-              style={{
-                display: 'block',
-                width: '100%',
-                height: '100%',
-                objectFit: shouldUseImageTabSizing ? 'cover' : 'contain',
-              }}
-            />
-          ) : (
-            <Img
-              src={overlaySrc}
-              style={{
-                display: 'block',
-                width: '100%',
-                height: '100%',
-                objectFit: shouldUseImageTabSizing ? 'cover' : 'contain',
-              }}
-            />
-          )}
-        </div>
+                  ).toFixed(2)}deg)`,
+              transformOrigin: 'center center',
+              zIndex: 20,
+            }}
+          >
+            {overlayIsVideo ? (
+              <OffthreadVideo
+                src={overlaySrc!}
+                muted
+                loop
+                pauseWhenBuffering
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  height: '100%',
+                  objectFit: shouldUseImageTabSizing ? 'cover' : 'contain',
+                }}
+              />
+            ) : (
+              <Img
+                src={overlaySrc!}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  height: '100%',
+                  objectFit: shouldUseImageTabSizing ? 'cover' : 'contain',
+                }}
+              />
+            )}
+          </div>
+        </Sequence>
       ) : null}
 
       {resolvedOverlay.includeText && resolvedOverlay.textLayer === 'above' ? (

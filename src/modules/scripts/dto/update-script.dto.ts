@@ -61,6 +61,14 @@ class SentenceSoundEffectInput {
   @IsUUID()
   sound_effect_id: string;
 
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  @IsString()
+  @IsOptional()
+  url?: string;
+
   @IsNumber()
   @Min(0)
   @IsOptional()

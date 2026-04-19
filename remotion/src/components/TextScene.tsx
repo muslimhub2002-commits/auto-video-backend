@@ -9,6 +9,11 @@ import { IMAGE_ZOOM_PER_SECOND } from '../constants';
 import { resolveMediaSrc } from '../utils/media';
 import { mulberry32 } from '../utils/random';
 
+const LoopingOffthreadVideo =
+  OffthreadVideo as unknown as React.ComponentType<
+    React.ComponentProps<typeof OffthreadVideo> & { loop?: boolean }
+  >;
+
 const TEXT_ANIMATION_EFFECT_VALUES: readonly TextAnimationEffect[] = [
   'slideCutFast',
 ];
@@ -30,6 +35,9 @@ const TEXT_ANIMATION_SPEED_MAX = 2.4;
 const DEFAULT_TEXT_ANIMATION_WORD_DELAY = 0.08;
 const TEXT_ANIMATION_WORD_DELAY_MIN = 0.03;
 const TEXT_ANIMATION_WORD_DELAY_MAX = 0.4;
+const DEFAULT_TEXT_ANIMATION_START_DELAY = 0;
+const TEXT_ANIMATION_START_DELAY_MIN = 0;
+const TEXT_ANIMATION_START_DELAY_MAX = 10;
 
 const clampNumber = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -140,6 +148,7 @@ const getDefaultTextAnimationSettings = (
     gradientAngleDeg: 135,
     backgroundDim: 0.44,
     animationIntensity: 0.92,
+    startDelaySeconds: DEFAULT_TEXT_ANIMATION_START_DELAY,
     animatePerWord: false,
     wordDelaySeconds: DEFAULT_TEXT_ANIMATION_WORD_DELAY,
     textCase: 'uppercase',
@@ -162,17 +171,17 @@ const normalizeTextAnimationSettings = (
     speed: getNumeric(settings?.speed, defaults.speed ?? DEFAULT_TEXT_ANIMATION_SPEED, 0.4, 2.4),
     horizontalAlign: getEnumValue(
       settings?.horizontalAlign,
-      ['left', 'center', 'right'],
+      ['left', 'center', 'right'] as const,
       defaults.horizontalAlign ?? 'center',
     ),
     contentAlign: getEnumValue(
       settings?.contentAlign,
-      ['left', 'center', 'right'],
+      ['left', 'center', 'right'] as const,
       defaults.contentAlign ?? defaults.horizontalAlign ?? 'left',
     ),
     verticalAlign: getEnumValue(
       settings?.verticalAlign,
-      ['top', 'middle', 'bottom'],
+      ['top', 'middle', 'bottom'] as const,
       defaults.verticalAlign ?? 'middle',
     ),
     offsetX: getNumeric(settings?.offsetX, defaults.offsetX ?? 0, -35, 35),
@@ -205,7 +214,7 @@ const normalizeTextAnimationSettings = (
     shadowBlurPx: getNumeric(settings?.shadowBlurPx, defaults.shadowBlurPx ?? 18, 0, 48),
     backgroundMode: getEnumValue(
       settings?.backgroundMode,
-      ['inheritImage', 'image', 'inheritVideo', 'video', 'solid', 'gradient'],
+      ['inheritImage', 'image', 'inheritVideo', 'video', 'solid', 'gradient'] as const,
       defaults.backgroundMode ?? 'inheritImage',
     ),
     backgroundColor: getColor(settings?.backgroundColor, defaults.backgroundColor ?? '#0f172a'),
@@ -224,6 +233,12 @@ const normalizeTextAnimationSettings = (
       0,
       1.2,
     ),
+    startDelaySeconds: getNumeric(
+      settings?.startDelaySeconds,
+      defaults.startDelaySeconds ?? DEFAULT_TEXT_ANIMATION_START_DELAY,
+      TEXT_ANIMATION_START_DELAY_MIN,
+      TEXT_ANIMATION_START_DELAY_MAX,
+    ),
     animatePerWord: settings?.animatePerWord === true,
     wordDelaySeconds: getNumeric(
       settings?.wordDelaySeconds,
@@ -233,7 +248,7 @@ const normalizeTextAnimationSettings = (
     ),
     textCase: getEnumValue(
       settings?.textCase,
-      ['original', 'uppercase'],
+      ['original', 'uppercase'] as const,
       defaults.textCase ?? 'uppercase',
     ),
   };
@@ -500,6 +515,18 @@ export const TextScene: React.FC<{
     fps,
     resolvedSettings.speed ?? DEFAULT_TEXT_ANIMATION_SPEED,
   );
+  const startDelayFrames = Math.max(
+    0,
+    Math.round(
+      getNumeric(
+        resolvedSettings.startDelaySeconds,
+        DEFAULT_TEXT_ANIMATION_START_DELAY,
+        TEXT_ANIMATION_START_DELAY_MIN,
+        TEXT_ANIMATION_START_DELAY_MAX,
+      ) * fps,
+    ),
+  );
+  const delayedAnimationFrame = Math.max(0, frame - startDelayFrames);
   const wordDelayFrames = getWordDelayFrames(fps, resolvedSettings);
   const animationIntensity = resolvedSettings.animationIntensity ?? 0.82;
   const renderBackgroundImage =
@@ -540,7 +567,7 @@ export const TextScene: React.FC<{
   const contentAlign = resolveContentTextAlign(resolvedSettings);
   const animatedBlockStyle = getAnimatedBlockStyle({
     effect: resolvedEffect,
-    frame,
+    frame: delayedAnimationFrame,
     introFrames,
     animationIntensity,
   });
@@ -576,7 +603,7 @@ export const TextScene: React.FC<{
       {hasBackgroundMedia ? (
         <AbsoluteFill style={{ filter: backgroundMediaFilter }}>
           {backgroundVideoSrc ? (
-            <OffthreadVideo
+            <LoopingOffthreadVideo
               src={backgroundVideoSrc}
               muted
               loop
@@ -656,7 +683,10 @@ export const TextScene: React.FC<{
         >
           {animatePerWord
             ? words.map((word, index) => {
-                const wordFrame = Math.max(0, frame - index * wordDelayFrames);
+                const wordFrame = Math.max(
+                  0,
+                  delayedAnimationFrame - index * wordDelayFrames,
+                );
                 const animatedWordStyle = getAnimatedBlockStyle({
                   effect: resolvedEffect,
                   frame: wordFrame,

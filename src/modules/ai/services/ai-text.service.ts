@@ -812,7 +812,7 @@ export class AiTextService {
         content:
           'You are an expert video topic strategist for short-form and long-form narrated videos. ' +
           'Return ONLY valid JSON. No prose, no markdown, no code fences. ' +
-          'Your job is to produce exactly five clearly distinct script ideas that all stay within the selected subject but are not variations of the same topic. ' +
+          'Your job is to produce exactly five clearly distinct very creative script ideas that all stay within the selected subject but are not variations of the same topic. ' +
           'Each idea must feel different in story, event, or hook. Avoid duplicates, near-duplicates, and simple wording changes.',
       },
       {
