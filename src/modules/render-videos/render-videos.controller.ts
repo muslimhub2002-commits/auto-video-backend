@@ -932,6 +932,7 @@ export class RenderVideosController {
     FileFieldsInterceptor(
       [
         { name: 'voiceOver', maxCount: 1 },
+        { name: 'backgroundMusicFile', maxCount: 1 },
         { name: 'images', maxCount: 200 },
         { name: 'textBackgroundVideos', maxCount: 200 },
       ],
@@ -939,7 +940,7 @@ export class RenderVideosController {
         // Intentionally use memory storage (no local disk writes).
         // Limits help avoid OOM/timeouts (especially on serverless platforms).
         limits: {
-          files: 401,
+          files: 402,
           // Per-file size limit (bytes). Tune as needed for your typical inputs.
           fileSize: 50 * 1024 * 1024,
           fields: 70,
@@ -952,6 +953,7 @@ export class RenderVideosController {
     @UploadedFiles()
     files: {
       voiceOver?: Multer.File[];
+      backgroundMusicFile?: Multer.File[];
       images?: Multer.File[];
       textBackgroundVideos?: Multer.File[];
     },
@@ -963,6 +965,7 @@ export class RenderVideosController {
     // }
 
     const voice = files.voiceOver?.[0];
+    const backgroundMusicFile = files.backgroundMusicFile?.[0];
     const images = files.images ?? [];
     const textBackgroundVideos = files.textBackgroundVideos ?? [];
     const sentences = this.parseMultipartSentences(body);
@@ -1028,6 +1031,13 @@ export class RenderVideosController {
       addSubtitles,
       enableGlitchTransitions,
       enableLongFormSubscribeOverlay,
+      backgroundMusicFile: backgroundMusicFile
+        ? {
+            buffer: backgroundMusicFile.buffer,
+            originalName: backgroundMusicFile.originalname,
+            mimeType: backgroundMusicFile.mimetype,
+          }
+        : null,
       backgroundMusicSrc,
       backgroundMusicVolume,
     });
@@ -1040,12 +1050,13 @@ export class RenderVideosController {
     FileFieldsInterceptor(
       [
         { name: 'voiceOver', maxCount: 1 },
+        { name: 'backgroundMusicFile', maxCount: 1 },
         { name: 'images', maxCount: 200 },
         { name: 'textBackgroundVideos', maxCount: 200 },
       ],
       {
         limits: {
-          files: 401,
+          files: 402,
           fileSize: 50 * 1024 * 1024,
           fields: 80,
         },
@@ -1057,6 +1068,7 @@ export class RenderVideosController {
     @UploadedFiles()
     files: {
       voiceOver?: Multer.File[];
+      backgroundMusicFile?: Multer.File[];
       images?: Multer.File[];
       textBackgroundVideos?: Multer.File[];
     },
@@ -1068,6 +1080,7 @@ export class RenderVideosController {
     // }
 
     const voice = files.voiceOver?.[0];
+    const backgroundMusicFile = files.backgroundMusicFile?.[0];
     const images = files.images ?? [];
     const textBackgroundVideos = files.textBackgroundVideos ?? [];
     const sentences = this.parseMultipartSentences(body);
@@ -1137,6 +1150,13 @@ export class RenderVideosController {
       addSubtitles,
       enableGlitchTransitions,
       enableLongFormSubscribeOverlay,
+      backgroundMusicFile: backgroundMusicFile
+        ? {
+            buffer: backgroundMusicFile.buffer,
+            originalName: backgroundMusicFile.originalname,
+            mimeType: backgroundMusicFile.mimetype,
+          }
+        : null,
       backgroundMusicSrc,
       backgroundMusicVolume,
     });

@@ -191,6 +191,7 @@ export class RenderVideosService implements OnModuleInit {
     addSubtitles?: boolean;
     enableGlitchTransitions?: boolean;
     enableLongFormSubscribeOverlay?: boolean;
+    backgroundMusicFile?: UploadedAsset | null;
     backgroundMusicSrc?: string | null;
     backgroundMusicVolume?: number;
   }) {
@@ -502,12 +503,27 @@ export class RenderVideosService implements OnModuleInit {
     );
   }
 
+  private getPublicBackgroundMusicUrl(params: { jobId: string; ext: string }) {
+    const safeExt = params.ext.startsWith('.') ? params.ext : `.${params.ext}`;
+    return this.getPublicStorageUrl(
+      `render-inputs/audio/${params.jobId}-background${safeExt}`,
+    );
+  }
+
   private getAudioFsPath(params: { jobId: string; ext: string }) {
     const root = this.getStorageRoot();
     const dir = join(root, 'render-inputs', 'audio');
     this.ensureDir(dir);
     const safeExt = params.ext.startsWith('.') ? params.ext : `.${params.ext}`;
     return join(dir, `${params.jobId}${safeExt}`);
+  }
+
+  private getBackgroundMusicFsPath(params: { jobId: string; ext: string }) {
+    const root = this.getStorageRoot();
+    const dir = join(root, 'render-inputs', 'audio');
+    this.ensureDir(dir);
+    const safeExt = params.ext.startsWith('.') ? params.ext : `.${params.ext}`;
+    return join(dir, `${params.jobId}-background${safeExt}`);
   }
 
   getVideoFsPath(jobId: string) {
@@ -636,12 +652,14 @@ export class RenderVideosService implements OnModuleInit {
       addSubtitles?: boolean;
       enableGlitchTransitions?: boolean;
       enableLongFormSubscribeOverlay?: boolean;
+      backgroundMusicFile?: UploadedAsset | null;
       backgroundMusicSrc?: string | null;
       backgroundMusicVolume?: number;
     },
   ) {
     const tempDir = this.createTempDir('auto-video-generator-');
     let publicDirToClean: string | null = null;
+    let transientBackgroundMusicFsPath: string | null = null;
     let stopHeartbeat: (() => void) | null = null;
     try {
       const job = await this.getJob(jobId);
@@ -983,6 +1001,27 @@ export class RenderVideosService implements OnModuleInit {
         this.isSubscribeLikeSentence(s?.text || ''),
       );
 
+      if (useLambdaTestMode && params.backgroundMusicFile?.buffer?.length) {
+        const backgroundMusicExt = this.inferExt({
+          originalName: params.backgroundMusicFile.originalName,
+          mimeType: params.backgroundMusicFile.mimeType,
+          fallback: '.mp3',
+        });
+
+        transientBackgroundMusicFsPath = this.getBackgroundMusicFsPath({
+          jobId,
+          ext: backgroundMusicExt,
+        });
+        fs.writeFileSync(
+          transientBackgroundMusicFsPath,
+          params.backgroundMusicFile.buffer,
+        );
+        params.backgroundMusicSrc = this.getPublicBackgroundMusicUrl({
+          jobId,
+          ext: backgroundMusicExt,
+        });
+      }
+
       if (useLambdaTestMode) {
         if (job.audioPath) {
           voiceoverAudioSrc = job.audioPath;
@@ -1117,7 +1156,17 @@ export class RenderVideosService implements OnModuleInit {
         // keeps renders stable on Windows and in restricted networks.)
         let effectiveBackgroundMusicSrc: string | null | undefined =
           params.backgroundMusicSrc;
-        if (
+        if (params.backgroundMusicFile?.buffer?.length) {
+          const backgroundMusicExt = this.inferExt({
+            originalName: params.backgroundMusicFile.originalName,
+            mimeType: params.backgroundMusicFile.mimeType,
+            fallback: '.mp3',
+          });
+          const rel = `audio/background_custom${backgroundMusicExt}`;
+          this.ensureDir(join(jobDir, 'audio'));
+          fs.writeFileSync(join(jobDir, rel), params.backgroundMusicFile.buffer);
+          effectiveBackgroundMusicSrc = rel;
+        } else if (
           typeof params.backgroundMusicSrc === 'string' &&
           /^https?:\/\//i.test(params.backgroundMusicSrc.trim())
         ) {
@@ -1356,6 +1405,13 @@ export class RenderVideosService implements OnModuleInit {
     } finally {
       if (stopHeartbeat) stopHeartbeat();
       this.safeRmDir(tempDir);
+      if (transientBackgroundMusicFsPath) {
+        try {
+          fs.rmSync(transientBackgroundMusicFsPath, { force: true });
+        } catch {
+          // ignore cleanup failures for transient background music
+        }
+      }
       if (publicDirToClean) {
         this.safeRmDir(publicDirToClean);
       }
