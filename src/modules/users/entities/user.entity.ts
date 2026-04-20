@@ -18,95 +18,101 @@ import { MotionEffect } from '../../motion-effects/entities/motion-effect.entity
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'varchar', length: 255, nullable: false, unique: true })
-  email: string;
+  email!: string;
 
-  @Column({ type: 'varchar', length: 255, nullable: false })
-  password: string;
-
-  @Column({ type: 'int', default: 0 })
-  number_of_videos_generated: number;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  password!: string | null;
 
   @Column({ type: 'int', default: 0 })
-  number_of_images_generated: number;
+  number_of_videos_generated!: number;
 
   @Column({ type: 'int', default: 0 })
-  number_of_voices_generated: number;
+  number_of_images_generated!: number;
+
+  @Column({ type: 'int', default: 0 })
+  number_of_voices_generated!: number;
 
   @Column({ type: 'simple-array', nullable: true })
-  roles: string[];
-
-  @Column({ type: 'text', nullable: true })
-  youtube_access_token: string | null;
-
-  @Column({ type: 'text', nullable: true })
-  youtube_refresh_token: string | null;
-
-  @Column({ type: 'timestamp', nullable: true })
-  youtube_token_expiry: Date | null;
-
-  @Column({ type: 'timestamp', nullable: true })
-  youtube_connected_at: Date | null;
-
-  @Column({ type: 'text', nullable: true })
-  tiktok_access_token: string | null;
-
-  @Column({ type: 'text', nullable: true })
-  tiktok_refresh_token: string | null;
-
-  @Column({ type: 'timestamp', nullable: true })
-  tiktok_token_expiry: Date | null;
-
-  @Column({ type: 'timestamp', nullable: true })
-  tiktok_refresh_token_expiry: Date | null;
+  roles!: string[];
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  tiktok_open_id: string | null;
+  google_subject!: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  google_connected_at!: Date | null;
 
   @Column({ type: 'text', nullable: true })
-  tiktok_scope: string | null;
+  youtube_access_token!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  youtube_refresh_token!: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  tiktok_connected_at: Date | null;
-
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  tiktok_oauth_state: string | null;
-
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  tiktok_code_verifier: string | null;
+  youtube_token_expiry!: Date | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  tiktok_oauth_started_at: Date | null;
+  youtube_connected_at!: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  tiktok_access_token!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  tiktok_refresh_token!: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  tiktok_token_expiry!: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  tiktok_refresh_token_expiry!: Date | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  tiktok_open_id!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  tiktok_scope!: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  tiktok_connected_at!: Date | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  tiktok_oauth_state!: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  tiktok_code_verifier!: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  tiktok_oauth_started_at!: Date | null;
 
   @CreateDateColumn({ type: 'timestamp' })
-  created_at: Date;
+  created_at!: Date;
 
   @UpdateDateColumn({ type: 'timestamp' })
-  updated_at: Date;
+  updated_at!: Date;
 
   @OneToMany(() => Image, (image) => image.user)
-  images: Image[];
+  images!: Image[];
 
   @OneToMany(() => Voice, (voice) => voice.user)
-  voices: Voice[];
+  voices!: Voice[];
 
   @OneToMany(() => Video, (video) => video.user)
-  videos: Video[];
+  videos!: Video[];
 
   @OneToMany(() => Script, (script) => script.user)
-  scripts: Script[];
+  scripts!: Script[];
 
   @OneToMany(() => ScriptTemplate, (template) => template.user)
-  script_templates: ScriptTemplate[];
+  script_templates!: ScriptTemplate[];
 
   @OneToMany(() => BackgroundSoundtrack, (soundtrack) => soundtrack.user)
-  background_soundtracks: BackgroundSoundtrack[];
+  background_soundtracks!: BackgroundSoundtrack[];
 
   @OneToMany(() => ImageFilter, (imageFilter) => imageFilter.user)
-  image_filters: ImageFilter[];
+  image_filters!: ImageFilter[];
 
   @OneToMany(() => MotionEffect, (motionEffect) => motionEffect.user)
-  motion_effects: MotionEffect[];
+  motion_effects!: MotionEffect[];
 }
