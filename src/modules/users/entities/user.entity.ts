@@ -9,7 +9,6 @@ import {
 import { Image } from '../../images/entities/image.entity';
 import { Voice } from '../../voices/entities/voice.entity';
 import { Video } from '../../videos/entities/video.entity';
-import { Chat } from '../../chats/entities/chat.entity';
 import { Script } from '../../scripts/entities/script.entity';
 import { ScriptTemplate } from '../../scripts/entities/script-template.entity';
 import { BackgroundSoundtrack } from '../../background-soundtracks/entities/background-soundtrack.entity';
@@ -95,9 +94,6 @@ export class User {
 
   @OneToMany(() => Video, (video) => video.user)
   videos: Video[];
-
-  @OneToMany(() => Chat, (chat) => chat.user)
-  chats: Chat[];
 
   @OneToMany(() => Script, (script) => script.user)
   scripts: Script[];

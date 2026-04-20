@@ -8,8 +8,6 @@ import { Image } from './modules/images/entities/image.entity';
 import { Voice } from './modules/voices/entities/voice.entity';
 import { VoiceOver } from './modules/voice-overs/entities/voice-over.entity';
 import { Video } from './modules/videos/entities/video.entity';
-import { Chat } from './modules/chats/entities/chat.entity';
-import { Message } from './modules/messages/entities/message.entity';
 import { Script } from './modules/scripts/entities/script.entity';
 import { Sentence } from './modules/scripts/entities/sentence.entity';
 import { SentenceSoundEffect } from './modules/scripts/entities/sentence-sound-effect.entity';
@@ -24,8 +22,6 @@ import { BackgroundSoundtracksModule } from './modules/background-soundtracks/ba
 import { ImageFiltersModule } from './modules/image-filters/image-filters.module';
 import { MotionEffectsModule } from './modules/motion-effects/motion-effects.module';
 import { ScriptsModule } from './modules/scripts/scripts.module';
-import { MessagesModule } from './modules/messages/messages.module';
-import { ChatsModule } from './modules/chats/chats.module';
 import { RenderJob } from './modules/render-videos/entities/render-job.entity';
 import { YoutubeModule } from './modules/youtube/youtube.module';
 import { MetaModule } from './modules/meta/meta.module';
@@ -86,8 +82,6 @@ import { UploadsModule } from './modules/uploads/uploads.module';
         MetaCredential,
         VoiceOver,
         Video,
-        Chat,
-        Message,
         RenderJob,
         Script,
         Sentence,
@@ -112,8 +106,6 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     BackgroundSoundtracksModule,
     SoundEffectsModule,
     ScriptsModule,
-    MessagesModule,
-    ChatsModule,
     YoutubeModule,
     MetaModule,
     TiktokModule,

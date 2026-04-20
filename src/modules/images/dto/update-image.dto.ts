@@ -35,10 +35,6 @@ export class UpdateImageDto {
   image_quality?: ImageQuality;
 
   @IsOptional()
-  @IsUUID()
-  message_id?: string;
-
-  @IsOptional()
   @IsString()
   public_id?: string;
 }

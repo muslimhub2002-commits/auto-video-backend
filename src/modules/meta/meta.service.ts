@@ -6,7 +6,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { MessagesService } from '../messages/messages.service';
 import { ScriptsService } from '../scripts/scripts.service';
 import { User } from '../users/entities/user.entity';
 import { ExchangeMetaTokenDto } from './dto/exchange-meta-token.dto';
@@ -84,7 +83,6 @@ export class MetaService {
     private readonly configService: ConfigService,
     @InjectRepository(MetaCredential)
     private readonly metaCredentialRepository: Repository<MetaCredential>,
-    private readonly messagesService: MessagesService,
     private readonly scriptsService: ScriptsService,
     private readonly metaCredentialsService: MetaCredentialsService,
   ) {}
@@ -254,16 +252,6 @@ export class MetaService {
     user: User,
     dto: MetaUploadDto,
   ): Promise<MetaUploadResponse> {
-    if (dto.saveBeforeUpload?.script) {
-      await this.messagesService.saveGeneration(user.id, {
-        script: dto.saveBeforeUpload.script,
-        video_url: dto.saveBeforeUpload.video_url ?? dto.videoUrl,
-        chat_id: dto.saveBeforeUpload.chat_id,
-        voice_id: dto.saveBeforeUpload.voice_id,
-        sentences: dto.saveBeforeUpload.sentences,
-      });
-    }
-
     assertVideoUrlIsPubliclyReachable(dto.videoUrl);
     await this.metaCredentialsService.getActiveMetaCredentials();
 

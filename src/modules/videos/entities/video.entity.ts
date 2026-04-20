@@ -5,10 +5,8 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
-  OneToOne,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
-import { Message } from '../../messages/entities/message.entity';
 
 export enum VideoSize {
   PORTRAIT = 'portrait',
@@ -48,7 +46,4 @@ export class Video {
   @ManyToOne(() => User, (user) => user.videos)
   @JoinColumn({ name: 'user_id' })
   user: User;
-
-  @OneToOne(() => Message, (message) => message.video)
-  message: Message;
 }

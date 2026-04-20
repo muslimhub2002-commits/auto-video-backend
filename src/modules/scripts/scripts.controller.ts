@@ -63,6 +63,8 @@ export class ScriptsController {
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('title') title?: string,
+    @Query('category') category?: string,
+    @Query('platform') platform?: string,
     // Backwards-compatible alias (older clients)
     @Query('q') q?: string,
   ) {
@@ -77,11 +79,17 @@ export class ScriptsController {
     const limitNum = Number.parseInt(limit, 10) || 10;
 
     const titleQuery = typeof title === 'string' ? title : q;
+    const categoryQuery =
+      typeof category === 'string' && category.trim()
+        ? category
+        : platform;
+
     return this.scriptsService.findAllByUser(
       user_id,
       pageNum,
       limitNum,
       titleQuery,
+      categoryQuery,
     );
   }
 

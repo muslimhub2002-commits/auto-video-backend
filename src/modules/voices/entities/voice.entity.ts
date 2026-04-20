@@ -8,7 +8,6 @@ import {
   OneToMany,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
-import { Message } from '../../messages/entities/message.entity';
 import { Script } from '../../scripts/entities/script.entity';
 
 @Entity('voices')
@@ -40,9 +39,6 @@ export class Voice {
   @ManyToOne(() => User, (user) => user.voices)
   @JoinColumn({ name: 'user_id' })
   user: User;
-
-  @OneToMany(() => Message, (message) => message.voice)
-  messages: Message[];
 
   @OneToMany(() => Script, (script) => script.voice)
   scripts: Script[];

@@ -470,7 +470,6 @@ export class ImagesService {
     buffer: Buffer;
     filename: string;
     user_id: string;
-    message_id?: string;
     image_style?: string;
     image_size?: Image['image_size'];
     image_quality?: Image['image_quality'];
@@ -520,7 +519,6 @@ export class ImagesService {
         image: uploadResult.url,
         prompt: typeof params.prompt === 'string' ? params.prompt.trim() : null,
         user_id: params.user_id,
-        message_id: params.message_id ?? null,
         image_style: params.image_style,
         image_size: params.image_size,
         image_quality: params.image_quality,
@@ -554,7 +552,6 @@ export class ImagesService {
           buffer: params.buffer,
           filename: params.filename,
           user_id: params.user_id,
-          message_id: params.message_id,
           image_style: params.image_style,
           image_size: params.image_size,
           image_quality: params.image_quality,
@@ -573,7 +570,6 @@ export class ImagesService {
     buffer: Buffer;
     filename: string;
     user_id: string;
-    message_id?: string;
     image_style?: string;
     image_size?: Image['image_size'];
     image_quality?: Image['image_quality'];
@@ -612,7 +608,6 @@ export class ImagesService {
         image: uploadResult.url,
         prompt: typeof params.prompt === 'string' ? params.prompt.trim() : null,
         user_id: params.user_id,
-        message_id: params.message_id ?? null,
         image_style: params.image_style,
         image_size: params.image_size,
         image_quality: params.image_quality,

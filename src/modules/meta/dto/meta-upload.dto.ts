@@ -32,10 +32,6 @@ class SaveBeforeUploadDto {
 
   @IsUUID()
   @IsOptional()
-  chat_id?: string;
-
-  @IsUUID()
-  @IsOptional()
   voice_id?: string;
 
   @IsArray()

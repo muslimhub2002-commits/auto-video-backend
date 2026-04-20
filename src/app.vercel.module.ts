@@ -13,8 +13,6 @@ import { TextAnimationsModule } from './modules/text-animations/text-animations.
 import { BackgroundSoundtracksModule } from './modules/background-soundtracks/background-soundtracks.module';
 import { SoundEffectsModule } from './modules/sound-effects/sound-effects.module';
 import { ScriptsModule } from './modules/scripts/scripts.module';
-import { MessagesModule } from './modules/messages/messages.module';
-import { ChatsModule } from './modules/chats/chats.module';
 import { YoutubeModule } from './modules/youtube/youtube.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { TiktokModule } from './modules/tiktok/tiktok.module';
@@ -62,8 +60,6 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     BackgroundSoundtracksModule,
     SoundEffectsModule,
     ScriptsModule,
-    MessagesModule,
-    ChatsModule,
     YoutubeModule,
     MetaModule,
     TiktokModule,

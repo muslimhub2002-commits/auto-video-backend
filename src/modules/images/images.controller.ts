@@ -115,7 +115,6 @@ export class ImagesController {
       buffer: file.buffer,
       filename: file.originalname,
       user_id,
-      message_id: body.message_id,
       image_style: body.image_style,
       image_size: body.image_size,
       image_quality: body.image_quality,

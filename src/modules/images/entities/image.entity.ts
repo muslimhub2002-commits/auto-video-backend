@@ -7,7 +7,6 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
-import { Message } from '../../messages/entities/message.entity';
 
 export enum ImageSize {
   PORTRAIT = 'portrait',
@@ -33,9 +32,6 @@ export class Image {
 
   @Column({ type: 'uuid', nullable: false })
   user_id: string;
-
-  @Column({ type: 'uuid', nullable: true })
-  message_id: string | null;
 
   @Column({ type: 'int', default: 0 })
   number_of_times_used: number;
@@ -69,8 +65,4 @@ export class Image {
   @ManyToOne(() => User, (user) => user.images)
   @JoinColumn({ name: 'user_id' })
   user: User;
-
-  @ManyToOne(() => Message, (message) => message.images)
-  @JoinColumn({ name: 'message_id' })
-  message: Message;
 }

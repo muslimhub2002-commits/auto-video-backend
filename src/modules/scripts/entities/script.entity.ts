@@ -11,7 +11,6 @@ import {
   JoinTable,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
-import { Message } from '../../messages/entities/message.entity';
 import { Sentence } from './sentence.entity';
 import { Voice } from '../../voices/entities/voice.entity';
 import { ScriptTemplate } from './script-template.entity';
@@ -122,9 +121,6 @@ export class Script {
   user_id: string;
 
   @Column({ type: 'uuid', nullable: true })
-  message_id: string | null;
-
-  @Column({ type: 'uuid', nullable: true })
   voice_id: string | null;
 
   // Optional generated video associated with this draft.
@@ -157,10 +153,6 @@ export class Script {
   @ManyToOne(() => User, (user) => user.scripts)
   @JoinColumn({ name: 'user_id' })
   user: User;
-
-  @ManyToOne(() => Message, (message) => message.scripts)
-  @JoinColumn({ name: 'message_id' })
-  message: Message;
 
   @ManyToOne(() => Voice, (voice) => voice.scripts)
   @JoinColumn({ name: 'voice_id' })

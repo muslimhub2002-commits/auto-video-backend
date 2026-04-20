@@ -47,6 +47,14 @@ type UploadedVideoFile = {
   size?: number;
 };
 
+type ScriptListCategory =
+  | 'all'
+  | 'draft'
+  | 'youtube'
+  | 'facebook'
+  | 'instagram'
+  | 'tiktok';
+
 type NormalizedVoiceOverChunk = {
   index: number;
   text: string;
@@ -190,6 +198,21 @@ export class ScriptsService implements OnModuleInit {
     if (value === null || value === undefined || value === '') return null;
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  private normalizeScriptListCategory(value?: string): ScriptListCategory {
+    const normalized = String(value ?? '').trim().toLowerCase();
+
+    switch (normalized) {
+      case 'draft':
+      case 'youtube':
+      case 'facebook':
+      case 'instagram':
+      case 'tiktok':
+        return normalized;
+      default:
+        return 'all';
+    }
   }
 
   private normalizeVoiceOverChunksInput(
@@ -2167,22 +2190,6 @@ export class ScriptsService implements OnModuleInit {
     return this.findOne(scriptId, userId);
   }
 
-  async findByScriptText(
-    userId: string,
-    scriptText: string,
-  ): Promise<Script | null> {
-    await this.ensureScriptsSchemaLazy();
-    const trimmed = (scriptText ?? '').trim();
-    if (!trimmed) return null;
-
-    return this.scriptRepository.findOne({
-      where: {
-        user_id: userId,
-        script: trimmed,
-      },
-    });
-  }
-
   async create(
     userId: string,
     createScriptDto: CreateScriptDto,
@@ -2197,7 +2204,6 @@ export class ScriptsService implements OnModuleInit {
       style,
       technique,
       reference_script_ids,
-      message_id,
       voice_id,
       video_url,
       youtube_url,
@@ -2295,7 +2301,6 @@ export class ScriptsService implements OnModuleInit {
       const newTitle = providedTitle?.trim() || existingScript.title;
 
       existingScript.title = newTitle ?? null;
-      existingScript.message_id = message_id ?? existingScript.message_id;
       existingScript.voice_id = voice_id ?? existingScript.voice_id;
 
       if (cleanedVideoUrl !== undefined) {
@@ -2518,7 +2523,6 @@ export class ScriptsService implements OnModuleInit {
       script: trimmedScript,
       user_id: userId,
       isShortScript: Boolean(is_short_script),
-      message_id: message_id ?? null,
       voice_id: voice_id ?? null,
       video_url: cleanedVideoUrl ?? null,
       youtube_url: cleanedYoutubeUrl ?? null,
@@ -2689,6 +2693,7 @@ export class ScriptsService implements OnModuleInit {
     page = 1,
     limit = 10,
     q?: string,
+    category?: string,
   ): Promise<{
     items: Array<{
       id: string;
@@ -2696,8 +2701,16 @@ export class ScriptsService implements OnModuleInit {
       language: string;
       script: string;
       created_at: Date;
+      updated_at: Date;
       sentences_count: number;
       images_count: number;
+      voice_over_sentences_count: number;
+      voice_over_chunks_count: number;
+      video_url: string | null;
+      youtube_url: string | null;
+      facebook_url: string | null;
+      instagram_url: string | null;
+      tiktok_url: string | null;
     }>;
     total: number;
     page: number;
@@ -2709,6 +2722,7 @@ export class ScriptsService implements OnModuleInit {
       Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 10;
 
     const query = typeof q === 'string' ? q.trim() : '';
+    const normalizedCategory = this.normalizeScriptListCategory(category);
 
     // Performance notes:
     // 1) Always filter by user_id.
@@ -2741,9 +2755,21 @@ export class ScriptsService implements OnModuleInit {
       .andWhere('short_ref.short_id IS NULL');
 
     if (query) {
-      baseQb.andWhere("COALESCE(script.title, '') ILIKE :q", {
+      baseQb.andWhere(
+        "(COALESCE(script.title, '') ILIKE :q OR COALESCE(script.script, '') ILIKE :q)",
+        {
         q: `%${query}%`,
-      });
+        },
+      );
+    }
+
+    if (normalizedCategory === 'draft') {
+      baseQb.andWhere(
+        "COALESCE(BTRIM(script.youtube_url), '') = '' AND COALESCE(BTRIM(script.facebook_url), '') = '' AND COALESCE(BTRIM(script.instagram_url), '') = '' AND COALESCE(BTRIM(script.tiktok_url), '') = ''",
+      );
+    } else if (normalizedCategory !== 'all') {
+      const platformColumn = `script.${normalizedCategory}_url`;
+      baseQb.andWhere(`COALESCE(BTRIM(${platformColumn}), '') <> ''`);
     }
 
     const [idRows, total] = await Promise.all([
@@ -2781,6 +2807,16 @@ export class ScriptsService implements OnModuleInit {
       .addSelect('script.language', 'language')
       .addSelect('script.script', 'script')
       .addSelect('script.created_at', 'created_at')
+      .addSelect('script.updated_at', 'updated_at')
+      .addSelect('script.video_url', 'video_url')
+      .addSelect('script.youtube_url', 'youtube_url')
+      .addSelect('script.facebook_url', 'facebook_url')
+      .addSelect('script.instagram_url', 'instagram_url')
+      .addSelect('script.tiktok_url', 'tiktok_url')
+      .addSelect(
+        "CASE WHEN script.voice_over_chunks IS NULL THEN 0 WHEN jsonb_typeof(script.voice_over_chunks) = 'array' THEN jsonb_array_length(script.voice_over_chunks) ELSE 0 END",
+        'voice_over_chunks_count',
+      )
       .where('script.user_id = :userId', { userId })
       .andWhere('script.id IN (:...ids)', { ids })
       .orderBy(`CASE ${orderCases.join(' ')} ELSE ${ids.length} END`)
@@ -2791,6 +2827,13 @@ export class ScriptsService implements OnModuleInit {
         language: string;
         script: string;
         created_at: Date;
+        updated_at: Date;
+        video_url: string | null;
+        youtube_url: string | null;
+        facebook_url: string | null;
+        instagram_url: string | null;
+        tiktok_url: string | null;
+        voice_over_chunks_count: string;
       }>();
 
     const countsRaw = await this.sentenceRepository
@@ -2801,12 +2844,17 @@ export class ScriptsService implements OnModuleInit {
         'SUM(CASE WHEN sentence.image_id IS NOT NULL THEN 1 ELSE 0 END)',
         'images_count',
       )
+      .addSelect(
+        "SUM(CASE WHEN sentence.voice_over_url IS NOT NULL AND BTRIM(sentence.voice_over_url) <> '' THEN 1 ELSE 0 END)",
+        'voice_over_sentences_count',
+      )
       .where('sentence.script_id IN (:...ids)', { ids })
       .groupBy('sentence.script_id')
       .getRawMany<{
         script_id: string;
         sentences_count: string;
         images_count: string;
+        voice_over_sentences_count: string;
       }>();
 
     const countsByScriptId = new Map(
@@ -2817,6 +2865,8 @@ export class ScriptsService implements OnModuleInit {
             {
               sentences_count: Number.parseInt(r.sentences_count, 10) || 0,
               images_count: Number.parseInt(r.images_count, 10) || 0,
+              voice_over_sentences_count:
+                Number.parseInt(r.voice_over_sentences_count, 10) || 0,
             },
           ] as const,
       ),
@@ -2826,12 +2876,16 @@ export class ScriptsService implements OnModuleInit {
       const counts = countsByScriptId.get(s.id) ?? {
         sentences_count: 0,
         images_count: 0,
+        voice_over_sentences_count: 0,
       };
 
       return {
         ...s,
         sentences_count: counts.sentences_count,
         images_count: counts.images_count,
+        voice_over_sentences_count: counts.voice_over_sentences_count,
+        voice_over_chunks_count:
+          Number.parseInt(s.voice_over_chunks_count, 10) || 0,
       };
     });
 
@@ -3288,7 +3342,6 @@ export class ScriptsService implements OnModuleInit {
         locations: (source as any).locations ?? null,
         isShortScript: Boolean(source.isShortScript),
         shorts_scripts: null,
-        message_id: null,
         voice_id: null,
         video_url: null,
         youtube_url: null,

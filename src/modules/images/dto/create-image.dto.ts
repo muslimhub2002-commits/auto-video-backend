@@ -22,10 +22,6 @@ export class CreateImageDto {
   @IsNotEmpty()
   user_id: string;
 
-  @IsUUID()
-  @IsOptional()
-  message_id?: string;
-
   @IsOptional()
   @IsInt()
   @Min(0)

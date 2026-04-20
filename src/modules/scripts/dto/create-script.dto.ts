@@ -546,10 +546,6 @@ export class CreateScriptDto {
 
   @IsUUID()
   @IsOptional()
-  message_id?: string;
-
-  @IsUUID()
-  @IsOptional()
   voice_id?: string;
 
   @IsArray()
