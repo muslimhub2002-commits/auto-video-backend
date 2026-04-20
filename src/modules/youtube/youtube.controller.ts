@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   Req,
   Query,
@@ -41,6 +42,18 @@ export class YoutubeController {
 
     const url = this.youtubeService.getAuthUrl(user.id, redirectUriOverride);
     return { url };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('status')
+  async getStatus(@GetUser() user: User) {
+    return this.youtubeService.getConnectionStatus(user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('analytics/:scriptId')
+  async getAnalytics(@GetUser() user: User, @Param('scriptId') scriptId: string) {
+    return this.youtubeService.getVideoAnalytics(user, scriptId);
   }
 
   // Google redirects here after user consent.

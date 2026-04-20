@@ -93,6 +93,47 @@ export class ScriptsController {
     );
   }
 
+  @Get('video-library')
+  async findVideoLibrary(
+    @Req() req: Request,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+    @Query('title') title?: string,
+    @Query('platform') platform?: string,
+    @Query('q') q?: string,
+  ) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    const pageNum = Number.parseInt(page, 10) || 1;
+    const limitNum = Number.parseInt(limit, 10) || 10;
+    const titleQuery = typeof title === 'string' ? title : q;
+
+    return this.scriptsService.findVideoLibraryByUser(
+      user_id,
+      pageNum,
+      limitNum,
+      titleQuery,
+      platform,
+    );
+  }
+
+  @Get('video-library/:id')
+  async findVideoLibraryItem(@Req() req: Request, @Param('id') id: string) {
+    const user = (req as any).user;
+    const user_id = user?.id;
+
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    return this.scriptsService.findVideoLibraryItemByUser(id, user_id);
+  }
+
   @Get(':id')
   async findOne(@Req() req: Request, @Param('id') id: string) {
     const user = (req as any).user;

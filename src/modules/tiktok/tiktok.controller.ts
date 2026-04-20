@@ -76,6 +76,12 @@ export class TiktokController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('status')
+  async getStatus(@GetUser() user: User) {
+    return this.tiktokService.getConnectionStatus(user);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('upload')
   async upload(@GetUser() user: User, @Body() body: TiktokUploadDto) {
     return this.tiktokService.uploadVideo(user, body);

@@ -42,6 +42,31 @@ type EnsureCredentialOptions = {
   throwOnReconnect?: boolean;
 };
 
+type SharedMetaStatus = {
+  hasStoredCredentials: boolean;
+  scope: string;
+  tokenType: string | null;
+  metaTokenExpiresAt: Date | null;
+  daysUntilExpiry: number | null;
+  hasMetaAccessToken: boolean;
+  hasFacebookPageAccessToken: boolean;
+  facebookPageId: string | null;
+  instagramAccountId: string | null;
+  connectedAt: Date | null;
+  lastRefreshedAt: Date | null;
+  lastRefreshAttemptAt: Date | null;
+  lastRefreshSuccessAt: Date | null;
+  lastRefreshErrorAt: Date | null;
+  nextRefreshDueAt: Date | null;
+  requiresReconnectAt: Date | null;
+  lastError: string | null;
+  canAutoRefresh: boolean;
+  connectionStatus: MetaConnectionStatus;
+  requiresReconnect: boolean;
+  minimumRecommendedLifetimeDays: number;
+  targetRefreshWindowDays: number;
+};
+
 @Injectable()
 export class MetaCredentialsService {
   private static readonly MINIMUM_RECOMMENDED_LIFETIME_DAYS = 30;
@@ -64,6 +89,16 @@ export class MetaCredentialsService {
 
     const synced = await this.persistDerivedLifecycle(credentials);
     return this.serializeCredentialStatus(synced);
+  }
+
+  async getFacebookStatus() {
+    const sharedStatus = (await this.getSharedCredentialsStatus()) as SharedMetaStatus;
+    return this.buildPlatformStatus(sharedStatus, 'facebook');
+  }
+
+  async getInstagramStatus() {
+    const sharedStatus = (await this.getSharedCredentialsStatus()) as SharedMetaStatus;
+    return this.buildPlatformStatus(sharedStatus, 'instagram');
   }
 
   async upsertSharedCredentials(user: User, dto: UpsertMetaCredentialsDto) {
@@ -658,6 +693,67 @@ export class MetaCredentialsService {
       minimumRecommendedLifetimeDays:
         MetaCredentialsService.MINIMUM_RECOMMENDED_LIFETIME_DAYS,
       targetRefreshWindowDays: MetaCredentialsService.REFRESH_WINDOW_DAYS,
+    };
+  }
+
+  private buildPlatformStatus(
+    sharedStatus: SharedMetaStatus,
+    platform: 'facebook' | 'instagram',
+  ) {
+    const isFacebook = platform === 'facebook';
+    const platformId = isFacebook
+      ? sharedStatus.facebookPageId
+      : sharedStatus.instagramAccountId;
+    const hasPlatformAccessToken = isFacebook
+      ? sharedStatus.hasFacebookPageAccessToken
+      : sharedStatus.hasMetaAccessToken;
+
+    let connectionStatus = sharedStatus.connectionStatus;
+    let lastError = sharedStatus.lastError;
+    let requiresReconnect = sharedStatus.requiresReconnect;
+
+    if (connectionStatus !== 'not_connected' && !platformId) {
+      connectionStatus = 'attention';
+      lastError = lastError ??
+        (isFacebook
+          ? 'Missing Facebook Page ID for the shared Meta connection.'
+          : 'Missing Instagram account ID for the shared Meta connection.');
+    }
+
+    if (isFacebook && connectionStatus !== 'not_connected' && !hasPlatformAccessToken) {
+      connectionStatus = sharedStatus.canAutoRefresh
+        ? 'attention'
+        : 'reconnect_required';
+      requiresReconnect = !sharedStatus.canAutoRefresh;
+      lastError =
+        lastError ?? 'Missing Facebook Page access token for the shared Meta connection.';
+    }
+
+    const canUpload =
+      sharedStatus.hasMetaAccessToken &&
+      Boolean(platformId) &&
+      hasPlatformAccessToken &&
+      connectionStatus !== 'not_connected' &&
+      connectionStatus !== 'reconnect_required' &&
+      connectionStatus !== 'error';
+
+    return {
+      platform,
+      connectionStatus,
+      connectedAt: sharedStatus.connectedAt,
+      metaTokenExpiresAt: sharedStatus.metaTokenExpiresAt,
+      daysUntilExpiry: sharedStatus.daysUntilExpiry,
+      canAutoRefresh: sharedStatus.canAutoRefresh,
+      requiresReconnect,
+      requiresReconnectAt: sharedStatus.requiresReconnectAt,
+      nextRefreshDueAt: sharedStatus.nextRefreshDueAt,
+      lastRefreshedAt: sharedStatus.lastRefreshedAt,
+      lastError,
+      canUpload,
+      facebookPageId: sharedStatus.facebookPageId,
+      instagramAccountId: sharedStatus.instagramAccountId,
+      hasMetaAccessToken: sharedStatus.hasMetaAccessToken,
+      hasFacebookPageAccessToken: sharedStatus.hasFacebookPageAccessToken,
     };
   }
 

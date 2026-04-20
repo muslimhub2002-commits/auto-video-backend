@@ -21,6 +21,13 @@ const TIKTOK_MAX_FINAL_CHUNK_SIZE_BYTES = 128_000_000;
 const TIKTOK_MAX_VIDEO_SIZE_BYTES = 4 * 1024 * 1024 * 1024;
 const TIKTOK_MAX_CHUNK_COUNT = 1000;
 
+type TiktokConnectionStatus =
+  | 'not_connected'
+  | 'healthy'
+  | 'attention'
+  | 'reconnect_required'
+  | 'error';
+
 type TiktokCreatorInfo = {
   creator_avatar_url?: string;
   creator_username?: string;
@@ -253,6 +260,45 @@ export class TiktokService {
       redirectUriOverride ??
         this.configService.get<string>('TIKTOK_REDIRECT_URI'),
     );
+  }
+
+  private deriveConnectionState(user: User): {
+    connectionStatus: TiktokConnectionStatus;
+    requiresReconnect: boolean;
+  } {
+    const hasAccessToken = Boolean(String(user.tiktok_access_token ?? '').trim());
+    const hasRefreshToken = Boolean(
+      String(user.tiktok_refresh_token ?? '').trim(),
+    );
+
+    if (!hasAccessToken && !hasRefreshToken) {
+      return {
+        connectionStatus: 'not_connected',
+        requiresReconnect: true,
+      };
+    }
+
+    const refreshExpiryMs = user.tiktok_refresh_token_expiry?.getTime() ?? null;
+    if (refreshExpiryMs !== null && refreshExpiryMs <= Date.now()) {
+      return {
+        connectionStatus: 'reconnect_required',
+        requiresReconnect: true,
+      };
+    }
+
+    const accessExpiryMs = user.tiktok_token_expiry?.getTime() ?? null;
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    if (accessExpiryMs !== null && accessExpiryMs - Date.now() <= oneDayMs) {
+      return {
+        connectionStatus: 'attention',
+        requiresReconnect: false,
+      };
+    }
+
+    return {
+      connectionStatus: 'healthy',
+      requiresReconnect: false,
+    };
   }
 
   private async exchangeToken(params: URLSearchParams): Promise<{
@@ -495,6 +541,95 @@ export class TiktokService {
   async getCreatorInfo(user: User): Promise<TiktokCreatorInfo> {
     const { accessToken } = await this.getValidAccessToken(user);
     return this.fetchCreatorInfoWithAccessToken(accessToken);
+  }
+
+  async getConnectionStatus(user: User): Promise<{
+    platform: 'tiktok';
+    connectionStatus: TiktokConnectionStatus;
+    connectedAt: Date | null;
+    tokenExpiresAt: Date | null;
+    refreshTokenExpiresAt: Date | null;
+    creatorUsername: string | null;
+    creatorNickname: string | null;
+    privacyOptions: string[];
+    requiresReconnect: boolean;
+    canUpload: boolean;
+    lastValidatedAt: Date;
+    lastError: string | null;
+  }> {
+    const hasAccessToken = Boolean(String(user.tiktok_access_token ?? '').trim());
+    const hasRefreshToken = Boolean(
+      String(user.tiktok_refresh_token ?? '').trim(),
+    );
+    const derived = this.deriveConnectionState(user);
+
+    if (!hasAccessToken && !hasRefreshToken) {
+      return {
+        platform: 'tiktok',
+        connectionStatus: 'not_connected',
+        connectedAt: user.tiktok_connected_at ?? null,
+        tokenExpiresAt: user.tiktok_token_expiry ?? null,
+        refreshTokenExpiresAt: user.tiktok_refresh_token_expiry ?? null,
+        creatorUsername: null,
+        creatorNickname: null,
+        privacyOptions: [],
+        requiresReconnect: true,
+        canUpload: false,
+        lastValidatedAt: new Date(),
+        lastError: 'TikTok is not connected for this account.',
+      };
+    }
+
+    try {
+      const { accessToken, user: refreshedUser } = await this.getValidAccessToken(user);
+      const creatorInfo = await this.fetchCreatorInfoWithAccessToken(accessToken);
+
+      return {
+        platform: 'tiktok',
+        connectionStatus: derived.connectionStatus,
+        connectedAt: refreshedUser.tiktok_connected_at ?? null,
+        tokenExpiresAt: refreshedUser.tiktok_token_expiry ?? null,
+        refreshTokenExpiresAt:
+          refreshedUser.tiktok_refresh_token_expiry ?? null,
+        creatorUsername:
+          String(creatorInfo.creator_username ?? '').trim() || null,
+        creatorNickname:
+          String(creatorInfo.creator_nickname ?? '').trim() || null,
+        privacyOptions: Array.isArray(creatorInfo.privacy_level_options)
+          ? creatorInfo.privacy_level_options
+              .map((value) => String(value ?? '').trim())
+              .filter(Boolean)
+          : [],
+        requiresReconnect: derived.requiresReconnect,
+        canUpload: true,
+        lastValidatedAt: new Date(),
+        lastError: null,
+      };
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to validate the TikTok connection.';
+      const shouldReconnect =
+        derived.requiresReconnect ||
+        /expired|reconnect|authorization|connect first/i.test(message);
+
+      return {
+        platform: 'tiktok',
+        connectionStatus: shouldReconnect ? 'reconnect_required' : 'error',
+        connectedAt: user.tiktok_connected_at ?? null,
+        tokenExpiresAt: user.tiktok_token_expiry ?? null,
+        refreshTokenExpiresAt: user.tiktok_refresh_token_expiry ?? null,
+        creatorUsername: null,
+        creatorNickname: null,
+        privacyOptions: [],
+        requiresReconnect: shouldReconnect,
+        canUpload: false,
+        lastValidatedAt: new Date(),
+        lastError: message,
+      };
+    }
   }
 
   private async downloadVideo(

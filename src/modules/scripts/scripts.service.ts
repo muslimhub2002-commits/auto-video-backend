@@ -55,6 +55,10 @@ type ScriptListCategory =
   | 'instagram'
   | 'tiktok';
 
+type VideoLibraryPlatform = 'all' | 'youtube' | 'facebook' | 'instagram' | 'tiktok';
+
+type PublishedPlatform = Exclude<VideoLibraryPlatform, 'all'>;
+
 type NormalizedVoiceOverChunk = {
   index: number;
   text: string;
@@ -212,6 +216,59 @@ export class ScriptsService implements OnModuleInit {
         return normalized;
       default:
         return 'all';
+    }
+  }
+
+  private normalizeVideoLibraryPlatform(value?: string): VideoLibraryPlatform {
+    const normalized = String(value ?? '').trim().toLowerCase();
+
+    switch (normalized) {
+      case 'youtube':
+      case 'facebook':
+      case 'instagram':
+      case 'tiktok':
+        return normalized;
+      default:
+        return 'all';
+    }
+  }
+
+  private getPublishedPlatforms(input: {
+    youtube_url?: string | null;
+    facebook_url?: string | null;
+    instagram_url?: string | null;
+    tiktok_url?: string | null;
+  }): PublishedPlatform[] {
+    const platforms: PublishedPlatform[] = [];
+
+    if (String(input.youtube_url ?? '').trim()) {
+      platforms.push('youtube');
+    }
+    if (String(input.facebook_url ?? '').trim()) {
+      platforms.push('facebook');
+    }
+    if (String(input.instagram_url ?? '').trim()) {
+      platforms.push('instagram');
+    }
+    if (String(input.tiktok_url ?? '').trim()) {
+      platforms.push('tiktok');
+    }
+
+    return platforms;
+  }
+
+  private getVideoLibraryPlatformUrlColumn(
+    platform: Exclude<VideoLibraryPlatform, 'all'>,
+  ): 'script.youtube_url' | 'script.facebook_url' | 'script.instagram_url' | 'script.tiktok_url' {
+    switch (platform) {
+      case 'youtube':
+        return 'script.youtube_url';
+      case 'facebook':
+        return 'script.facebook_url';
+      case 'instagram':
+        return 'script.instagram_url';
+      case 'tiktok':
+        return 'script.tiktok_url';
     }
   }
 
@@ -2890,6 +2947,225 @@ export class ScriptsService implements OnModuleInit {
     });
 
     return { items, total, page: safePage, limit: safeLimit };
+  }
+
+  async findVideoLibraryByUser(
+    userId: string,
+    page = 1,
+    limit = 10,
+    q?: string,
+    platform?: string,
+  ): Promise<{
+    items: Array<{
+      id: string;
+      title: string | null;
+      language: string;
+      script: string;
+      created_at: Date;
+      updated_at: Date;
+      sentences_count: number;
+      images_count: number;
+      voice_over_sentences_count: number;
+      voice_over_chunks_count: number;
+      video_url: string | null;
+      youtube_url: string | null;
+      facebook_url: string | null;
+      instagram_url: string | null;
+      tiktok_url: string | null;
+      published_platforms: PublishedPlatform[];
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+    platform: VideoLibraryPlatform;
+  }> {
+    await this.ensureScriptsSchemaLazy();
+    const safePage = Number.isFinite(page) && page > 0 ? page : 1;
+    const safeLimit =
+      Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : 10;
+    const query = typeof q === 'string' ? q.trim() : '';
+    const normalizedPlatform = this.normalizeVideoLibraryPlatform(platform);
+
+    const baseQb = this.scriptRepository
+      .createQueryBuilder('script')
+      .leftJoin(
+        (qb) =>
+          qb
+            .subQuery()
+            .select(
+              'DISTINCT jsonb_array_elements_text(parent.shorts_scripts)',
+              'short_id',
+            )
+            .from(Script, 'parent')
+            .where('parent.user_id = :userId', { userId })
+            .andWhere('parent.shorts_scripts IS NOT NULL'),
+        'short_ref',
+        'short_ref.short_id = script.id::text',
+      )
+      .where('script.user_id = :userId', { userId })
+      .andWhere(
+        '(script.isShortScript IS NULL OR script.isShortScript = false)',
+      )
+      .andWhere('short_ref.short_id IS NULL')
+      .andWhere(
+        "(COALESCE(BTRIM(script.video_url), '') <> '' OR COALESCE(BTRIM(script.youtube_url), '') <> '' OR COALESCE(BTRIM(script.facebook_url), '') <> '' OR COALESCE(BTRIM(script.instagram_url), '') <> '' OR COALESCE(BTRIM(script.tiktok_url), '') <> '')",
+      );
+
+    if (query) {
+      baseQb.andWhere(
+        "(COALESCE(script.title, '') ILIKE :q OR COALESCE(script.script, '') ILIKE :q)",
+        {
+          q: `%${query}%`,
+        },
+      );
+    }
+
+    if (normalizedPlatform !== 'all') {
+      const platformUrlColumn =
+        this.getVideoLibraryPlatformUrlColumn(normalizedPlatform);
+      baseQb.andWhere(`COALESCE(BTRIM(${platformUrlColumn}), '') <> ''`);
+    }
+
+    const [idRows, total] = await Promise.all([
+      baseQb
+        .clone()
+        .select('script.id', 'id')
+        .orderBy('script.updated_at', 'DESC')
+        .addOrderBy('script.created_at', 'DESC')
+        .skip((safePage - 1) * safeLimit)
+        .take(safeLimit)
+        .getRawMany<{ id: string }>(),
+
+      baseQb.clone().getCount(),
+    ]);
+
+    const ids = idRows.map((r) => r.id).filter(Boolean);
+    if (ids.length === 0) {
+      return {
+        items: [],
+        total,
+        page: safePage,
+        limit: safeLimit,
+        platform: normalizedPlatform,
+      };
+    }
+
+    const orderCases: string[] = [];
+    const orderParams: Record<string, any> = {};
+    ids.forEach((id, idx) => {
+      const key = `id_${idx}`;
+      orderParams[key] = id;
+      orderCases.push(`WHEN script.id = :${key} THEN ${idx}`);
+    });
+
+    const scriptsRaw = await this.scriptRepository
+      .createQueryBuilder('script')
+      .select('script.id', 'id')
+      .addSelect('script.title', 'title')
+      .addSelect('script.language', 'language')
+      .addSelect('script.script', 'script')
+      .addSelect('script.created_at', 'created_at')
+      .addSelect('script.updated_at', 'updated_at')
+      .addSelect('script.video_url', 'video_url')
+      .addSelect('script.youtube_url', 'youtube_url')
+      .addSelect('script.facebook_url', 'facebook_url')
+      .addSelect('script.instagram_url', 'instagram_url')
+      .addSelect('script.tiktok_url', 'tiktok_url')
+      .addSelect(
+        "CASE WHEN script.voice_over_chunks IS NULL THEN 0 WHEN jsonb_typeof(script.voice_over_chunks) = 'array' THEN jsonb_array_length(script.voice_over_chunks) ELSE 0 END",
+        'voice_over_chunks_count',
+      )
+      .where('script.user_id = :userId', { userId })
+      .andWhere('script.id IN (:...ids)', { ids })
+      .orderBy(`CASE ${orderCases.join(' ')} ELSE ${ids.length} END`)
+      .setParameters(orderParams)
+      .getRawMany<{
+        id: string;
+        title: string | null;
+        language: string;
+        script: string;
+        created_at: Date;
+        updated_at: Date;
+        video_url: string | null;
+        youtube_url: string | null;
+        facebook_url: string | null;
+        instagram_url: string | null;
+        tiktok_url: string | null;
+        voice_over_chunks_count: string;
+      }>();
+
+    const countsRaw = await this.sentenceRepository
+      .createQueryBuilder('sentence')
+      .select('sentence.script_id', 'script_id')
+      .addSelect('COUNT(*)', 'sentences_count')
+      .addSelect(
+        'SUM(CASE WHEN sentence.image_id IS NOT NULL THEN 1 ELSE 0 END)',
+        'images_count',
+      )
+      .addSelect(
+        "SUM(CASE WHEN sentence.voice_over_url IS NOT NULL AND BTRIM(sentence.voice_over_url) <> '' THEN 1 ELSE 0 END)",
+        'voice_over_sentences_count',
+      )
+      .where('sentence.script_id IN (:...ids)', { ids })
+      .groupBy('sentence.script_id')
+      .getRawMany<{
+        script_id: string;
+        sentences_count: string;
+        images_count: string;
+        voice_over_sentences_count: string;
+      }>();
+
+    const countsByScriptId = new Map(
+      countsRaw.map(
+        (r) =>
+          [
+            r.script_id,
+            {
+              sentences_count: Number.parseInt(r.sentences_count, 10) || 0,
+              images_count: Number.parseInt(r.images_count, 10) || 0,
+              voice_over_sentences_count:
+                Number.parseInt(r.voice_over_sentences_count, 10) || 0,
+            },
+          ] as const,
+      ),
+    );
+
+    const items = scriptsRaw.map((scriptRow) => {
+      const counts = countsByScriptId.get(scriptRow.id) ?? {
+        sentences_count: 0,
+        images_count: 0,
+        voice_over_sentences_count: 0,
+      };
+
+      return {
+        ...scriptRow,
+        sentences_count: counts.sentences_count,
+        images_count: counts.images_count,
+        voice_over_sentences_count: counts.voice_over_sentences_count,
+        voice_over_chunks_count:
+          Number.parseInt(scriptRow.voice_over_chunks_count, 10) || 0,
+        published_platforms: this.getPublishedPlatforms(scriptRow),
+      };
+    });
+
+    return {
+      items,
+      total,
+      page: safePage,
+      limit: safeLimit,
+      platform: normalizedPlatform,
+    };
+  }
+
+  async findVideoLibraryItemByUser(
+    id: string,
+    userId: string,
+  ): Promise<Script & { published_platforms: PublishedPlatform[] }> {
+    const script = await this.findOne(id, userId);
+
+    return Object.assign(script, {
+      published_platforms: this.getPublishedPlatforms(script),
+    });
   }
 
   async findOne(id: string, userId: string): Promise<Script> {

@@ -22,6 +22,18 @@ export class MetaController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('facebook/status')
+  async getFacebookStatus() {
+    return this.metaCredentialsService.getFacebookStatus();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('instagram/status')
+  async getInstagramStatus() {
+    return this.metaCredentialsService.getInstagramStatus();
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('credentials')
   async upsertCredentials(
     @GetUser() user: User,

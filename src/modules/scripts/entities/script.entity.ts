@@ -123,8 +123,8 @@ export class Script {
   @Column({ type: 'uuid', nullable: true })
   voice_id: string | null;
 
-  // Optional generated video associated with this draft.
-  // We store the URL directly so drafts can restore the preview.
+  // Optional generated video URL for unpublished or partially published scripts.
+  // Stored to enable preview restoration across publishing states.
   @Column({ type: 'varchar', length: 2048, nullable: true })
   video_url: string | null;
 
