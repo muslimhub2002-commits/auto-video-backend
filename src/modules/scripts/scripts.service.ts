@@ -2763,6 +2763,10 @@ export class ScriptsService implements OnModuleInit {
       images_count: number;
       voice_over_sentences_count: number;
       voice_over_chunks_count: number;
+      voice: {
+        id: string;
+        voice: string;
+      } | null;
       video_url: string | null;
       youtube_url: string | null;
       facebook_url: string | null;
@@ -2859,12 +2863,15 @@ export class ScriptsService implements OnModuleInit {
 
     const scriptsRaw = await this.scriptRepository
       .createQueryBuilder('script')
+      .leftJoin('script.voice', 'voice')
       .select('script.id', 'id')
       .addSelect('script.title', 'title')
       .addSelect('script.language', 'language')
       .addSelect('script.script', 'script')
       .addSelect('script.created_at', 'created_at')
       .addSelect('script.updated_at', 'updated_at')
+      .addSelect('voice.id', 'voice_id')
+      .addSelect('voice.voice', 'voice_file')
       .addSelect('script.video_url', 'video_url')
       .addSelect('script.youtube_url', 'youtube_url')
       .addSelect('script.facebook_url', 'facebook_url')
@@ -2885,6 +2892,8 @@ export class ScriptsService implements OnModuleInit {
         script: string;
         created_at: Date;
         updated_at: Date;
+        voice_id: string | null;
+        voice_file: string | null;
         video_url: string | null;
         youtube_url: string | null;
         facebook_url: string | null;
@@ -2935,9 +2944,17 @@ export class ScriptsService implements OnModuleInit {
         images_count: 0,
         voice_over_sentences_count: 0,
       };
+      const voiceUrl = String(s.voice_file ?? '').trim();
 
       return {
         ...s,
+        voice:
+          s.voice_id && voiceUrl
+            ? {
+                id: s.voice_id,
+                voice: voiceUrl,
+              }
+            : null,
         sentences_count: counts.sentences_count,
         images_count: counts.images_count,
         voice_over_sentences_count: counts.voice_over_sentences_count,
