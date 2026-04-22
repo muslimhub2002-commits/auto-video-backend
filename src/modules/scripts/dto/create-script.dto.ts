@@ -55,6 +55,9 @@ const ALLOWED_TEXT_ANIMATION_EFFECTS = [
   'maskReveal',
   'glitchFlashHook',
   'kineticTypography',
+  'softRiseFade',
+  'centerWipeReveal',
+  'trackingSnapHook',
 ] as const;
 
 class SentenceSoundEffectInput {

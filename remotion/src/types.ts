@@ -1,5 +1,13 @@
 export type TextAnimationEffect =
-  | 'slideCutFast';
+  | 'popInBounceHook'
+  | 'slideCutFast'
+  | 'scalePunchZoom'
+  | 'maskReveal'
+  | 'glitchFlashHook'
+  | 'kineticTypography'
+  | 'softRiseFade'
+  | 'centerWipeReveal'
+  | 'trackingSnapHook';
 
 export type TextAnimationSettings = {
   presetKey?: TextAnimationEffect | 'custom';

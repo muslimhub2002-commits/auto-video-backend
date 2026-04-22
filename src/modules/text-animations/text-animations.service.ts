@@ -15,6 +15,18 @@ type TextAnimationSoundEffectRow = NonNullable<
   TextAnimation['sound_effects']
 >[number];
 
+const ALLOWED_TEXT_ANIMATION_EFFECTS: ReadonlySet<string> = new Set([
+  'popInBounceHook',
+  'slideCutFast',
+  'scalePunchZoom',
+  'maskReveal',
+  'glitchFlashHook',
+  'kineticTypography',
+  'softRiseFade',
+  'centerWipeReveal',
+  'trackingSnapHook',
+] as const);
+
 type SyncLinkedTextAnimationSentencesParams = {
   textAnimationId: string;
   settings?: Record<string, unknown>;
@@ -51,8 +63,8 @@ export class TextAnimationsService implements OnModuleInit {
         await this.dataSource.query(
           'ALTER TABLE text_animations ADD COLUMN IF NOT EXISTS sound_effects JSONB NULL',
         );
-      } catch (error: any) {
-        const message = String(error?.message ?? '');
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : '';
         if (
           message.includes('does not exist') ||
           message.includes('permission denied')
@@ -77,6 +89,16 @@ export class TextAnimationsService implements OnModuleInit {
     return value as Record<string, unknown>;
   }
 
+  private normalizeTextAnimationEffect(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim();
+    if (!ALLOWED_TEXT_ANIMATION_EFFECTS.has(normalized)) {
+      return null;
+    }
+
+    return normalized;
+  }
+
   private normalizeOptionalNumber(value: unknown): number | null {
     if (value === null || value === undefined || value === '') return null;
     const numeric = Number(value);
@@ -97,13 +119,13 @@ export class TextAnimationsService implements OnModuleInit {
     if (value === undefined) return undefined;
     if (value === null) return null;
 
-    let nextValue = value;
+    let nextValue: unknown = value;
     if (typeof value === 'string') {
       const trimmed = value.trim();
       if (!trimmed) return null;
 
       try {
-        nextValue = JSON.parse(trimmed);
+        nextValue = JSON.parse(trimmed) as unknown;
       } catch {
         return null;
       }
@@ -214,8 +236,13 @@ export class TextAnimationsService implements OnModuleInit {
     } = {};
 
     if (params.settings !== undefined) {
-      sentencePatch.text_animation_effect = 'slideCutFast';
-      sentencePatch.text_animation_settings = params.settings ?? null;
+      const normalizedSettings = params.settings
+        ? this.normalizeSettings(params.settings)
+        : null;
+      sentencePatch.text_animation_effect =
+        this.normalizeTextAnimationEffect(normalizedSettings?.presetKey) ??
+        'slideCutFast';
+      sentencePatch.text_animation_settings = normalizedSettings;
     }
 
     if (params.sound_effects !== undefined) {
@@ -336,7 +363,9 @@ export class TextAnimationsService implements OnModuleInit {
         textAnimationId: saved.id,
         settings: params.settings !== undefined ? saved.settings : undefined,
         sound_effects:
-          params.sound_effects !== undefined ? saved.sound_effects ?? null : undefined,
+          params.sound_effects !== undefined
+            ? (saved.sound_effects ?? null)
+            : undefined,
       });
 
       return saved;

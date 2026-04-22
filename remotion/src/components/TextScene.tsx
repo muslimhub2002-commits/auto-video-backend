@@ -15,7 +15,15 @@ const LoopingOffthreadVideo =
   >;
 
 const TEXT_ANIMATION_EFFECT_VALUES: readonly TextAnimationEffect[] = [
+  'popInBounceHook',
   'slideCutFast',
+  'scalePunchZoom',
+  'maskReveal',
+  'glitchFlashHook',
+  'kineticTypography',
+  'softRiseFade',
+  'centerWipeReveal',
+  'trackingSnapHook',
 ];
 
 const LEGACY_TEXT_ANIMATION_EFFECT_VALUES = [
@@ -122,12 +130,12 @@ const getDefaultTextAnimationSettings = (
 ): TextAnimationSettings => {
   const normalizedEffect = resolveLegacyTextAnimationEffect(effect) ?? 'slideCutFast';
   const baseFontSize = isShortVideo ? 13.2 : 8.6;
-  return {
+  const defaults: TextAnimationSettings = {
     presetKey: normalizedEffect,
     speed: DEFAULT_TEXT_ANIMATION_SPEED,
     horizontalAlign: 'left',
     contentAlign: 'left',
-    verticalAlign: 'top',
+    verticalAlign: 'middle',
     offsetX: -5,
     offsetY: -14,
     fontSizePercent: baseFontSize,
@@ -136,7 +144,7 @@ const getDefaultTextAnimationSettings = (
     letterSpacingEm: 0.02,
     lineHeight: 0.92,
     textColor: '#ffffff',
-    accentColor: '#22d3ee',
+    accentColor: '#ffd60a',
     strokeColor: '#0f172a',
     strokeWidthPx: 0,
     shadowOpacity: 0.34,
@@ -153,6 +161,92 @@ const getDefaultTextAnimationSettings = (
     wordDelaySeconds: DEFAULT_TEXT_ANIMATION_WORD_DELAY,
     textCase: 'uppercase',
   };
+
+  if (normalizedEffect === 'popInBounceHook') {
+    return {
+      ...defaults,
+      speed: 1,
+      offsetY: -10,
+      animationIntensity: 1.02,
+      shadowOpacity: 0.4,
+    };
+  }
+
+  if (normalizedEffect === 'scalePunchZoom') {
+    return {
+      ...defaults,
+      speed: 1.2,
+      fontWeight: 860,
+      letterSpacingEm: 0.01,
+      animationIntensity: 1.08,
+      shadowOpacity: 0.42,
+    };
+  }
+
+  if (normalizedEffect === 'maskReveal') {
+    return {
+      ...defaults,
+      speed: 0.95,
+      offsetY: -12,
+      animationIntensity: 0.82,
+      maxWidthPercent: isShortVideo ? 74 : 48,
+    };
+  }
+
+  if (normalizedEffect === 'glitchFlashHook') {
+    return {
+      ...defaults,
+      speed: 1.35,
+      animationIntensity: 1.12,
+      shadowOpacity: 0.46,
+      shadowBlurPx: 22,
+    };
+  }
+
+  if (normalizedEffect === 'kineticTypography') {
+    return {
+      ...defaults,
+      speed: 1.22,
+      fontWeight: 840,
+      letterSpacingEm: 0.05,
+      animationIntensity: 0.98,
+      maxWidthPercent: isShortVideo ? 76 : 50,
+    };
+  }
+
+  if (normalizedEffect === 'softRiseFade') {
+    return {
+      ...defaults,
+      speed: 0.9,
+      animationIntensity: 0.72,
+      shadowOpacity: 0.26,
+      shadowBlurPx: 24,
+    };
+  }
+
+  if (normalizedEffect === 'centerWipeReveal') {
+    return {
+      ...defaults,
+      speed: 1,
+      horizontalAlign: 'center',
+      contentAlign: 'center',
+      offsetX: 0,
+      animationIntensity: 0.86,
+    };
+  }
+
+  if (normalizedEffect === 'trackingSnapHook') {
+    return {
+      ...defaults,
+      speed: 1.18,
+      fontWeight: 860,
+      letterSpacingEm: 0.08,
+      animationIntensity: 0.94,
+      maxWidthPercent: isShortVideo ? 78 : 52,
+    };
+  }
+
+  return defaults;
 };
 
 const normalizeTextAnimationSettings = (
@@ -446,6 +540,26 @@ const buildImageLookFilter = (settings: ReturnType<typeof normalizeImageFilterSe
     .join(' ') || undefined;
 };
 
+const buildAnimatedTextFilter = (params: {
+  blurPx?: number;
+  brightness?: number;
+  contrast?: number;
+}) => {
+  return [
+    (params.blurPx ?? 0) > 0.001
+      ? `blur(${(params.blurPx ?? 0).toFixed(2)}px)`
+      : null,
+    Math.abs((params.brightness ?? 1) - 1) > 0.001
+      ? `brightness(${(params.brightness ?? 1).toFixed(3)})`
+      : null,
+    Math.abs((params.contrast ?? 1) - 1) > 0.001
+      ? `contrast(${(params.contrast ?? 1).toFixed(3)})`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' ') || undefined;
+};
+
 const getAnimatedBlockStyle = (params: {
   effect: TextAnimationEffect;
   frame: number;
@@ -458,9 +572,244 @@ const getAnimatedBlockStyle = (params: {
     extrapolateRight: 'clamp',
     easing: Easing.bezier(0.12, 0.88, 0.24, 1),
   });
-  const leadDistance = 20 + params.animationIntensity * 8;
-  const skewStart = -7 - params.animationIntensity * 4;
-  const blurStart = 8 + params.animationIntensity * 8;
+  const normalizedIntensity = clampNumber(params.animationIntensity, 0, 1.2);
+
+  if (params.effect === 'popInBounceHook') {
+    const startScale = 0.58 - normalizedIntensity * 0.06;
+    const overshootScale = 1.08 + normalizedIntensity * 0.08;
+    const settleDip = 0.97 - normalizedIntensity * 0.015;
+    const translateYPercent = interpolate(
+      easedProgress,
+      [0, 0.58, 0.82, 1],
+      [18 + normalizedIntensity * 8, -6 - normalizedIntensity * 2, 1.5, 0],
+      {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      },
+    );
+    const scale = interpolate(
+      easedProgress,
+      [0, 0.58, 0.82, 1],
+      [startScale, overshootScale, settleDip, 1],
+      {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      },
+    );
+    const blurPx = interpolate(easedProgress, [0, 0.38, 1], [12 + normalizedIntensity * 8, 1.2, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+
+    return {
+      opacity: interpolate(easedProgress, [0, 0.16, 1], [0, 1, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      }),
+      transform: `translate3d(0, ${translateYPercent.toFixed(2)}%, 0) scale(${scale.toFixed(4)})`,
+      filter: buildAnimatedTextFilter({ blurPx }),
+    };
+  }
+
+  if (params.effect === 'scalePunchZoom') {
+    const scale = interpolate(
+      easedProgress,
+      [0, 0.48, 0.78, 1],
+      [0.82 - normalizedIntensity * 0.05, 1.14 + normalizedIntensity * 0.06, 0.985, 1],
+      {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      },
+    );
+    const rotateDeg = interpolate(easedProgress, [0, 0.52, 1], [3.6 + normalizedIntensity * 2.2, -1.4, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const blurPx = interpolate(easedProgress, [0, 0.34, 1], [10 + normalizedIntensity * 6, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+
+    return {
+      opacity: interpolate(easedProgress, [0, 0.14, 1], [0, 1, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      }),
+      transform: `scale(${scale.toFixed(4)}) rotate(${rotateDeg.toFixed(2)}deg)`,
+      filter: buildAnimatedTextFilter({
+        blurPx,
+        contrast: 1 + normalizedIntensity * 0.06,
+      }),
+    };
+  }
+
+  if (params.effect === 'maskReveal') {
+    const translateYPercent = interpolate(easedProgress, [0, 1], [14 + normalizedIntensity * 6, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const clipTop = interpolate(easedProgress, [0, 1], [100, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const blurPx = interpolate(easedProgress, [0, 0.42, 1], [8 + normalizedIntensity * 6, 0.8, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+
+    return {
+      opacity: interpolate(easedProgress, [0, 0.18, 1], [0, 1, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      }),
+      transform: `translate3d(0, ${translateYPercent.toFixed(2)}%, 0)`,
+      clipPath: `inset(${clipTop.toFixed(2)}% 0 0 0)`,
+      filter: buildAnimatedTextFilter({ blurPx }),
+    };
+  }
+
+  if (params.effect === 'glitchFlashHook') {
+    const decay = Math.pow(1 - easedProgress, 1.1);
+    const jitterX = Math.sin(progress * 42 * Math.PI) * (8 + normalizedIntensity * 10) * decay;
+    const jitterY = Math.cos(progress * 33 * Math.PI) * (2.4 + normalizedIntensity * 4) * decay;
+    const skewDeg = Math.sin(progress * 19 * Math.PI) * (5 + normalizedIntensity * 4) * decay;
+    const flash = Math.max(0, Math.sin(progress * 7 * Math.PI)) * decay;
+    const blurPx = interpolate(easedProgress, [0, 0.32, 1], [6 + normalizedIntensity * 4, 1.4, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+
+    return {
+      opacity: interpolate(easedProgress, [0, 0.1, 1], [0, 1, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      }),
+      transform: `translate3d(${jitterX.toFixed(2)}%, ${jitterY.toFixed(2)}%, 0) skewX(${skewDeg.toFixed(2)}deg)`,
+      filter: buildAnimatedTextFilter({
+        blurPx,
+        brightness: 1 + flash * (0.45 + normalizedIntensity * 0.2),
+        contrast: 1 + flash * 0.18,
+      }),
+    };
+  }
+
+  if (params.effect === 'kineticTypography') {
+    const translateXPercent = interpolate(easedProgress, [0, 1], [-12 - normalizedIntensity * 8, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const skewDeg = interpolate(easedProgress, [0, 0.72, 1], [-12 - normalizedIntensity * 6, 2.2, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const scaleX = interpolate(easedProgress, [0, 0.64, 1], [1.2 + normalizedIntensity * 0.08, 0.98, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const letterSpacingEm = interpolate(easedProgress, [0, 0.68, 1], [0.16 + normalizedIntensity * 0.08, 0.01, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const blurPx = interpolate(easedProgress, [0, 0.34, 1], [7 + normalizedIntensity * 5, 0.8, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+
+    return {
+      opacity: interpolate(easedProgress, [0, 0.14, 1], [0, 1, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      }),
+      transform: `translate3d(${translateXPercent.toFixed(2)}%, 0, 0) skewX(${skewDeg.toFixed(2)}deg) scale(${scaleX.toFixed(4)}, 1)`,
+      letterSpacing: `${letterSpacingEm.toFixed(3)}em`,
+      filter: buildAnimatedTextFilter({ blurPx }),
+    };
+  }
+
+  if (params.effect === 'softRiseFade') {
+    const translateYPercent = interpolate(easedProgress, [0, 1], [10 + normalizedIntensity * 6, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const scale = interpolate(easedProgress, [0, 1], [0.97, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const blurPx = interpolate(easedProgress, [0, 0.5, 1], [14 + normalizedIntensity * 6, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+
+    return {
+      opacity: interpolate(easedProgress, [0, 0.26, 1], [0, 1, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      }),
+      transform: `translate3d(0, ${translateYPercent.toFixed(2)}%, 0) scale(${scale.toFixed(4)})`,
+      filter: buildAnimatedTextFilter({ blurPx }),
+    };
+  }
+
+  if (params.effect === 'centerWipeReveal') {
+    const clipSide = interpolate(easedProgress, [0, 1], [50, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const scale = interpolate(easedProgress, [0, 1], [0.92 - normalizedIntensity * 0.02, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const blurPx = interpolate(easedProgress, [0, 0.42, 1], [9 + normalizedIntensity * 4, 0.7, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+
+    return {
+      opacity: interpolate(easedProgress, [0, 0.18, 1], [0, 1, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      }),
+      transform: `scale(${scale.toFixed(4)})`,
+      clipPath: `inset(0 ${clipSide.toFixed(2)}% 0 ${clipSide.toFixed(2)}%)`,
+      filter: buildAnimatedTextFilter({ blurPx }),
+    };
+  }
+
+  if (params.effect === 'trackingSnapHook') {
+    const scaleX = interpolate(easedProgress, [0, 0.74, 1], [0.82 - normalizedIntensity * 0.06, 1.03, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const translateYPercent = interpolate(easedProgress, [0, 1], [4 + normalizedIntensity * 3, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const letterSpacingEm = interpolate(easedProgress, [0, 0.72, 1], [0.24 + normalizedIntensity * 0.08, 0.02, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+    const blurPx = interpolate(easedProgress, [0, 0.36, 1], [10 + normalizedIntensity * 4, 0.8, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    });
+
+    return {
+      opacity: interpolate(easedProgress, [0, 0.14, 1], [0, 1, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      }),
+      transform: `translate3d(0, ${translateYPercent.toFixed(2)}%, 0) scale(${scaleX.toFixed(4)}, 1)`,
+      letterSpacing: `${letterSpacingEm.toFixed(3)}em`,
+      filter: buildAnimatedTextFilter({
+        blurPx,
+        contrast: 1 + normalizedIntensity * 0.04,
+      }),
+    };
+  }
+
+  const leadDistance = 20 + normalizedIntensity * 8;
+  const skewStart = -7 - normalizedIntensity * 4;
+  const blurStart = 8 + normalizedIntensity * 8;
   const translateXPercent = interpolate(easedProgress, [0, 1], [-leadDistance, 0], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -485,7 +834,7 @@ const getAnimatedBlockStyle = (params: {
     }),
     transform: `translate3d(${translateXPercent.toFixed(2)}%, 0, 0) skewX(${skew.toFixed(2)}deg)`,
     clipPath: `inset(0 ${clipRight.toFixed(2)}% 0 0)`,
-    filter: `blur(${blurPx.toFixed(2)}px)`,
+    filter: buildAnimatedTextFilter({ blurPx }),
   };
 };
 

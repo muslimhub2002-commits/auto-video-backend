@@ -99,6 +99,9 @@ const ALLOWED_TEXT_ANIMATION_EFFECTS = new Set([
   'maskReveal',
   'glitchFlashHook',
   'kineticTypography',
+  'softRiseFade',
+  'centerWipeReveal',
+  'trackingSnapHook',
 ] as const);
 
 @Injectable()
@@ -149,7 +152,7 @@ export class ScriptsService implements OnModuleInit {
       return null;
     }
 
-    return 'slideCutFast';
+    return normalized;
   }
 
   private normalizeTextAnimationSettingsObject(

@@ -1,4 +1,14 @@
-export const TEXT_ANIMATION_EFFECT_VALUES = ['slideCutFast'] as const;
+export const TEXT_ANIMATION_EFFECT_VALUES = [
+  'popInBounceHook',
+  'slideCutFast',
+  'scalePunchZoom',
+  'maskReveal',
+  'glitchFlashHook',
+  'kineticTypography',
+  'softRiseFade',
+  'centerWipeReveal',
+  'trackingSnapHook',
+] as const;
 
 export const TEXT_BACKGROUND_MODE_VALUES = [
   'inheritImage',
