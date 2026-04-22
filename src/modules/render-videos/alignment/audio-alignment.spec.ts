@@ -192,4 +192,38 @@ describe('alignByWordCount', () => {
     expect(timings[2].startSeconds).toBeCloseTo(1.5, 5);
     expect(timings[2].words?.[0].startSeconds).toBeCloseTo(1.5, 5);
   });
+
+  it('ignores bracketed cues and underscores when aligning sentence words', async () => {
+    mockedIsReplicateWhisperXEnabled.mockReturnValue(true);
+    mockedIsAssemblyAiEnabled.mockReturnValue(false);
+    mockedAlignWithReplicateWhisperX.mockResolvedValue([
+      { text: 'Hello', startSeconds: 0, endSeconds: 0.4 },
+      { text: 'world', startSeconds: 0.4, endSeconds: 0.9 },
+    ]);
+
+    const timings = await alignAudioToSentences({
+      openai: null,
+      audioPath: 'unused.mp3',
+      sentences: [{ text: '[whisper] Hello _world_' }],
+      audioDurationSeconds: 1,
+      withTimeout: async (promise) => promise,
+      disableRenderer: true,
+    });
+
+    expect(timings[0].text).toBe('[whisper] Hello _world_');
+    expect(timings[0].words?.map((word) => word.text)).toEqual([
+      'Hello',
+      'world',
+    ]);
+    expect(timings[0].startSeconds).toBeCloseTo(0, 5);
+    expect(timings[0].endSeconds).toBeCloseTo(1, 5);
+    expect(timings[0].words?.[1].endSeconds).toBeCloseTo(0.9, 5);
+  });
+
+  it('ignores bracketed cues and underscores in synthetic fallback timings', () => {
+    const [timing] = alignByWordCount([{ text: '[pause] Hello _world_' }], 2);
+
+    expect(timing.text).toBe('[pause] Hello _world_');
+    expect(timing.words?.map((word) => word.text)).toEqual(['Hello', 'world']);
+  });
 });

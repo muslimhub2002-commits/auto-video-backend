@@ -295,12 +295,18 @@ const normalizeWord = (raw: string) =>
     .toLowerCase()
     .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
 
+const sanitizeSentenceTextForAlignment = (text: string) =>
+  String(text ?? '')
+    .replace(/\[[^\]]*\]/gu, ' ')
+    .replace(/_/gu, '')
+    .trim();
+
 type IndexedWordTiming = WordTiming & {
   token: string;
 };
 
 const splitSubtitleWords = (text: string) =>
-  String(text ?? '')
+  sanitizeSentenceTextForAlignment(text)
     .trim()
     .split(/\s+/u)
     .filter(Boolean);
@@ -569,11 +575,11 @@ export const alignByWordCount = (
   audioDurationSeconds: number,
 ): SentenceTiming[] => {
   const T = Math.max(1, audioDurationSeconds || 1);
-  const cleaned = sentences.map((s) => (s.text || '').trim());
+  const cleaned = sentences.map((s) => String(s.text ?? '').trim());
 
   const rawWeights = cleaned.map((text) => {
     if (!text) return 1;
-    const words = text.split(/\s+/).filter(Boolean);
+    const words = splitSubtitleWords(text);
     return Math.max(1, words.length);
   });
 
