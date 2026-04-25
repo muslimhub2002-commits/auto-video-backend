@@ -21,7 +21,11 @@ export class TiktokController {
 
   @UseGuards(JwtAuthGuard)
   @Get('auth-url')
-  async getAuthUrl(@Req() req: Request, @GetUser() user: User) {
+  async getAuthUrl(
+    @Req() req: Request,
+    @GetUser() user: User,
+    @Query('socialAccountId') socialAccountId?: string,
+  ) {
     const host = req.get('host');
     const hostname = (host ?? '').split(':')[0].replace(/^\[|\]$/g, '');
     const isLocalhost =
@@ -33,7 +37,11 @@ export class TiktokController {
         ? `${req.protocol}://${host}/tiktok/oauth2callback`
         : undefined;
 
-    const url = await this.tiktokService.getAuthUrl(user, redirectUriOverride);
+    const url = await this.tiktokService.getAuthUrl(
+      user,
+      redirectUriOverride,
+      socialAccountId,
+    );
     return { url };
   }
 
@@ -71,8 +79,11 @@ export class TiktokController {
 
   @UseGuards(JwtAuthGuard)
   @Get('creator-info')
-  async getCreatorInfo(@GetUser() user: User) {
-    return this.tiktokService.getCreatorInfo(user);
+  async getCreatorInfo(
+    @GetUser() user: User,
+    @Query('socialAccountId') socialAccountId?: string,
+  ) {
+    return this.tiktokService.getCreatorInfo(user, socialAccountId);
   }
 
   @UseGuards(JwtAuthGuard)

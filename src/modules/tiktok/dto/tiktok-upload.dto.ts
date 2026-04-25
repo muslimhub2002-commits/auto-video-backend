@@ -12,6 +12,10 @@ export class TiktokUploadDto {
   @IsUrl({ require_tld: false })
   videoUrl!: string;
 
+  @IsUUID()
+  @IsOptional()
+  socialAccountId?: string;
+
   @IsString()
   @IsOptional()
   @MaxLength(2200)

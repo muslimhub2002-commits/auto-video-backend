@@ -6,11 +6,13 @@ import { MetaCredentialsService } from './meta-credentials.service';
 import { MetaService } from './meta.service';
 import { ScriptsModule } from '../scripts/scripts.module';
 import { MetaCredential } from './entities/meta-credential.entity';
+import { SocialAccountsModule } from '../social-accounts/social-accounts.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([MetaCredential]),
     ScriptsModule,
+    SocialAccountsModule,
   ],
   controllers: [MetaController],
   providers: [

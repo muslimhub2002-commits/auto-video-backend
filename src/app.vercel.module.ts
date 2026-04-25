@@ -17,6 +17,7 @@ import { YoutubeModule } from './modules/youtube/youtube.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { TiktokModule } from './modules/tiktok/tiktok.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { SocialAccountsModule } from './modules/social-accounts/social-accounts.module';
 
 /**
  * Vercel deployment module.
@@ -60,6 +61,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     BackgroundSoundtracksModule,
     SoundEffectsModule,
     ScriptsModule,
+    SocialAccountsModule,
     YoutubeModule,
     MetaModule,
     TiktokModule,

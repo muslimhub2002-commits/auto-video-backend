@@ -373,7 +373,7 @@ export const buildTimeline = (params: {
               .filter(Boolean),
           }
         : {}),
-      ...(s.visualEffect != null && (isImageScene || isTextScene)
+      ...(s.visualEffect != null && (isImageScene || isTextScene || wantsSentenceVideo)
         ? { visualEffect: s.visualEffect }
         : {}),
       ...(isTextScene && s.textAnimationEffect != null

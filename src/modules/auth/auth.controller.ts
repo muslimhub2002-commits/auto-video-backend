@@ -14,6 +14,7 @@ import { GoogleExchangeDto } from './dto/google-exchange.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { GetUser } from './decorators/get-user.decorator';
 import { User } from '../users/entities/user.entity';
+import { sanitizeAuthUser } from './utils/sanitize-auth-user';
 
 @Controller('auth')
 export class AuthController {
@@ -40,7 +41,6 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getProfile(@GetUser() user: User) {
-    const { password, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    return sanitizeAuthUser(user);
   }
 }

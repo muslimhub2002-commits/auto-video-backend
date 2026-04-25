@@ -46,6 +46,10 @@ export class YoutubeUploadDto {
   @IsUrl({ require_tld: false })
   videoUrl: string;
 
+  @IsUUID()
+  @IsOptional()
+  socialAccountId?: string;
+
   // Optional: which script should receive the youtube_url after upload succeeds.
   @IsUUID()
   @IsOptional()

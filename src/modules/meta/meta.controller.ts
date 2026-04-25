@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { User } from '../users/entities/user.entity';
@@ -17,7 +17,17 @@ export class MetaController {
 
   @UseGuards(JwtAuthGuard)
   @Get('credentials')
-  async getCredentials() {
+  async getCredentials(
+    @GetUser() user: User,
+    @Query('socialAccountId') socialAccountId?: string,
+  ) {
+    if (socialAccountId?.trim()) {
+      return this.metaCredentialsService.getManagedCredentialsStatus(
+        user,
+        socialAccountId,
+      );
+    }
+
     return this.metaCredentialsService.getSharedCredentialsStatus();
   }
 
@@ -44,7 +54,17 @@ export class MetaController {
 
   @UseGuards(JwtAuthGuard)
   @Post('credentials/refresh')
-  async refreshCredentials(@GetUser() user: User) {
+  async refreshCredentials(
+    @GetUser() user: User,
+    @Query('socialAccountId') socialAccountId?: string,
+  ) {
+    if (socialAccountId?.trim()) {
+      return this.metaCredentialsService.refreshManagedCredentials(
+        user,
+        socialAccountId,
+      );
+    }
+
     return this.metaCredentialsService.refreshSharedCredentials(user);
   }
 
@@ -53,7 +73,16 @@ export class MetaController {
   async exchangeToken(
     @GetUser() user: User,
     @Body() body: ExchangeMetaTokenDto,
+    @Query('socialAccountId') socialAccountId?: string,
   ) {
+    if (socialAccountId?.trim()) {
+      return this.metaCredentialsService.exchangeManagedToken(
+        user,
+        socialAccountId,
+        body,
+      );
+    }
+
     return this.metaCredentialsService.exchangeToken(user, body);
   }
 

@@ -8,6 +8,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ScriptsService } from '../scripts/scripts.service';
 import { User } from '../users/entities/user.entity';
+import type { UserMetaAccount } from '../users/entities/social-account-storage.types';
+import { SocialAccountsService } from '../social-accounts/social-accounts.service';
 import { ExchangeMetaTokenDto } from './dto/exchange-meta-token.dto';
 import { MetaUploadDto } from './dto/meta-upload.dto';
 import { UpsertMetaCredentialsDto } from './dto/upsert-meta-credentials.dto';
@@ -77,6 +79,16 @@ type MetaUploadResponse = {
   };
 };
 
+type ResolvedMetaUploadCredentials = {
+  appId: string | null;
+  metaAccessToken: string;
+  metaTokenType: string | null;
+  metaTokenExpiresAt: Date | null;
+  facebookPageAccessToken: string | null;
+  facebookPageId: string | null;
+  instagramAccountId: string | null;
+};
+
 @Injectable()
 export class MetaService {
   constructor(
@@ -85,7 +97,87 @@ export class MetaService {
     private readonly metaCredentialRepository: Repository<MetaCredential>,
     private readonly scriptsService: ScriptsService,
     private readonly metaCredentialsService: MetaCredentialsService,
+    private readonly socialAccountsService: SocialAccountsService,
   ) {}
+
+  private parseOptionalDate(value?: string | null): Date | null {
+    const trimmed = String(value ?? '').trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const parsed = new Date(trimmed);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+
+  private firstConfiguredValue(...values: Array<string | null | undefined>) {
+    for (const value of values) {
+      const trimmed = String(value ?? '').trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+
+    return null;
+  }
+
+  private buildManagedMetaUploadCredentials(
+    account: UserMetaAccount,
+  ): ResolvedMetaUploadCredentials {
+    const metaAccessToken = this.firstConfiguredValue(
+      account.tokens.metaAccessToken,
+      account.tokens.facebookPageAccessToken,
+      account.credentials.instagramPageAccessToken,
+    );
+
+    if (!metaAccessToken) {
+      throw new BadRequestException(
+        `Saved Meta account "${account.label}" is missing a publish access token. Update it in Social Accounts before uploading.`,
+      );
+    }
+
+    return {
+      appId: this.firstConfiguredValue(account.credentials.appId),
+      metaAccessToken,
+      metaTokenType: this.firstConfiguredValue(account.tokens.tokenType),
+      metaTokenExpiresAt: this.parseOptionalDate(account.tokens.tokenExpiresAt),
+      facebookPageAccessToken: this.firstConfiguredValue(
+        account.tokens.facebookPageAccessToken,
+        account.credentials.instagramPageAccessToken,
+        account.tokens.metaAccessToken,
+      ),
+      facebookPageId: this.firstConfiguredValue(account.credentials.facebookPageId),
+      instagramAccountId: this.firstConfiguredValue(
+        account.credentials.instagramAccountId,
+      ),
+    };
+  }
+
+  private async resolveUploadCredentials(
+    user: User,
+    socialAccountId?: string | null,
+  ): Promise<ResolvedMetaUploadCredentials> {
+    const runtime = await this.socialAccountsService.getMetaAccountRuntimeContext(
+      user.id,
+      socialAccountId,
+    );
+
+    if (runtime) {
+      return this.buildManagedMetaUploadCredentials(runtime.account);
+    }
+
+    const sharedCredentials =
+      await this.metaCredentialsService.getActiveMetaCredentials();
+    return {
+      appId: this.firstConfiguredValue(this.getOptionalConfig('META_APP_ID')),
+      metaAccessToken: sharedCredentials.metaAccessToken,
+      metaTokenType: sharedCredentials.metaTokenType,
+      metaTokenExpiresAt: sharedCredentials.metaTokenExpiresAt,
+      facebookPageAccessToken: sharedCredentials.facebookPageAccessToken,
+      facebookPageId: sharedCredentials.facebookPageId,
+      instagramAccountId: sharedCredentials.instagramAccountId,
+    };
+  }
 
   async getSharedCredentialsStatus() {
     const credentials = await this.getOrCreateSharedCredentials();
@@ -253,7 +345,10 @@ export class MetaService {
     dto: MetaUploadDto,
   ): Promise<MetaUploadResponse> {
     assertVideoUrlIsPubliclyReachable(dto.videoUrl);
-    await this.metaCredentialsService.getActiveMetaCredentials();
+    const activeCredentials = await this.resolveUploadCredentials(
+      user,
+      dto.socialAccountId,
+    );
 
     const requestedPlatforms = Array.from(new Set(dto.platforms ?? [])).filter(
       Boolean,
@@ -271,7 +366,7 @@ export class MetaService {
     for (const platform of requestedPlatforms) {
       if (platform === 'facebook') {
         try {
-          const published = await this.publishToFacebook(dto);
+          const published = await this.publishToFacebook(dto, activeCredentials);
           facebookUrl = published.url;
           results.facebook = {
             success: true,
@@ -289,7 +384,7 @@ export class MetaService {
 
       if (platform === 'instagram') {
         try {
-          const published = await this.publishToInstagram(dto);
+          const published = await this.publishToInstagram(dto, activeCredentials);
           instagramUrl = published.url;
           results.instagram = {
             success: true,
@@ -332,15 +427,21 @@ export class MetaService {
 
   private async publishToFacebook(
     dto: MetaUploadDto,
+    activeCredentials: ResolvedMetaUploadCredentials,
   ): Promise<{ id: string; url: string }> {
     if (dto.isShortVideo) {
-      return this.publishFacebookReel(dto);
+      return this.publishFacebookReel(dto, activeCredentials);
     }
 
-    const activeCredentials =
-      await this.metaCredentialsService.getActiveMetaCredentials();
-    const accessToken = activeCredentials.metaAccessToken;
-    const appId = this.getRequiredConfig('META_APP_ID');
+    const appId = this.firstConfiguredValue(
+      activeCredentials.appId,
+      this.getOptionalConfig('META_APP_ID'),
+    );
+    if (!appId) {
+      throw new BadRequestException(
+        'Missing Meta App ID for the selected publishing credentials.',
+      );
+    }
     const pageId = activeCredentials.facebookPageId;
     if (!pageId) {
       throw new BadRequestException(
@@ -357,6 +458,15 @@ export class MetaService {
         'Missing Facebook Page access token for the shared Meta connection.',
       );
     }
+    const uploadAccessToken = this.firstConfiguredValue(
+      activeCredentials.facebookPageAccessToken,
+      activeCredentials.metaAccessToken,
+    );
+    if (!uploadAccessToken) {
+      throw new BadRequestException(
+        'Missing Meta access token for Facebook upload session creation.',
+      );
+    }
 
     const session = await this.fetchJson<{
       id?: string;
@@ -366,7 +476,7 @@ export class MetaService {
           file_name: videoFile.fileName,
           file_length: String(videoFile.size),
           file_type: videoFile.mimeType,
-          access_token: accessToken,
+          access_token: uploadAccessToken,
         },
       ).toString()}`,
       { method: 'POST' },
@@ -385,7 +495,7 @@ export class MetaService {
       {
         method: 'POST',
         headers: {
-          Authorization: `OAuth ${accessToken}`,
+          Authorization: `OAuth ${uploadAccessToken}`,
           file_offset: '0',
           'Content-Type': 'application/octet-stream',
         },
@@ -449,9 +559,8 @@ export class MetaService {
 
   private async publishFacebookReel(
     dto: MetaUploadDto,
+    activeCredentials: ResolvedMetaUploadCredentials,
   ): Promise<{ id: string; url: string }> {
-    const activeCredentials =
-      await this.metaCredentialsService.getActiveMetaCredentials();
     const pageId = activeCredentials.facebookPageId;
     if (!pageId) {
       throw new BadRequestException(
@@ -631,10 +740,17 @@ export class MetaService {
 
   private async publishToInstagram(
     dto: MetaUploadDto,
+    activeCredentials: ResolvedMetaUploadCredentials,
   ): Promise<{ id: string; url: string }> {
-    const activeCredentials =
-      await this.metaCredentialsService.getActiveMetaCredentials();
-    const accessToken = activeCredentials.metaAccessToken;
+    const accessToken = this.firstConfiguredValue(
+      activeCredentials.facebookPageAccessToken,
+      activeCredentials.metaAccessToken,
+    );
+    if (!accessToken) {
+      throw new BadRequestException(
+        'Missing Meta or Facebook Page access token for Instagram publishing.',
+      );
+    }
     const instagramAccountId = activeCredentials.instagramAccountId;
     if (!instagramAccountId) {
       throw new BadRequestException(

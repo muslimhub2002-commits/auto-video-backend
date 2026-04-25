@@ -39,6 +39,7 @@ import { SoundEditPreset } from './modules/sound-effects/entities/sound-edit-pre
 import { TextAnimationsModule } from './modules/text-animations/text-animations.module';
 import { OverlaysModule } from './modules/overlays/overlays.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { SocialAccountsModule } from './modules/social-accounts/social-accounts.module';
 
 @Module({
   imports: [
@@ -106,6 +107,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     BackgroundSoundtracksModule,
     SoundEffectsModule,
     ScriptsModule,
+    SocialAccountsModule,
     YoutubeModule,
     MetaModule,
     TiktokModule,

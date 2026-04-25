@@ -385,9 +385,15 @@ export const Scene: React.FC<{
       .filter(Boolean)
       .join(' ');
 
+    const mediaLookFilter = isTextScene || isOverlayScene
+      ? undefined
+      : lookFilter || undefined;
+
     const wrapperFilter = isTextScene || isOverlayScene
       ? undefined
-      : [suspenseFilter, lookFilter].filter(Boolean).join(' ') || undefined;
+      : [suspenseFilter, scene.videoSrc ? null : mediaLookFilter]
+          .filter(Boolean)
+          .join(' ') || undefined;
 
     // Subtle film flicker for the suspense opening.
     const suspenseFlicker = isSuspenseOpening
@@ -875,7 +881,12 @@ export const Scene: React.FC<{
         src={resolveMediaSrc(scene.videoSrc)}
         muted
         pauseWhenBuffering
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          filter: mediaLookFilter,
+        }}
       />
     ) : resolvedPrimaryImageSrc ? (
       <>

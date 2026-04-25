@@ -6,7 +6,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import type {
+  UserMetaAccount,
+  UserMetaAccountSection,
+} from '../users/entities/social-account-storage.types';
 import { User } from '../users/entities/user.entity';
+import { SocialAccountsService } from '../social-accounts/social-accounts.service';
 import { ExchangeMetaTokenDto } from './dto/exchange-meta-token.dto';
 import { UpsertMetaCredentialsDto } from './dto/upsert-meta-credentials.dto';
 import { MetaCredential } from './entities/meta-credential.entity';
@@ -67,6 +72,12 @@ type SharedMetaStatus = {
   targetRefreshWindowDays: number;
 };
 
+type ManagedMetaAccountContext = {
+  user: User;
+  section: UserMetaAccountSection;
+  account: UserMetaAccount;
+};
+
 @Injectable()
 export class MetaCredentialsService {
   private static readonly MINIMUM_RECOMMENDED_LIFETIME_DAYS = 30;
@@ -79,7 +90,123 @@ export class MetaCredentialsService {
     private readonly configService: ConfigService,
     @InjectRepository(MetaCredential)
     private readonly metaCredentialRepository: Repository<MetaCredential>,
+    private readonly socialAccountsService: SocialAccountsService,
   ) {}
+
+  async getManagedCredentialsStatus(
+    user: User,
+    socialAccountId: string,
+  ) {
+    const context = await this.getManagedAccountContext(user.id, socialAccountId);
+    return this.serializeManagedCredentialStatus(context.account);
+  }
+
+  async refreshManagedCredentials(user: User, socialAccountId: string) {
+    const context = await this.getManagedAccountContext(user.id, socialAccountId);
+    const account = context.account;
+
+    if (!this.normalizeNullableString(account.tokens.metaAccessToken)) {
+      throw new BadRequestException(
+        `No stored Meta access token is available to refresh for ${account.label}.`,
+      );
+    }
+
+    const refreshed = await this.refreshManagedCredential(context, {
+      force: true,
+      reason: 'manual',
+    });
+
+    return {
+      refreshed: true,
+      updatedByUserId: user.id,
+      status: this.serializeManagedCredentialStatus(refreshed.account),
+    };
+  }
+
+  async exchangeManagedToken(
+    user: User,
+    socialAccountId: string,
+    dto: ExchangeMetaTokenDto,
+  ) {
+    const context = await this.getManagedAccountContext(user.id, socialAccountId);
+    const appId = this.getManagedAppId(context.account);
+    const appSecret = this.getManagedAppSecret(context.account);
+    const version = this.getApiVersion();
+
+    const shortLivedToken = String(dto.shortLivedToken ?? '').trim();
+    if (!shortLivedToken) {
+      throw new BadRequestException('shortLivedToken is required.');
+    }
+
+    const result = await this.fetchJson<{
+      access_token?: string;
+      token_type?: string;
+      expires_in?: number;
+    }>(
+      `https://graph.facebook.com/${version}/oauth/access_token?${new URLSearchParams(
+        {
+          grant_type: 'fb_exchange_token',
+          client_id: appId,
+          client_secret: appSecret,
+          fb_exchange_token: shortLivedToken,
+        },
+      ).toString()}`,
+      { method: 'GET' },
+      `Failed to exchange the Meta access token for ${context.account.label}. Verify the short-lived token is valid and not already expired.`,
+    );
+
+    const longLivedToken = this.normalizeNullableString(result.access_token);
+    if (!longLivedToken) {
+      throw new BadRequestException(
+        'Meta did not return a long-lived access token.',
+      );
+    }
+
+    const refreshedAt = new Date().toISOString();
+    context.account.tokens.metaAccessToken = longLivedToken;
+    context.account.tokens.tokenType =
+      this.normalizeNullableString(result.token_type) ??
+      context.account.tokens.tokenType ??
+      null;
+    if (Number.isFinite(result.expires_in)) {
+      context.account.tokens.tokenExpiresAt = new Date(
+        Date.now() + Number(result.expires_in) * 1000,
+      ).toISOString();
+    }
+    context.account.tokens.connectedAt = refreshedAt;
+    context.account.tokens.lastRefreshAttemptAt = refreshedAt;
+    context.account.tokens.lastRefreshSuccessAt = refreshedAt;
+    context.account.tokens.lastRefreshedAt = refreshedAt;
+    context.account.tokens.lastRefreshErrorAt = null;
+    context.account.lastError = null;
+
+    const pageId = this.getManagedFacebookPageId(context.account);
+    if (pageId) {
+      try {
+        context.account.tokens.facebookPageAccessToken =
+          await this.resolveFacebookPageAccessToken({
+            pageId,
+            userAccessToken: longLivedToken,
+            configuredPageToken:
+              this.normalizeNullableString(
+                context.account.credentials.instagramPageAccessToken,
+              ) ?? undefined,
+          });
+      } catch (error: unknown) {
+        const message = this.getErrorMessage(error);
+        context.account.lastError = message;
+        context.account.tokens.lastRefreshErrorAt = new Date().toISOString();
+      }
+    }
+
+    await this.saveManagedAccountContext(context);
+
+    return {
+      exchanged: true,
+      updatedByUserId: user.id,
+      status: this.serializeManagedCredentialStatus(context.account),
+    };
+  }
 
   async getSharedCredentialsStatus() {
     const credentials = await this.getOrCreateSharedCredentials();
@@ -309,6 +436,68 @@ export class MetaCredentialsService {
       metaAccessToken,
       metaTokenType: prepared.meta_token_type,
       metaTokenExpiresAt: prepared.meta_token_expires_at,
+      facebookPageAccessToken,
+      facebookPageId,
+      instagramAccountId,
+    };
+  }
+
+  async getActiveManagedMetaCredentials(
+    user: User,
+    socialAccountId: string,
+  ): Promise<ActiveMetaCredentials> {
+    const context = await this.getManagedAccountContext(user.id, socialAccountId);
+    const prepared = await this.ensureManagedCredentialReady(context, {
+      allowRefresh: this.canAutoRefreshManagedAccount(context.account),
+      reason: 'upload',
+    });
+    const metaAccessToken =
+      this.normalizeNullableString(prepared.account.tokens.metaAccessToken) ??
+      this.normalizeNullableString(
+        prepared.account.credentials.instagramPageAccessToken,
+      );
+
+    if (!metaAccessToken) {
+      throw new BadRequestException(
+        `Missing Meta credentials. Configure the selected Meta account (${prepared.account.label}) first.`,
+      );
+    }
+
+    const facebookPageId = this.getManagedFacebookPageId(prepared.account);
+    const instagramAccountId = this.getManagedInstagramAccountId(
+      prepared.account,
+    );
+    let facebookPageAccessToken =
+      this.normalizeNullableString(prepared.account.tokens.facebookPageAccessToken) ??
+      this.normalizeNullableString(
+        prepared.account.credentials.instagramPageAccessToken,
+      );
+
+    if (facebookPageId && !facebookPageAccessToken) {
+      try {
+        facebookPageAccessToken = await this.resolveFacebookPageAccessToken({
+          pageId: facebookPageId,
+          userAccessToken: metaAccessToken,
+        });
+        prepared.account.tokens.facebookPageAccessToken = facebookPageAccessToken;
+        prepared.account.lastError = null;
+        prepared.account.tokens.lastRefreshErrorAt = null;
+        await this.saveManagedAccountContext(prepared);
+      } catch (error: unknown) {
+        prepared.account.lastError = this.getErrorMessage(error);
+        prepared.account.tokens.lastRefreshErrorAt = new Date().toISOString();
+        await this.saveManagedAccountContext(prepared);
+        throw error;
+      }
+    }
+
+    return {
+      metaAccessToken,
+      metaTokenType:
+        this.normalizeNullableString(prepared.account.tokens.tokenType) ?? null,
+      metaTokenExpiresAt: this.parseIsoDate(
+        prepared.account.tokens.tokenExpiresAt,
+      ),
       facebookPageAccessToken,
       facebookPageId,
       instagramAccountId,
@@ -755,6 +944,441 @@ export class MetaCredentialsService {
       hasMetaAccessToken: sharedStatus.hasMetaAccessToken,
       hasFacebookPageAccessToken: sharedStatus.hasFacebookPageAccessToken,
     };
+  }
+
+  private async getManagedAccountContext(
+    userId: string,
+    socialAccountId: string,
+  ): Promise<ManagedMetaAccountContext> {
+    const context = await this.socialAccountsService.getMetaAccountRuntimeContext(
+      userId,
+      socialAccountId,
+    );
+    if (!context) {
+      throw new BadRequestException(
+        'The selected Meta social account could not be found.',
+      );
+    }
+
+    return context;
+  }
+
+  private getManagedAppId(account: UserMetaAccount): string {
+    const appId =
+      this.normalizeNullableString(account.credentials.appId) ??
+      this.getOptionalConfig('META_APP_ID');
+    if (!appId) {
+      throw new BadRequestException(
+        `Missing Meta App ID for ${account.label}.`,
+      );
+    }
+
+    return appId;
+  }
+
+  private getManagedAppSecret(account: UserMetaAccount): string {
+    const appSecret =
+      this.normalizeNullableString(account.credentials.appSecret) ??
+      this.getOptionalConfig('META_APP_SECRET');
+    if (!appSecret) {
+      throw new BadRequestException(
+        `Missing Meta App Secret for ${account.label}.`,
+      );
+    }
+
+    return appSecret;
+  }
+
+  private getManagedFacebookPageId(account: UserMetaAccount): string | null {
+    return (
+      this.normalizeNullableString(account.credentials.facebookPageId) ??
+      this.getOptionalConfig('META_FACEBOOK_PAGE_ID')
+    );
+  }
+
+  private getManagedInstagramAccountId(account: UserMetaAccount): string | null {
+    return (
+      this.normalizeNullableString(account.credentials.instagramAccountId) ??
+      this.getOptionalConfig('META_INSTAGRAM_ACCOUNT_ID')
+    );
+  }
+
+  private canAutoRefreshManagedAccount(account: UserMetaAccount): boolean {
+    return Boolean(
+      this.normalizeNullableString(account.credentials.appSecret) ??
+        this.getOptionalConfig('META_APP_SECRET'),
+    );
+  }
+
+  private parseIsoDate(value?: string | null): Date | null {
+    const normalized = String(value ?? '').trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const timestamp = Date.parse(normalized);
+    return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+  }
+
+  private toIsoString(value: Date | null): string | null {
+    return value ? value.toISOString() : null;
+  }
+
+  private deriveManagedLifecycleState(
+    account: UserMetaAccount,
+  ): DerivedLifecycleState {
+    const now = Date.now();
+    const tokenExpiresAt = this.parseIsoDate(account.tokens.tokenExpiresAt);
+    const expiresAtMs = tokenExpiresAt?.getTime() ?? null;
+    const daysUntilExpiry =
+      expiresAtMs === null
+        ? null
+        : Math.max(0, Math.ceil((expiresAtMs - now) / (24 * 60 * 60 * 1000)));
+
+    if (!this.normalizeNullableString(account.tokens.metaAccessToken)) {
+      return {
+        connectionStatus: 'not_connected',
+        daysUntilExpiry,
+        nextRefreshDueAt: null,
+        requiresReconnect: true,
+        requiresReconnectAt: new Date(),
+      };
+    }
+
+    const minimumLifetimeMs =
+      MetaCredentialsService.MINIMUM_RECOMMENDED_LIFETIME_DAYS *
+      24 *
+      60 *
+      60 *
+      1000;
+    const refreshWindowMs =
+      MetaCredentialsService.REFRESH_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    const refreshCadenceMs =
+      MetaCredentialsService.REFRESH_CADENCE_DAYS * 24 * 60 * 60 * 1000;
+
+    const requiresReconnectAt =
+      expiresAtMs === null ? null : new Date(expiresAtMs - minimumLifetimeMs);
+    const expiryRefreshDueAt =
+      expiresAtMs === null ? null : new Date(expiresAtMs - refreshWindowMs);
+    const cadenceBaseMs =
+      this.parseIsoDate(account.tokens.lastRefreshSuccessAt)?.getTime() ??
+      this.parseIsoDate(account.tokens.lastRefreshedAt)?.getTime() ??
+      this.parseIsoDate(account.connectedAt ?? account.tokens.connectedAt)?.getTime() ??
+      now;
+    const cadenceRefreshDueAt = new Date(cadenceBaseMs + refreshCadenceMs);
+    const nextRefreshDueAt = this.getEarlierDate(
+      expiryRefreshDueAt,
+      cadenceRefreshDueAt,
+    );
+
+    const isExpired = expiresAtMs !== null && expiresAtMs <= now;
+    const underMinimumLifetime =
+      expiresAtMs !== null && expiresAtMs - now <= minimumLifetimeMs;
+
+    if (isExpired) {
+      return {
+        connectionStatus: 'reconnect_required',
+        daysUntilExpiry,
+        nextRefreshDueAt,
+        requiresReconnect: true,
+        requiresReconnectAt: tokenExpiresAt,
+      };
+    }
+
+    if (!this.canAutoRefreshManagedAccount(account) && underMinimumLifetime) {
+      return {
+        connectionStatus: 'reconnect_required',
+        daysUntilExpiry,
+        nextRefreshDueAt,
+        requiresReconnect: true,
+        requiresReconnectAt,
+      };
+    }
+
+    if (account.lastError && underMinimumLifetime) {
+      return {
+        connectionStatus: 'reconnect_required',
+        daysUntilExpiry,
+        nextRefreshDueAt,
+        requiresReconnect: true,
+        requiresReconnectAt,
+      };
+    }
+
+    if (account.lastError) {
+      return {
+        connectionStatus: 'error',
+        daysUntilExpiry,
+        nextRefreshDueAt,
+        requiresReconnect: false,
+        requiresReconnectAt,
+      };
+    }
+
+    if (expiresAtMs !== null && expiresAtMs - now <= refreshWindowMs) {
+      return {
+        connectionStatus: 'attention',
+        daysUntilExpiry,
+        nextRefreshDueAt,
+        requiresReconnect: false,
+        requiresReconnectAt,
+      };
+    }
+
+    return {
+      connectionStatus: 'healthy',
+      daysUntilExpiry,
+      nextRefreshDueAt,
+      requiresReconnect: false,
+      requiresReconnectAt,
+    };
+  }
+
+  private shouldRefreshManagedCredential(account: UserMetaAccount): boolean {
+    if (
+      !this.normalizeNullableString(account.tokens.metaAccessToken) ||
+      !this.canAutoRefreshManagedAccount(account)
+    ) {
+      return false;
+    }
+
+    const now = Date.now();
+    const expiresAtMs = this.parseIsoDate(account.tokens.tokenExpiresAt)?.getTime() ?? null;
+    const refreshWindowMs =
+      MetaCredentialsService.REFRESH_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    if (expiresAtMs !== null && expiresAtMs - now <= refreshWindowMs) {
+      return true;
+    }
+
+    const lastSuccessMs =
+      this.parseIsoDate(account.tokens.lastRefreshSuccessAt)?.getTime() ??
+      this.parseIsoDate(account.tokens.lastRefreshedAt)?.getTime() ??
+      this.parseIsoDate(account.connectedAt ?? account.tokens.connectedAt)?.getTime() ??
+      0;
+    const refreshCadenceMs =
+      MetaCredentialsService.REFRESH_CADENCE_DAYS * 24 * 60 * 60 * 1000;
+    return now - lastSuccessMs >= refreshCadenceMs;
+  }
+
+  private getManagedReconnectMessage(
+    account: UserMetaAccount,
+    derived: DerivedLifecycleState,
+  ): string {
+    if (!this.normalizeNullableString(account.tokens.metaAccessToken)) {
+      return `Missing Meta credentials. Configure and connect ${account.label} first.`;
+    }
+
+    if (account.lastError?.trim()) {
+      return `${account.label} needs attention before upload: ${account.lastError}`;
+    }
+
+    if (!this.canAutoRefreshManagedAccount(account)) {
+      return `${account.label} is within ${MetaCredentialsService.MINIMUM_RECOMMENDED_LIFETIME_DAYS} days of expiry and automatic refresh is unavailable. Reconnect the account.`;
+    }
+
+    if (derived.daysUntilExpiry === 0) {
+      return `${account.label} has expired. Reconnect the account.`;
+    }
+
+    return `${account.label} needs to be reconnected before it falls under the ${MetaCredentialsService.MINIMUM_RECOMMENDED_LIFETIME_DAYS}-day minimum lifetime.`;
+  }
+
+  private async ensureManagedCredentialReady(
+    context: ManagedMetaAccountContext,
+    options: EnsureCredentialOptions,
+  ): Promise<ManagedMetaAccountContext> {
+    const account = context.account;
+
+    if (
+      this.normalizeNullableString(account.tokens.metaAccessToken) &&
+      (options.forceRefresh ||
+        (options.allowRefresh && this.shouldRefreshManagedCredential(account)))
+    ) {
+      return this.refreshManagedCredential(context, {
+        force: Boolean(options.forceRefresh),
+        reason: options.reason,
+      });
+    }
+
+    const derived = this.deriveManagedLifecycleState(account);
+    if (options.throwOnReconnect !== false && derived.requiresReconnect) {
+      throw new BadRequestException(
+        this.getManagedReconnectMessage(account, derived),
+      );
+    }
+
+    return context;
+  }
+
+  private async refreshManagedCredential(
+    context: ManagedMetaAccountContext,
+    options: { force: boolean; reason: string },
+  ): Promise<ManagedMetaAccountContext> {
+    const account = context.account;
+    const accessToken = this.normalizeNullableString(account.tokens.metaAccessToken);
+    if (!accessToken) {
+      return context;
+    }
+
+    if (!this.canAutoRefreshManagedAccount(account)) {
+      if (options.force) {
+        throw new BadRequestException(
+          `Automatic Meta token refresh is unavailable for ${account.label} because no app secret is configured.`,
+        );
+      }
+      return context;
+    }
+
+    const appId = this.getManagedAppId(account);
+    const appSecret = this.getManagedAppSecret(account);
+    const version = this.getApiVersion();
+    const attemptedAt = new Date().toISOString();
+    account.tokens.lastRefreshAttemptAt = attemptedAt;
+
+    try {
+      const refreshed = await this.fetchJson<{
+        access_token?: string;
+        token_type?: string;
+        expires_in?: number;
+      }>(
+        `https://graph.facebook.com/${version}/oauth/access_token?${new URLSearchParams(
+          {
+            grant_type: 'fb_exchange_token',
+            client_id: appId,
+            client_secret: appSecret,
+            fb_exchange_token: accessToken,
+          },
+        ).toString()}`,
+        { method: 'GET' },
+        `Failed to refresh the Meta access token for ${account.label} during ${options.reason}.`,
+      );
+
+      const nextAccessToken = this.normalizeNullableString(refreshed.access_token);
+      if (!nextAccessToken) {
+        throw new BadRequestException(
+          'Meta refresh did not return an access token.',
+        );
+      }
+
+      account.tokens.metaAccessToken = nextAccessToken;
+      account.tokens.tokenType =
+        this.normalizeNullableString(refreshed.token_type) ??
+        account.tokens.tokenType ??
+        null;
+      if (Number.isFinite(refreshed.expires_in)) {
+        account.tokens.tokenExpiresAt = new Date(
+          Date.now() + Number(refreshed.expires_in) * 1000,
+        ).toISOString();
+      }
+      account.tokens.lastRefreshedAt = attemptedAt;
+      account.tokens.lastRefreshSuccessAt = attemptedAt;
+      account.tokens.lastRefreshErrorAt = null;
+      account.lastError = null;
+
+      const pageId = this.getManagedFacebookPageId(account);
+      if (pageId) {
+        try {
+          account.tokens.facebookPageAccessToken =
+            await this.resolveFacebookPageAccessToken({
+              pageId,
+              userAccessToken: nextAccessToken,
+              configuredPageToken:
+                this.normalizeNullableString(
+                  account.credentials.instagramPageAccessToken,
+                ) ?? undefined,
+            });
+        } catch (error: unknown) {
+          account.lastError = this.getErrorMessage(error);
+          account.tokens.lastRefreshErrorAt = attemptedAt;
+        }
+      }
+
+      await this.saveManagedAccountContext(context);
+      return context;
+    } catch (error: unknown) {
+      account.lastError = this.getErrorMessage(error);
+      account.tokens.lastRefreshErrorAt = attemptedAt;
+      await this.saveManagedAccountContext(context);
+      if (options.force) {
+        throw error;
+      }
+      return context;
+    }
+  }
+
+  private serializeManagedCredentialStatus(account: UserMetaAccount) {
+    const derived = this.deriveManagedLifecycleState(account);
+
+    return {
+      hasStoredCredentials: true,
+      scope: 'account',
+      socialAccountId: account.id,
+      accountLabel: account.label,
+      tokenType: this.normalizeNullableString(account.tokens.tokenType),
+      metaTokenExpiresAt: this.parseIsoDate(account.tokens.tokenExpiresAt),
+      daysUntilExpiry: derived.daysUntilExpiry,
+      hasMetaAccessToken: Boolean(
+        this.normalizeNullableString(account.tokens.metaAccessToken),
+      ),
+      hasFacebookPageAccessToken: Boolean(
+        this.normalizeNullableString(account.tokens.facebookPageAccessToken) ??
+          this.normalizeNullableString(
+            account.credentials.instagramPageAccessToken,
+          ),
+      ),
+      facebookPageId: this.getManagedFacebookPageId(account),
+      instagramAccountId: this.getManagedInstagramAccountId(account),
+      connectedAt: this.parseIsoDate(account.connectedAt ?? account.tokens.connectedAt),
+      lastRefreshedAt: this.parseIsoDate(account.tokens.lastRefreshedAt),
+      lastRefreshAttemptAt: this.parseIsoDate(account.tokens.lastRefreshAttemptAt),
+      lastRefreshSuccessAt: this.parseIsoDate(account.tokens.lastRefreshSuccessAt),
+      lastRefreshErrorAt: this.parseIsoDate(account.tokens.lastRefreshErrorAt),
+      nextRefreshDueAt: derived.nextRefreshDueAt,
+      requiresReconnectAt: derived.requiresReconnectAt,
+      lastError: account.lastError,
+      canAutoRefresh: this.canAutoRefreshManagedAccount(account),
+      connectionStatus: derived.connectionStatus,
+      requiresReconnect: derived.requiresReconnect,
+      minimumRecommendedLifetimeDays:
+        MetaCredentialsService.MINIMUM_RECOMMENDED_LIFETIME_DAYS,
+      targetRefreshWindowDays: MetaCredentialsService.REFRESH_WINDOW_DAYS,
+    };
+  }
+
+  private async saveManagedAccountContext(context: ManagedMetaAccountContext) {
+    const derived = this.deriveManagedLifecycleState(context.account);
+    const now = new Date().toISOString();
+
+    context.account.connectionStatus = derived.connectionStatus;
+    context.account.connectedAt =
+      this.normalizeNullableString(context.account.tokens.connectedAt) ??
+      context.account.connectedAt ??
+      null;
+    context.account.tokenExpiresAt =
+      this.normalizeNullableString(context.account.tokens.tokenExpiresAt) ?? null;
+    context.account.refreshTokenExpiresAt =
+      this.normalizeNullableString(
+        context.account.tokens.facebookPageTokenExpiresAt,
+      ) ?? null;
+    context.account.lastRefreshAttemptAt =
+      this.normalizeNullableString(context.account.tokens.lastRefreshAttemptAt) ??
+      null;
+    context.account.lastRefreshSuccessAt =
+      this.normalizeNullableString(context.account.tokens.lastRefreshSuccessAt) ??
+      null;
+    context.account.tokens.nextRefreshDueAt = this.toIsoString(
+      derived.nextRefreshDueAt,
+    );
+    context.account.tokens.requiresReconnectAt = this.toIsoString(
+      derived.requiresReconnectAt,
+    );
+    context.account.lastValidatedAt = now;
+    context.account.updatedAt = now;
+
+    await this.socialAccountsService.saveMetaAccountRuntimeContext(
+      context.user,
+      context.section,
+    );
   }
 
   private getReconnectMessage(

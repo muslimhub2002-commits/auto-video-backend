@@ -9,6 +9,11 @@ import { createHash, randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
 import { ScriptsService } from '../scripts/scripts.service';
 import { User } from '../users/entities/user.entity';
+import type {
+  UserTikTokAccount,
+  UserTikTokAccountSection,
+} from '../users/entities/social-account-storage.types';
+import { SocialAccountsService } from '../social-accounts/social-accounts.service';
 import { TiktokUploadDto } from './dto/tiktok-upload.dto';
 
 const TIKTOK_AUTH_BASE_URL = 'https://www.tiktok.com/v2/auth/authorize/';
@@ -237,6 +242,7 @@ export class TiktokService {
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     private readonly scriptsService: ScriptsService,
+    private readonly socialAccountsService: SocialAccountsService,
   ) {}
 
   private getClientKey(): string {
@@ -244,6 +250,17 @@ export class TiktokService {
     if (!clientKey) {
       throw new BadRequestException('Missing TIKTOK_CLIENT_KEY');
     }
+    return clientKey;
+  }
+
+  private getManagedClientKey(account: UserTikTokAccount): string {
+    const clientKey = String(account.credentials.clientKey ?? '').trim();
+    if (!clientKey) {
+      throw new BadRequestException(
+        `Saved TikTok account "${account.label}" is missing a client key. Update it in Social Accounts before connecting or uploading.`,
+      );
+    }
+
     return clientKey;
   }
 
@@ -255,11 +272,48 @@ export class TiktokService {
     return clientSecret;
   }
 
+  private getManagedClientSecret(account: UserTikTokAccount): string {
+    const clientSecret = String(account.credentials.clientSecret ?? '').trim();
+    if (!clientSecret) {
+      throw new BadRequestException(
+        `Saved TikTok account "${account.label}" is missing a client secret. Update it in Social Accounts before connecting or uploading.`,
+      );
+    }
+
+    return clientSecret;
+  }
+
   private getRedirectUri(redirectUriOverride?: string): string {
     return normalizeRedirectUri(
       redirectUriOverride ??
         this.configService.get<string>('TIKTOK_REDIRECT_URI'),
     );
+  }
+
+  private parseManagedState(state: string): {
+    userId: string | null;
+    socialAccountId: string | null;
+    oauthState: string;
+  } {
+    const trimmedState = String(state ?? '').trim();
+    const firstSeparator = trimmedState.indexOf(':');
+    const secondSeparator =
+      firstSeparator >= 0 ? trimmedState.indexOf(':', firstSeparator + 1) : -1;
+
+    if (firstSeparator === -1 || secondSeparator === -1) {
+      return {
+        userId: null,
+        socialAccountId: null,
+        oauthState: trimmedState,
+      };
+    }
+
+    return {
+      userId: trimmedState.slice(0, firstSeparator) || null,
+      socialAccountId:
+        trimmedState.slice(firstSeparator + 1, secondSeparator) || null,
+      oauthState: trimmedState.slice(secondSeparator + 1),
+    };
   }
 
   private deriveConnectionState(user: User): {
@@ -382,30 +436,85 @@ export class TiktokService {
     return data.data;
   }
 
-  private async refreshAccessToken(user: User): Promise<User> {
-    if (!user.tiktok_refresh_token) {
+  private async refreshAccessToken(params: {
+    user: User;
+    account?: UserTikTokAccount | null;
+    section?: UserTikTokAccountSection | null;
+  }): Promise<{ user: User; account?: UserTikTokAccount | null }> {
+    const { user, account, section } = params;
+    const refreshToken = account
+      ? String(account.tokens.refreshToken ?? '').trim() || null
+      : String(user.tiktok_refresh_token ?? '').trim() || null;
+    const refreshTokenExpiry = account
+      ? String(account.tokens.refreshTokenExpiry ?? '').trim() || null
+      : user.tiktok_refresh_token_expiry?.toISOString() ?? null;
+
+    if (!refreshToken) {
       throw new BadRequestException(
-        'TikTok is not connected for this account. Connect first.',
+        account
+          ? `Saved TikTok account "${account.label}" is not connected. Connect it first from the upload modal.`
+          : 'TikTok is not connected for this account. Connect first.',
       );
     }
 
     if (
-      user.tiktok_refresh_token_expiry &&
-      user.tiktok_refresh_token_expiry.getTime() <= Date.now() + 60_000
+      refreshTokenExpiry &&
+      new Date(refreshTokenExpiry).getTime() <= Date.now() + 60_000
     ) {
       throw new BadRequestException(
-        'TikTok connection expired. Reconnect TikTok and try again.',
+        account
+          ? `Saved TikTok account "${account.label}" expired. Reconnect it and try again.`
+          : 'TikTok connection expired. Reconnect TikTok and try again.',
       );
     }
 
     const tokenData = await this.exchangeToken(
       new URLSearchParams({
-        client_key: this.getClientKey(),
-        client_secret: this.getClientSecret(),
+        client_key: account
+          ? this.getManagedClientKey(account)
+          : this.getClientKey(),
+        client_secret: account
+          ? this.getManagedClientSecret(account)
+          : this.getClientSecret(),
         grant_type: 'refresh_token',
-        refresh_token: user.tiktok_refresh_token,
+        refresh_token: refreshToken,
       }),
     );
+
+    if (account) {
+      const now = new Date().toISOString();
+
+      account.tokens.accessToken = tokenData.access_token;
+      account.tokens.refreshToken = tokenData.refresh_token || refreshToken;
+      account.tokens.tokenExpiry = new Date(
+        Date.now() + Number(tokenData.expires_in || 0) * 1000,
+      ).toISOString();
+      account.tokens.refreshTokenExpiry = new Date(
+        Date.now() + Number(tokenData.refresh_expires_in || 0) * 1000,
+      ).toISOString();
+      account.tokens.openId = tokenData.open_id ?? account.tokens.openId ?? null;
+      account.tokens.scope = tokenData.scope ?? account.tokens.scope ?? null;
+      account.tokens.connectedAt = account.tokens.connectedAt ?? now;
+      account.connectedAt = account.connectedAt ?? now;
+      account.tokenExpiresAt = account.tokens.tokenExpiry;
+      account.refreshTokenExpiresAt = account.tokens.refreshTokenExpiry;
+      account.connectionStatus = 'healthy';
+      account.lastValidatedAt = now;
+      account.lastError = null;
+      account.updatedAt = now;
+
+      if (section) {
+        await this.socialAccountsService.saveTikTokAccountRuntimeContext(
+          user,
+          section,
+        );
+      }
+
+      return {
+        user,
+        account,
+      };
+    }
 
     user.tiktok_access_token = tokenData.access_token;
     user.tiktok_refresh_token =
@@ -420,36 +529,63 @@ export class TiktokService {
     user.tiktok_scope = tokenData.scope ?? user.tiktok_scope;
     user.tiktok_connected_at = user.tiktok_connected_at ?? new Date();
 
-    return this.usersRepository.save(user);
+    return {
+      user: await this.usersRepository.save(user),
+      account: null,
+    };
   }
 
-  private async getValidAccessToken(
-    user: User,
-  ): Promise<{ accessToken: string; user: User }> {
-    if (!user.tiktok_access_token && !user.tiktok_refresh_token) {
+  private async getValidAccessToken(params: {
+    user: User;
+    account?: UserTikTokAccount | null;
+    section?: UserTikTokAccountSection | null;
+  }): Promise<{
+    accessToken: string;
+    user: User;
+    account?: UserTikTokAccount | null;
+  }> {
+    const { user, account, section } = params;
+    const accessToken = account
+      ? String(account.tokens.accessToken ?? '').trim() || null
+      : String(user.tiktok_access_token ?? '').trim() || null;
+    const refreshToken = account
+      ? String(account.tokens.refreshToken ?? '').trim() || null
+      : String(user.tiktok_refresh_token ?? '').trim() || null;
+    const tokenExpiry = account
+      ? String(account.tokens.tokenExpiry ?? '').trim() || null
+      : user.tiktok_token_expiry?.toISOString() ?? null;
+
+    if (!accessToken && !refreshToken) {
       throw new BadRequestException(
-        'TikTok is not connected for this account. Connect first.',
+        account
+          ? `Saved TikTok account "${account.label}" is not connected. Connect it first from the upload modal.`
+          : 'TikTok is not connected for this account. Connect first.',
       );
     }
 
     if (
-      user.tiktok_access_token &&
-      user.tiktok_token_expiry &&
-      user.tiktok_token_expiry.getTime() > Date.now() + 60_000
+      accessToken &&
+      tokenExpiry &&
+      new Date(tokenExpiry).getTime() > Date.now() + 60_000
     ) {
-      return { accessToken: user.tiktok_access_token, user };
+      return { accessToken, user, account };
     }
 
-    const refreshedUser = await this.refreshAccessToken(user);
-    if (!refreshedUser.tiktok_access_token) {
+    const refreshed = await this.refreshAccessToken({ user, account, section });
+    const refreshedAccessToken = refreshed.account
+      ? String(refreshed.account.tokens.accessToken ?? '').trim() || null
+      : String(refreshed.user.tiktok_access_token ?? '').trim() || null;
+
+    if (!refreshedAccessToken) {
       throw new BadRequestException(
         'Unable to refresh TikTok access token. Reconnect TikTok.',
       );
     }
 
     return {
-      accessToken: refreshedUser.tiktok_access_token,
-      user: refreshedUser,
+      accessToken: refreshedAccessToken,
+      user: refreshed.user,
+      account: refreshed.account,
     };
   }
 
@@ -463,22 +599,47 @@ export class TiktokService {
     });
   }
 
-  async getAuthUrl(user: User, redirectUriOverride?: string): Promise<string> {
+  async getAuthUrl(
+    user: User,
+    redirectUriOverride?: string,
+    socialAccountId?: string | null,
+  ): Promise<string> {
+    const runtime = await this.socialAccountsService.getTikTokAccountRuntimeContext(
+      user.id,
+      socialAccountId,
+    );
     const state = toBase64Url(randomBytes(24));
     const codeVerifier = createCodeVerifier();
     const codeChallenge = createCodeChallenge(codeVerifier);
 
-    user.tiktok_oauth_state = state;
-    user.tiktok_code_verifier = codeVerifier;
-    user.tiktok_oauth_started_at = new Date();
-    await this.usersRepository.save(user);
+    if (runtime) {
+      const now = new Date().toISOString();
+
+      runtime.account.tokens.oauthState = state;
+      runtime.account.tokens.codeVerifier = codeVerifier;
+      runtime.account.tokens.oauthStartedAt = now;
+      runtime.account.lastError = null;
+      runtime.account.updatedAt = now;
+
+      await this.socialAccountsService.saveTikTokAccountRuntimeContext(
+        runtime.user,
+        runtime.section,
+      );
+    } else {
+      user.tiktok_oauth_state = state;
+      user.tiktok_code_verifier = codeVerifier;
+      user.tiktok_oauth_started_at = new Date();
+      await this.usersRepository.save(user);
+    }
 
     const searchParams = new URLSearchParams({
-      client_key: this.getClientKey(),
+      client_key: runtime
+        ? this.getManagedClientKey(runtime.account)
+        : this.getClientKey(),
       scope: TIKTOK_SCOPES.join(','),
       response_type: 'code',
       redirect_uri: this.getRedirectUri(redirectUriOverride),
-      state,
+      state: runtime ? `${user.id}:${runtime.account.id}:${state}` : state,
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
     });
@@ -500,10 +661,34 @@ export class TiktokService {
       throw new BadRequestException('Missing OAuth `state`');
     }
 
-    const user = await this.usersRepository.findOne({
-      where: { tiktok_oauth_state: state },
-    });
-    if (!user || !user.tiktok_code_verifier) {
+    const parsedState = this.parseManagedState(state);
+    const runtime =
+      parsedState.userId && parsedState.socialAccountId
+        ? await this.socialAccountsService.getTikTokAccountRuntimeContext(
+            parsedState.userId,
+            parsedState.socialAccountId,
+          )
+        : null;
+
+    const user = runtime
+      ? runtime.user
+      : await this.usersRepository.findOne({
+          where: { tiktok_oauth_state: state },
+        });
+    const codeVerifier = runtime
+      ? runtime.account.tokens.codeVerifier
+      : user?.tiktok_code_verifier;
+    const expectedState = runtime
+      ? runtime.account.tokens.oauthState
+      : user?.tiktok_oauth_state;
+
+    if (
+      !user ||
+      !codeVerifier ||
+      !expectedState ||
+      String(expectedState).trim() !==
+        String(runtime ? parsedState.oauthState : state).trim()
+    ) {
       throw new BadRequestException(
         'Invalid TikTok OAuth state. Start the connection again.',
       );
@@ -511,14 +696,50 @@ export class TiktokService {
 
     const tokenData = await this.exchangeToken(
       new URLSearchParams({
-        client_key: this.getClientKey(),
-        client_secret: this.getClientSecret(),
+        client_key: runtime
+          ? this.getManagedClientKey(runtime.account)
+          : this.getClientKey(),
+        client_secret: runtime
+          ? this.getManagedClientSecret(runtime.account)
+          : this.getClientSecret(),
         code,
         grant_type: 'authorization_code',
         redirect_uri: this.getRedirectUri(redirectUriOverride),
-        code_verifier: user.tiktok_code_verifier,
+        code_verifier: String(codeVerifier),
       }),
     );
+
+    if (runtime) {
+      const now = new Date().toISOString();
+
+      runtime.account.tokens.accessToken = tokenData.access_token;
+      runtime.account.tokens.refreshToken = tokenData.refresh_token;
+      runtime.account.tokens.tokenExpiry = new Date(
+        Date.now() + Number(tokenData.expires_in || 0) * 1000,
+      ).toISOString();
+      runtime.account.tokens.refreshTokenExpiry = new Date(
+        Date.now() + Number(tokenData.refresh_expires_in || 0) * 1000,
+      ).toISOString();
+      runtime.account.tokens.openId = tokenData.open_id ?? null;
+      runtime.account.tokens.scope = tokenData.scope ?? null;
+      runtime.account.tokens.connectedAt = now;
+      runtime.account.tokens.oauthState = null;
+      runtime.account.tokens.codeVerifier = null;
+      runtime.account.tokens.oauthStartedAt = null;
+      runtime.account.connectedAt = now;
+      runtime.account.tokenExpiresAt = runtime.account.tokens.tokenExpiry;
+      runtime.account.refreshTokenExpiresAt = runtime.account.tokens.refreshTokenExpiry;
+      runtime.account.connectionStatus = 'healthy';
+      runtime.account.lastValidatedAt = now;
+      runtime.account.lastError = null;
+      runtime.account.updatedAt = now;
+
+      await this.socialAccountsService.saveTikTokAccountRuntimeContext(
+        runtime.user,
+        runtime.section,
+      );
+      return;
+    }
 
     user.tiktok_access_token = tokenData.access_token;
     user.tiktok_refresh_token = tokenData.refresh_token;
@@ -538,8 +759,23 @@ export class TiktokService {
     await this.usersRepository.save(user);
   }
 
-  async getCreatorInfo(user: User): Promise<TiktokCreatorInfo> {
-    const { accessToken } = await this.getValidAccessToken(user);
+  async getCreatorInfo(
+    user: User,
+    socialAccountId?: string | null,
+  ): Promise<TiktokCreatorInfo> {
+    const runtime = await this.socialAccountsService.getTikTokAccountRuntimeContext(
+      user.id,
+      socialAccountId,
+    );
+    const { accessToken } = await this.getValidAccessToken(
+      runtime
+        ? {
+            user: runtime.user,
+            account: runtime.account,
+            section: runtime.section,
+          }
+        : { user },
+    );
     return this.fetchCreatorInfoWithAccessToken(accessToken);
   }
 
@@ -581,7 +817,9 @@ export class TiktokService {
     }
 
     try {
-      const { accessToken, user: refreshedUser } = await this.getValidAccessToken(user);
+      const { accessToken, user: refreshedUser } = await this.getValidAccessToken({
+        user,
+      });
       const creatorInfo = await this.fetchCreatorInfoWithAccessToken(accessToken);
 
       return {
@@ -788,7 +1026,19 @@ export class TiktokService {
     creatorUsername: string | null;
     warning?: string;
   }> {
-    const { accessToken } = await this.getValidAccessToken(user);
+    const runtime = await this.socialAccountsService.getTikTokAccountRuntimeContext(
+      user.id,
+      dto.socialAccountId,
+    );
+    const { accessToken } = await this.getValidAccessToken(
+      runtime
+        ? {
+            user: runtime.user,
+            account: runtime.account,
+            section: runtime.section,
+          }
+        : { user },
+    );
     const creatorInfo = await this.fetchCreatorInfoWithAccessToken(accessToken);
 
     if (!dto.consentConfirmed) {

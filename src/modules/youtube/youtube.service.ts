@@ -9,6 +9,11 @@ import { google, youtube_v3 } from 'googleapis';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../users/entities/user.entity';
+import type {
+  UserYoutubeAccount,
+  UserYoutubeAccountSection,
+} from '../users/entities/social-account-storage.types';
+import { SocialAccountsService } from '../social-accounts/social-accounts.service';
 import { YoutubeUploadDto } from './dto/youtube-upload.dto';
 import { Readable } from 'stream';
 import { ScriptsService } from '../scripts/scripts.service';
@@ -290,15 +295,22 @@ export class YoutubeService {
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     private readonly scriptsService: ScriptsService,
+    private readonly socialAccountsService: SocialAccountsService,
   ) {}
 
   private createOAuthClient(
     redirectUriOverride?: string,
+    credentialsOverride?: {
+      clientId: string;
+      clientSecret: string;
+    },
   ): InstanceType<typeof google.auth.OAuth2> {
-    const clientId = this.configService.get<string>('YOUTUBE_CLIENT_ID');
-    const clientSecret = this.configService.get<string>(
-      'YOUTUBE_CLIENT_SECRET',
-    );
+    const clientId =
+      credentialsOverride?.clientId ??
+      this.configService.get<string>('YOUTUBE_CLIENT_ID');
+    const clientSecret =
+      credentialsOverride?.clientSecret ??
+      this.configService.get<string>('YOUTUBE_CLIENT_SECRET');
     const redirectUri = normalizeRedirectUri(
       redirectUriOverride ??
         this.configService.get<string>('YOUTUBE_REDIRECT_URI'),
@@ -311,6 +323,42 @@ export class YoutubeService {
     }
 
     return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+  }
+
+  private getManagedAccountOAuthCredentials(account: UserYoutubeAccount) {
+    const clientId = String(account.credentials.clientId ?? '').trim();
+    const clientSecret = String(account.credentials.clientSecret ?? '').trim();
+
+    if (!clientId || !clientSecret) {
+      throw new BadRequestException(
+        `Saved YouTube account "${account.label}" is missing client credentials. Update it in Social Accounts before connecting or uploading.`,
+      );
+    }
+
+    return {
+      clientId,
+      clientSecret,
+    };
+  }
+
+  private parseManagedState(state: string): {
+    userId: string;
+    socialAccountId: string | null;
+  } {
+    const trimmedState = String(state ?? '').trim();
+    const separatorIndex = trimmedState.indexOf(':');
+
+    if (separatorIndex === -1) {
+      return {
+        userId: trimmedState,
+        socialAccountId: null,
+      };
+    }
+
+    return {
+      userId: trimmedState.slice(0, separatorIndex),
+      socialAccountId: trimmedState.slice(separatorIndex + 1) || null,
+    };
   }
 
   private deriveConnectionState(user: User): {
@@ -443,15 +491,29 @@ export class YoutubeService {
     );
   }
 
-  getAuthUrl(userId: string, redirectUriOverride?: string): string {
-    const oauth2Client = this.createOAuthClient(redirectUriOverride);
+  async getAuthUrl(
+    userId: string,
+    redirectUriOverride?: string,
+    socialAccountId?: string | null,
+  ): Promise<string> {
+    const runtime = await this.socialAccountsService.getYoutubeAccountRuntimeContext(
+      userId,
+      socialAccountId,
+    );
+    const oauth2Client = runtime
+      ? this.createOAuthClient(
+          redirectUriOverride,
+          this.getManagedAccountOAuthCredentials(runtime.account),
+        )
+      : this.createOAuthClient(redirectUriOverride);
+    const state = runtime ? `${userId}:${runtime.account.id}` : userId;
 
     // access_type=offline + prompt=consent help ensure refresh_token is issued
     return oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
       scope: YOUTUBE_SCOPES,
-      state: userId,
+      state,
       include_granted_scopes: true,
     });
   }
@@ -470,17 +532,55 @@ export class YoutubeService {
       throw new BadRequestException('Missing OAuth `state`');
     }
 
-    const user = await this.usersRepository.findOne({ where: { id: state } });
+    const parsedState = this.parseManagedState(state);
+    const user = await this.usersRepository.findOne({
+      where: { id: parsedState.userId },
+    });
     if (!user) {
       throw new BadRequestException('Invalid OAuth state (user not found)');
     }
 
-    const oauth2Client = this.createOAuthClient(redirectUriOverride);
+    const runtime = parsedState.socialAccountId
+      ? await this.socialAccountsService.getYoutubeAccountRuntimeContext(
+          parsedState.userId,
+          parsedState.socialAccountId,
+        )
+      : null;
+    const oauth2Client = runtime
+      ? this.createOAuthClient(
+          redirectUriOverride,
+          this.getManagedAccountOAuthCredentials(runtime.account),
+        )
+      : this.createOAuthClient(redirectUriOverride);
     const tokenResponse = await oauth2Client.getToken(code);
 
     const tokens = tokenResponse.tokens;
     if (!tokens.access_token) {
       throw new BadRequestException('OAuth did not return an access token');
+    }
+
+    if (runtime) {
+      const now = new Date().toISOString();
+
+      runtime.account.tokens.accessToken = tokens.access_token;
+      runtime.account.tokens.refreshToken =
+        tokens.refresh_token ?? runtime.account.tokens.refreshToken ?? null;
+      runtime.account.tokens.tokenExpiry = tokens.expiry_date
+        ? new Date(tokens.expiry_date).toISOString()
+        : runtime.account.tokens.tokenExpiry ?? null;
+      runtime.account.tokens.connectedAt = now;
+      runtime.account.connectedAt = now;
+      runtime.account.tokenExpiresAt = runtime.account.tokens.tokenExpiry;
+      runtime.account.connectionStatus = 'healthy';
+      runtime.account.lastValidatedAt = now;
+      runtime.account.lastError = null;
+      runtime.account.updatedAt = now;
+
+      await this.socialAccountsService.saveYoutubeAccountRuntimeContext(
+        runtime.user,
+        runtime.section,
+      );
+      return;
     }
 
     // refresh_token can be missing if the user already granted access in the past
@@ -496,24 +596,42 @@ export class YoutubeService {
     await this.usersRepository.save(user);
   }
 
-  private async getAuthedClientForUser(
-    user: User,
-  ): Promise<InstanceType<typeof google.auth.OAuth2>> {
-    if (!user.youtube_refresh_token && !user.youtube_access_token) {
+  private async getAuthedClientForUser(params: {
+    user: User;
+    account?: UserYoutubeAccount | null;
+    section?: UserYoutubeAccountSection | null;
+  }): Promise<InstanceType<typeof google.auth.OAuth2>> {
+    const { user, account, section } = params;
+    const storedAccessToken = account
+      ? String(account.tokens.accessToken ?? '').trim() || null
+      : String(user.youtube_access_token ?? '').trim() || null;
+    const refreshToken = account
+      ? String(account.tokens.refreshToken ?? '').trim() || null
+      : String(user.youtube_refresh_token ?? '').trim() || null;
+    const tokenExpiry = account
+      ? String(account.tokens.tokenExpiry ?? '').trim() || null
+      : user.youtube_token_expiry?.toISOString() ?? null;
+
+    if (!refreshToken && !storedAccessToken) {
       // Important: do NOT throw 401 here; the frontend interceptor would interpret
       // it as an expired login and force logout. This is a normal precondition.
       throw new BadRequestException(
-        'YouTube is not connected for this account. Connect first via /youtube/auth-url',
+        account
+          ? `Saved YouTube account "${account.label}" is not connected. Connect it first from the upload modal.`
+          : 'YouTube is not connected for this account. Connect first via /youtube/auth-url',
       );
     }
 
-    const oauth2Client = this.createOAuthClient();
+    const oauth2Client = account
+      ? this.createOAuthClient(
+          undefined,
+          this.getManagedAccountOAuthCredentials(account),
+        )
+      : this.createOAuthClient();
     oauth2Client.setCredentials({
-      access_token: user.youtube_access_token ?? undefined,
-      refresh_token: user.youtube_refresh_token ?? undefined,
-      expiry_date: user.youtube_token_expiry
-        ? user.youtube_token_expiry.getTime()
-        : undefined,
+      access_token: storedAccessToken ?? undefined,
+      refresh_token: refreshToken ?? undefined,
+      expiry_date: tokenExpiry ? new Date(tokenExpiry).getTime() : undefined,
     });
 
     // Ensure we always have a valid access token
@@ -526,10 +644,28 @@ export class YoutubeService {
     }
 
     // Persist latest access token if refreshed
-    user.youtube_access_token = accessToken;
-    // google-auth-library updates expiry_date internally; but not always accessible.
-    // We keep existing expiry in DB; it’s optional for operation.
-    await this.usersRepository.save(user);
+    if (account) {
+      const now = new Date().toISOString();
+      account.tokens.accessToken = accessToken;
+      account.tokens.connectedAt = account.tokens.connectedAt ?? now;
+      account.connectedAt = account.connectedAt ?? now;
+      account.connectionStatus = 'healthy';
+      account.lastValidatedAt = now;
+      account.lastError = null;
+      account.updatedAt = now;
+
+      if (section) {
+        await this.socialAccountsService.saveYoutubeAccountRuntimeContext(
+          user,
+          section,
+        );
+      }
+    } else {
+      user.youtube_access_token = accessToken;
+      // google-auth-library updates expiry_date internally; but not always accessible.
+      // We keep existing expiry in DB; it’s optional for operation.
+      await this.usersRepository.save(user);
+    }
 
     return oauth2Client;
   }
@@ -650,7 +786,7 @@ export class YoutubeService {
       );
     }
 
-    const oauth2Client = await this.getAuthedClientForUser(user);
+    const oauth2Client = await this.getAuthedClientForUser({ user });
     const accessTokenResult = await oauth2Client.getAccessToken();
     const accessToken = accessTokenResult?.token;
     if (!accessToken) {
@@ -918,7 +1054,19 @@ export class YoutubeService {
     dto: YoutubeUploadDto,
   ): Promise<{ videoId: string; youtubeUrl: string; scriptId: string | null }> {
     try {
-      const oauth2Client = await this.getAuthedClientForUser(user);
+      const runtime = await this.socialAccountsService.getYoutubeAccountRuntimeContext(
+        user.id,
+        dto.socialAccountId,
+      );
+      const oauth2Client = await this.getAuthedClientForUser(
+        runtime
+          ? {
+              user: runtime.user,
+              account: runtime.account,
+              section: runtime.section,
+            }
+          : { user },
+      );
       const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
       assertVideoUrlIsPubliclyReachable(dto.videoUrl);

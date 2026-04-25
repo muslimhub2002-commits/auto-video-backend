@@ -14,6 +14,14 @@ import { ScriptTemplate } from '../../scripts/entities/script-template.entity';
 import { BackgroundSoundtrack } from '../../background-soundtracks/entities/background-soundtrack.entity';
 import { ImageFilter } from '../../image-filters/entities/image-filter.entity';
 import { MotionEffect } from '../../motion-effects/entities/motion-effect.entity';
+import type {
+  UserMetaAccountSection,
+  UserTikTokAccountSection,
+  UserYoutubeAccountSection,
+} from './social-account-storage.types';
+
+const EMPTY_SOCIAL_ACCOUNT_SECTION_JSON =
+  "'{\"version\":1,\"defaultAccountId\":null,\"accounts\":[]}'::jsonb";
 
 @Entity('users')
 export class User {
@@ -43,6 +51,27 @@ export class User {
 
   @Column({ type: 'timestamp', nullable: true })
   google_connected_at!: Date | null;
+
+  @Column({
+    type: 'jsonb',
+    nullable: false,
+    default: () => EMPTY_SOCIAL_ACCOUNT_SECTION_JSON,
+  })
+  youtube_accounts!: UserYoutubeAccountSection;
+
+  @Column({
+    type: 'jsonb',
+    nullable: false,
+    default: () => EMPTY_SOCIAL_ACCOUNT_SECTION_JSON,
+  })
+  meta_accounts!: UserMetaAccountSection;
+
+  @Column({
+    type: 'jsonb',
+    nullable: false,
+    default: () => EMPTY_SOCIAL_ACCOUNT_SECTION_JSON,
+  })
+  tiktok_accounts!: UserTikTokAccountSection;
 
   @Column({ type: 'text', nullable: true })
   youtube_access_token!: string | null;

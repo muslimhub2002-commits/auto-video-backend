@@ -14,6 +14,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleExchangeDto } from './dto/google-exchange.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
+import { sanitizeAuthUser } from './utils/sanitize-auth-user';
 
 @Injectable()
 export class AuthService {
@@ -26,8 +27,7 @@ export class AuthService {
   ) {}
 
   private sanitizeUser(user: User) {
-    const { password, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    return sanitizeAuthUser(user);
   }
 
   private buildAuthResponse(user: User) {

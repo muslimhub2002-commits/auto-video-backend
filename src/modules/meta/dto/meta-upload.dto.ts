@@ -47,6 +47,10 @@ export class MetaUploadDto {
   @IsUrl({ require_tld: false })
   videoUrl: string;
 
+  @IsOptional()
+  @IsUUID()
+  socialAccountId?: string;
+
   @IsArray()
   @ArrayNotEmpty()
   @ArrayUnique()

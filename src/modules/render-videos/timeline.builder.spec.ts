@@ -236,4 +236,39 @@ describe('buildTimeline', () => {
     });
     expect(timeline.scenes[1].imageSrc).toBeUndefined();
   });
+
+  it('preserves video scene look settings for render output', () => {
+    const timeline = buildTimeline({
+      language: 'en',
+      sentences: [
+        {
+          text: 'Video scene with a saved look',
+          mediaType: 'video',
+          videoUrl: 'https://example.com/clip.mp4',
+          visualEffect: 'glassStrong',
+          imageFilterSettings: {
+            saturation: 1.12,
+            brightness: 1.04,
+            glassOverlayOpacity: 0.28,
+          },
+        },
+      ],
+      imagePaths: ['fallback-image.png'],
+      scriptLength: '30 seconds',
+      audioDurationSeconds: 1,
+      audioSrc: 'audio/voiceover.mp3',
+      addSubtitles: true,
+    });
+
+    expect(timeline.scenes[0]).toMatchObject({
+      mediaType: 'video',
+      videoSrc: 'https://example.com/clip.mp4',
+      visualEffect: 'glassStrong',
+      imageFilterSettings: {
+        saturation: 1.12,
+        brightness: 1.04,
+        glassOverlayOpacity: 0.28,
+      },
+    });
+  });
 });

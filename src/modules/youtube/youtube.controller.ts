@@ -24,7 +24,11 @@ export class YoutubeController {
   @UseGuards(JwtAuthGuard)
   @UseGuards(JwtAuthGuard)
   @Get('auth-url')
-  async getAuthUrl(@Req() req: Request, @GetUser() user: User) {
+  async getAuthUrl(
+    @Req() req: Request,
+    @GetUser() user: User,
+    @Query('socialAccountId') socialAccountId?: string,
+  ) {
     // In local/dev, users frequently run the backend locally while keeping
     // a production YOUTUBE_REDIRECT_URI in `.env`. That causes the OAuth
     // callback (and token storage) to happen on the wrong server.
@@ -40,7 +44,11 @@ export class YoutubeController {
         ? `${req.protocol}://${host}/youtube/oauth2callback`
         : undefined;
 
-    const url = this.youtubeService.getAuthUrl(user.id, redirectUriOverride);
+    const url = await this.youtubeService.getAuthUrl(
+      user.id,
+      redirectUriOverride,
+      socialAccountId,
+    );
     return { url };
   }
 
