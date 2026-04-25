@@ -10,14 +10,21 @@ import {
 import type { Timeline } from './types';
 import {
   CHROMA_EDGE_FRAMES,
+  DEFAULT_AIR_WHOOSH_SFX_URL,
   DEFAULT_BACKGROUND_MUSIC_SRC,
   DEFAULT_CAMERA_CLICK_SFX_URL,
   DEFAULT_CHROMA_LEAK_SFX_URL,
   DEFAULT_GLITCH_FX_URL,
   DEFAULT_SUSPENSE_GLITCH_SFX_URL,
   DEFAULT_WHOOSH_SFX_URL,
+  DEFAULT_WHOOSH_END_SFX_URL,
+  ECHO_STUTTER_EDGE_FRAMES,
   FLASH_EDGE_FRAMES,
   GLITCH_EDGE_FRAMES,
+  IMPACT_ZOOM_EDGE_FRAMES,
+  IRIS_REVEAL_EDGE_FRAMES,
+  SLICE_PUSH_EDGE_FRAMES,
+  TILT_SNAP_EDGE_FRAMES,
   WHIP_EDGE_FRAMES,
 } from './constants';
 import {
@@ -25,16 +32,47 @@ import {
   resolveMediaSrc,
 } from './utils/media';
 import { Scene } from './components/Scene';
-import { buildCutTransitions, getCutSeed, pickWhipDirection } from './utils/transitions';
+import {
+  buildCutTransitions,
+  getCutSeed,
+  pickWhipDirection,
+  type TransitionType,
+} from './utils/transitions';
 
 export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
-  const getTransitionSoundStartFrame = React.useCallback((nextStartFrame: number, transition: string) => {
-    if (transition === 'glitch') return Math.max(0, nextStartFrame - GLITCH_EDGE_FRAMES);
-    if (transition === 'whip') return Math.max(0, nextStartFrame - WHIP_EDGE_FRAMES - 10);
-    if (transition === 'flash') return Math.max(0, nextStartFrame - 8);
-    if (transition === 'chromaLeak') return Math.max(0, nextStartFrame - CHROMA_EDGE_FRAMES - 8);
-    return Math.max(0, nextStartFrame);
-  }, []);
+  const getTransitionSoundStartFrame = React.useCallback(
+    (nextStartFrame: number, transition: TransitionType) => {
+      if (transition === 'glitch') {
+        return Math.max(0, nextStartFrame - GLITCH_EDGE_FRAMES);
+      }
+      if (transition === 'whip') {
+        return Math.max(0, nextStartFrame - WHIP_EDGE_FRAMES - 10);
+      }
+      if (transition === 'flash') {
+        return Math.max(0, nextStartFrame - 8);
+      }
+      if (transition === 'chromaLeak') {
+        return Math.max(0, nextStartFrame - CHROMA_EDGE_FRAMES - 8);
+      }
+      if (transition === 'impactZoom') {
+        return Math.max(0, nextStartFrame - IMPACT_ZOOM_EDGE_FRAMES - 4);
+      }
+      if (transition === 'slicePush') {
+        return Math.max(0, nextStartFrame - SLICE_PUSH_EDGE_FRAMES - 6);
+      }
+      if (transition === 'irisReveal') {
+        return Math.max(0, nextStartFrame - IRIS_REVEAL_EDGE_FRAMES - 3);
+      }
+      if (transition === 'echoStutter') {
+        return Math.max(0, nextStartFrame - ECHO_STUTTER_EDGE_FRAMES - 2);
+      }
+      if (transition === 'tiltSnap') {
+        return Math.max(0, nextStartFrame - TILT_SNAP_EDGE_FRAMES - 5);
+      }
+      return Math.max(0, nextStartFrame);
+    },
+    [],
+  );
 
   // Treat empty strings from the backend as "unset" so local `staticFile()` defaults work.
   const rawBackgroundMusicSrc = timeline.assets?.backgroundMusicSrc;
@@ -51,6 +89,8 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
       : 1;
   const glitchSfxSrc = timeline.assets?.glitchSfxSrc || DEFAULT_GLITCH_FX_URL;
   const whooshSfxSrc = timeline.assets?.whooshSfxSrc || DEFAULT_WHOOSH_SFX_URL;
+  const whooshEndSfxSrc = DEFAULT_WHOOSH_END_SFX_URL;
+  const airWhooshSfxSrc = DEFAULT_AIR_WHOOSH_SFX_URL;
   const cameraClickSfxSrc =
     timeline.assets?.cameraClickSfxSrc || DEFAULT_CAMERA_CLICK_SFX_URL;
 
@@ -100,8 +140,13 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   const recurringSubscribeOverlayWidth = Math.max(260, Math.round(timeline.width * 0.24));
   const videoScenePremountFrames =
     Math.max(
+      ECHO_STUTTER_EDGE_FRAMES,
       FLASH_EDGE_FRAMES,
       GLITCH_EDGE_FRAMES,
+      IMPACT_ZOOM_EDGE_FRAMES,
+      IRIS_REVEAL_EDGE_FRAMES,
+      SLICE_PUSH_EDGE_FRAMES,
+      TILT_SNAP_EDGE_FRAMES,
       WHIP_EDGE_FRAMES,
       CHROMA_EDGE_FRAMES,
     ) + 2;
@@ -130,6 +175,8 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
     if (backgroundMusicSrc) sources.add(resolveMediaSrc(backgroundMusicSrc));
     if (glitchSfxSrc) sources.add(resolveMediaSrc(glitchSfxSrc));
     if (whooshSfxSrc) sources.add(resolveMediaSrc(whooshSfxSrc));
+    if (whooshEndSfxSrc) sources.add(resolveMediaSrc(whooshEndSfxSrc));
+    if (airWhooshSfxSrc) sources.add(resolveMediaSrc(airWhooshSfxSrc));
     if (chromaLeakSfxSrc) sources.add(resolveMediaSrc(chromaLeakSfxSrc));
     if (cameraClickSfxSrc) sources.add(resolveMediaSrc(cameraClickSfxSrc));
     if (isSuspenseOpening && suspenseGlitchSfxSrc) {
@@ -362,24 +409,48 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         );
       })}
 
-      {/* Whoosh SFX during whip cut windows */}
+      {/* Whoosh SFX during motion-driven cut windows */}
       {timeline.scenes.map((next, idx) => {
         if (idx === 0) return null;
         const prev = timeline.scenes[idx - 1];
         const prevIndex = prev.index;
         const transition = cutTransitions[idx] ?? 'none';
-        if (transition !== 'whip') return null;
+        if (
+          transition !== 'whip' &&
+          transition !== 'impactZoom' &&
+          transition !== 'slicePush' &&
+          transition !== 'irisReveal' &&
+          transition !== 'echoStutter' &&
+          transition !== 'tiltSnap'
+        ) {
+          return null;
+        }
         if ((prev.transitionSoundEffects ?? []).length > 0) return null;
-        if (!whooshSfxSrc) return null;
+        const defaultTransitionSfxSrc =
+          transition === 'slicePush'
+            ? whooshEndSfxSrc
+            : transition === 'irisReveal'
+            ? cameraClickSfxSrc
+            : transition === 'echoStutter'
+            ? airWhooshSfxSrc
+            : whooshSfxSrc;
+        if (!defaultTransitionSfxSrc) return null;
 
-        const from = Math.max(0, next.startFrame - WHIP_EDGE_FRAMES - 10);
+        const defaultTransitionDelayFrames =
+          transition === 'irisReveal'
+            ? Math.round(0.5 * (timeline.fps || 30))
+            : 0;
+
+        const from =
+          getTransitionSoundStartFrame(next.startFrame, transition) +
+          defaultTransitionDelayFrames;
 
         return (
           <Sequence
-            key={`whoosh-sfx-${prevIndex}-${next.index}`}
+            key={`whoosh-sfx-${transition}-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio src={resolveMediaSrc(whooshSfxSrc)} volume={0.85} />
+            <Audio src={resolveMediaSrc(defaultTransitionSfxSrc)} volume={0.85} />
           </Sequence>
         );
       })}

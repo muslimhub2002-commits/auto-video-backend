@@ -112,7 +112,19 @@ class SentenceDto {
   isSuspense?: boolean;
 
   @IsOptional()
-  @IsIn(['none', 'glitch', 'whip', 'flash', 'fade', 'chromaLeak'])
+  @IsIn([
+    'none',
+    'glitch',
+    'whip',
+    'flash',
+    'fade',
+    'chromaLeak',
+    'impactZoom',
+    'slicePush',
+    'irisReveal',
+    'echoStutter',
+    'tiltSnap',
+  ])
   transitionToNext?:
     | 'none'
     | 'glitch'
@@ -120,6 +132,11 @@ class SentenceDto {
     | 'flash'
     | 'fade'
     | 'chromaLeak'
+    | 'impactZoom'
+    | 'slicePush'
+    | 'irisReveal'
+    | 'echoStutter'
+    | 'tiltSnap'
     | null;
 
   @IsOptional()

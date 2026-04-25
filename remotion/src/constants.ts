@@ -39,6 +39,34 @@ export const CHROMA_EDGE_FRAMES = 10;
 export const CHROMA_MAX_SHIFT_PX = 22;
 export const CHROMA_MAX_BLUR_PX = 6;
 
+// Impact zoom transition: fast punch-in at the cut.
+export const IMPACT_ZOOM_EDGE_FRAMES = 8;
+export const IMPACT_ZOOM_MAX_SCALE_DELTA = 0.18;
+export const IMPACT_ZOOM_MAX_BLUR_PX = 6;
+
+// Slice push transition: staggered split-screen push.
+export const SLICE_PUSH_EDGE_FRAMES = 10;
+export const SLICE_PUSH_MAX_SHIFT_MULTIPLIER = 0.22;
+export const SLICE_PUSH_MAX_BLUR_PX = 12;
+
+// Iris reveal transition: circular reveal around the center.
+export const IRIS_REVEAL_EDGE_FRAMES = 18;
+export const IRIS_REVEAL_MAX_RADIUS_PERCENT = 150;
+export const IRIS_REVEAL_MAX_GLOW_OPACITY = 0.34;
+
+// Echo stutter transition: ghosted motion trails around the cut.
+export const ECHO_STUTTER_EDGE_FRAMES = 8;
+export const ECHO_STUTTER_MAX_SHIFT_MULTIPLIER = 0.05;
+export const ECHO_STUTTER_MAX_SCALE_DELTA = 0.035;
+export const ECHO_STUTTER_MAX_BLUR_PX = 8;
+
+// Tilt snap transition: fast tilt and settle.
+export const TILT_SNAP_EDGE_FRAMES = 9;
+export const TILT_SNAP_MAX_ROTATION_DEG = 20;
+export const TILT_SNAP_MAX_SHIFT_MULTIPLIER = 0.035;
+export const TILT_SNAP_MAX_SCALE_DELTA = 0.06;
+export const TILT_SNAP_MAX_BLUR_PX = 8;
+
 // Production note:
 // In production (Remotion Lambda), prefer passing CDN/Cloudinary/S3 URLs via `timeline.assets`.
 // If not provided, we fall back to local `staticFile()` assets in `remotion/public`.
@@ -47,6 +75,8 @@ export const CHROMA_MAX_BLUR_PX = 6;
 export const DEFAULT_BACKGROUND_MUSIC_SRC = 'audio/background_3.mp3';
 export const DEFAULT_GLITCH_FX_URL = 'sfx/glitch.mp3';
 export const DEFAULT_WHOOSH_SFX_URL = 'sfx/whoosh.mp3';
+export const DEFAULT_WHOOSH_END_SFX_URL = 'sfx/whoosh-end.mp3';
+export const DEFAULT_AIR_WHOOSH_SFX_URL = 'sfx/air-whoosh.mp3';
 export const DEFAULT_CAMERA_CLICK_SFX_URL = 'sfx/camera_click.mp3';
 // There is no dedicated chroma leak SFX file in `remotion/public/sfx` right now,
 // so default to an existing whoosh to avoid silent chromaLeak transitions in local renders.

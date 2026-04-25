@@ -41,7 +41,7 @@ export class AiTextService {
     'rotationDrift',
   ] as const;
 
-  constructor(private readonly runtime: AiRuntimeService) {}
+  constructor(private readonly runtime: AiRuntimeService) { }
 
   private get llm() {
     return this.runtime.llm;
@@ -387,33 +387,33 @@ export class AiTextService {
       sentenceId: string;
       index: number;
       visualEffect:
-        | 'colorGrading'
-        | 'animatedLighting'
-        | 'glassSubtle'
-        | 'glassReflections'
-        | 'glassStrong';
+      | 'colorGrading'
+      | 'animatedLighting'
+      | 'glassSubtle'
+      | 'glassReflections'
+      | 'glassStrong';
       imageFilterSettings: Record<string, unknown>;
     }>;
   }> {
     const sentences = Array.isArray(dto?.sentences)
       ? dto.sentences
-          .map((item) => ({
-            index: Number(item?.index),
-            sentenceId: String(item?.sentenceId ?? '').trim(),
-            imagePrompt: String(item?.imagePrompt ?? '').trim(),
-            visualEffect: item?.visualEffect ?? null,
-            imageFilterSettings:
-              item?.imageFilterSettings &&
+        .map((item) => ({
+          index: Number(item?.index),
+          sentenceId: String(item?.sentenceId ?? '').trim(),
+          imagePrompt: String(item?.imagePrompt ?? '').trim(),
+          visualEffect: item?.visualEffect ?? null,
+          imageFilterSettings:
+            item?.imageFilterSettings &&
               typeof item.imageFilterSettings === 'object'
-                ? item.imageFilterSettings
-                : null,
-          }))
-          .filter(
-            (item) =>
-              Number.isFinite(item.index) &&
-              item.sentenceId.length > 0 &&
-              item.imagePrompt.length > 0,
-          )
+              ? item.imageFilterSettings
+              : null,
+        }))
+        .filter(
+          (item) =>
+            Number.isFinite(item.index) &&
+            item.sentenceId.length > 0 &&
+            item.imagePrompt.length > 0,
+        )
       : [];
 
     if (!sentences.length) {
@@ -499,9 +499,9 @@ export class AiTextService {
                   visualEffect,
                   imageFilterSettings: this.normalizeLookSettings(
                     item?.imageFilterSettings as
-                      | Record<string, unknown>
-                      | null
-                      | undefined,
+                    | Record<string, unknown>
+                    | null
+                    | undefined,
                     this.clampNumber(
                       source.imageFilterSettings?.blurPx,
                       0,
@@ -512,16 +512,16 @@ export class AiTextService {
                 };
               })
               .filter(Boolean) as Array<{
-              sentenceId: string;
-              index: number;
-              visualEffect:
+                sentenceId: string;
+                index: number;
+                visualEffect:
                 | 'colorGrading'
                 | 'animatedLighting'
                 | 'glassSubtle'
                 | 'glassReflections'
                 | 'glassStrong';
-              imageFilterSettings: Record<string, unknown>;
-            }>;
+                imageFilterSettings: Record<string, unknown>;
+              }>;
           } catch (error) {
             console.warn('generateBulkLookEffects chunk fallback:', error);
             return [];
@@ -543,43 +543,43 @@ export class AiTextService {
       sentenceId: string;
       index: number;
       imageMotionEffect:
-        | 'slowZoomIn'
-        | 'slowZoomOut'
-        | 'diagonalDrift'
-        | 'cinematicPan'
-        | 'focusShift'
-        | 'parallaxMotion'
-        | 'shakeMicroMotion'
-        | 'splitMotion'
-        | 'rotationDrift';
+      | 'slowZoomIn'
+      | 'slowZoomOut'
+      | 'diagonalDrift'
+      | 'cinematicPan'
+      | 'focusShift'
+      | 'parallaxMotion'
+      | 'shakeMicroMotion'
+      | 'splitMotion'
+      | 'rotationDrift';
       imageMotionSettings: Record<string, unknown>;
     }>;
   }> {
     const sentences = Array.isArray(dto?.sentences)
       ? dto.sentences
-          .map((item) => ({
-            index: Number(item?.index),
-            sentenceId: String(item?.sentenceId ?? '').trim(),
-            imagePrompt: String(item?.imagePrompt ?? '').trim(),
-            imageMotionEffect: item?.imageMotionEffect ?? null,
-            imageMotionSpeed: this.clampNumber(
-              item?.imageMotionSpeed,
-              0.5,
-              2.5,
-              1.2,
-            ),
-            imageMotionSettings:
-              item?.imageMotionSettings &&
+        .map((item) => ({
+          index: Number(item?.index),
+          sentenceId: String(item?.sentenceId ?? '').trim(),
+          imagePrompt: String(item?.imagePrompt ?? '').trim(),
+          imageMotionEffect: item?.imageMotionEffect ?? null,
+          imageMotionSpeed: this.clampNumber(
+            item?.imageMotionSpeed,
+            0.5,
+            2.5,
+            1.2,
+          ),
+          imageMotionSettings:
+            item?.imageMotionSettings &&
               typeof item.imageMotionSettings === 'object'
-                ? item.imageMotionSettings
-                : null,
-          }))
-          .filter(
-            (item) =>
-              Number.isFinite(item.index) &&
-              item.sentenceId.length > 0 &&
-              item.imagePrompt.length > 0,
-          )
+              ? item.imageMotionSettings
+              : null,
+        }))
+        .filter(
+          (item) =>
+            Number.isFinite(item.index) &&
+            item.sentenceId.length > 0 &&
+            item.imagePrompt.length > 0,
+        )
       : [];
 
     if (!sentences.length) {
@@ -665,17 +665,17 @@ export class AiTextService {
                   imageMotionEffect,
                   imageMotionSettings: this.normalizeMotionSettings(
                     item?.imageMotionSettings as
-                      | Record<string, unknown>
-                      | null
-                      | undefined,
+                    | Record<string, unknown>
+                    | null
+                    | undefined,
                     source.imageMotionSpeed,
                   ),
                 };
               })
               .filter(Boolean) as Array<{
-              sentenceId: string;
-              index: number;
-              imageMotionEffect:
+                sentenceId: string;
+                index: number;
+                imageMotionEffect:
                 | 'slowZoomIn'
                 | 'slowZoomOut'
                 | 'diagonalDrift'
@@ -685,8 +685,8 @@ export class AiTextService {
                 | 'shakeMicroMotion'
                 | 'splitMotion'
                 | 'rotationDrift';
-              imageMotionSettings: Record<string, unknown>;
-            }>;
+                imageMotionSettings: Record<string, unknown>;
+              }>;
           } catch (error) {
             console.warn('generateBulkMotionEffects chunk fallback:', error);
             return [];
@@ -731,10 +731,11 @@ export class AiTextService {
           role: 'system',
           content:
             'You are an expert video script writer. ' +
-            'You ONLY respond with the script text, no explanations, headings, or markdown. ' +
-            'You have a talent for getting straight to the point and engaging the audience quickly. ' +
-            'Aim for driving a comment from the viewer. ' +
-            `HARD LENGTH CONSTRAINT: Output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.\n` +
+              'You ONLY respond with the script text, no explanations, headings, or markdown. ' +
+              'You have a talent for reaching the point from a unique unseen before prespective. ' +
+              subject == 'religious (Islam)' ? 'You have to get your info from an authentic source' : '' +
+              'Aim for driving a comment from the viewer. ' +
+              `HARD LENGTH CONSTRAINT: Output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.\n` +
             `LANGUAGE REQUIREMENT: Write the entire script in ${languageDesc}. Do NOT mix languages.`,
         },
       ];
@@ -763,7 +764,7 @@ export class AiTextService {
           `Subject: ${subject}.\n` +
           (selectedIdeaTitle
             ? 'SELECTED IDEA: The user explicitly chose this direction, so the full script must be about this exact idea rather than a different interpretation of the subject.\n' +
-              `Idea title: ${selectedIdeaTitle}.\n`
+            `Idea title: ${selectedIdeaTitle}.\n`
             : '') +
           (subjectContent
             ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${subjectContent}.\n`
@@ -877,10 +878,10 @@ export class AiTextService {
 
       const normalized = Array.isArray(parsed?.ideas)
         ? parsed.ideas
-            .map((idea) => ({
-              title: this.normalizeIdeaText(idea?.title),
-            }))
-            .filter((idea) => idea.title)
+          .map((idea) => ({
+            title: this.normalizeIdeaText(idea?.title),
+          }))
+          .filter((idea) => idea.title)
         : [];
 
       const deduped = this.dedupeScriptIdeas(normalized).slice(0, count);
@@ -1028,8 +1029,8 @@ export class AiTextService {
               item?.locationKey === null
                 ? null
                 : String(item?.locationKey ?? '')
-                    .trim()
-                    .toUpperCase() || null,
+                  .trim()
+                  .toUpperCase() || null,
             normalizedText,
           });
           previousNormalizedText = normalizedText;
@@ -1275,8 +1276,8 @@ export class AiTextService {
       }> => {
         const raw =
           parsed &&
-          typeof parsed === 'object' &&
-          Array.isArray((parsed as any).sentences)
+            typeof parsed === 'object' &&
+            Array.isArray((parsed as any).sentences)
             ? ((parsed as any).sentences as unknown[])
             : [];
 
@@ -1414,8 +1415,8 @@ export class AiTextService {
       const normalizeCharacters = (parsed: unknown): ScriptCharacter[] => {
         const raw =
           parsed &&
-          typeof parsed === 'object' &&
-          Array.isArray((parsed as any).characters)
+            typeof parsed === 'object' &&
+            Array.isArray((parsed as any).characters)
             ? ((parsed as any).characters as unknown[])
             : [];
 
@@ -1460,8 +1461,8 @@ export class AiTextService {
       const normalizeLocations = (parsed: unknown): ScriptLocation[] => {
         const raw =
           parsed &&
-          typeof parsed === 'object' &&
-          Array.isArray((parsed as any).locations)
+            typeof parsed === 'object' &&
+            Array.isArray((parsed as any).locations)
             ? ((parsed as any).locations as unknown[])
             : [];
 
@@ -2159,8 +2160,8 @@ export class AiTextService {
 
       const rangesRaw =
         parsed &&
-        typeof parsed === 'object' &&
-        Array.isArray((parsed as any).ranges)
+          typeof parsed === 'object' &&
+          Array.isArray((parsed as any).ranges)
           ? ((parsed as any).ranges as any[])
           : null;
 
@@ -2450,22 +2451,22 @@ export class AiTextService {
     const systemPrompt =
       instructionMode === 'tone-only'
         ? 'You are a voice director for short-form narration (reels/shorts).\n' +
-          'Given a SCRIPT, produce a minimal global tone instruction for AI Studio / TTS.\n' +
-          'Respond with ONLY the instruction text (no headings, no markdown, no quotes).\n\n' +
-          'Requirements:\n' +
-          '- Return a single short instruction, around 3-10 words.\n' +
-          '- Define only the exact overall tone.\n' +
-          '- Do NOT mention sentence-by-sentence variation, speed, pauses, or emphasis.\n' +
-          '- Do NOT repeat the script. Do NOT add meta commentary.'
+        'Given a SCRIPT, produce a minimal global tone instruction for AI Studio / TTS.\n' +
+        'Respond with ONLY the instruction text (no headings, no markdown, no quotes).\n\n' +
+        'Requirements:\n' +
+        '- Return a single short instruction, around 3-10 words.\n' +
+        '- Define only the exact overall tone.\n' +
+        '- Do NOT mention sentence-by-sentence variation, speed, pauses, or emphasis.\n' +
+        '- Do NOT repeat the script. Do NOT add meta commentary.'
         : 'You are a voice director for short-form narration (reels/shorts).\n' +
-          'Given a SCRIPT, you produce detailed style instructions for AI Studio / TTS.\n' +
-          'Respond with ONLY the style instructions text (no headings, no markdown, no quotes).\n\n' +
-          'Requirements:\n' +
-          '- Tone and Speed should differ depending on the sentence\n' +
-          '- Pause on important points to make the message more impactful.\n' +
-          '- Emphasizing important words in script\n' +
-          '- Keep it concise but detailed: 4-10 short lines max.\n' +
-          '- Do NOT repeat the script. Do NOT add meta commentary.';
+        'Given a SCRIPT, you produce detailed style instructions for AI Studio / TTS.\n' +
+        'Respond with ONLY the style instructions text (no headings, no markdown, no quotes).\n\n' +
+        'Requirements:\n' +
+        '- Tone and Speed should differ depending on the sentence\n' +
+        '- Pause on important points to make the message more impactful.\n' +
+        '- Emphasizing important words in script\n' +
+        '- Keep it concise but detailed: 4-10 short lines max.\n' +
+        '- Do NOT repeat the script. Do NOT add meta commentary.';
 
     return this.llm.streamText({
       model,

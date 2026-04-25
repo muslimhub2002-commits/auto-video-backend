@@ -23,6 +23,11 @@ const ALLOWED_TRANSITIONS = [
   'flash',
   'fade',
   'chromaLeak',
+  'impactZoom',
+  'slicePush',
+  'irisReveal',
+  'echoStutter',
+  'tiltSnap',
 ] as const;
 
 const ALLOWED_VISUAL_EFFECTS = [

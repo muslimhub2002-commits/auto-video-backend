@@ -129,6 +129,11 @@ export type SentenceInput = {
     | 'flash'
     | 'fade'
     | 'chromaLeak'
+    | 'impactZoom'
+    | 'slicePush'
+    | 'irisReveal'
+    | 'echoStutter'
+    | 'tiltSnap'
     | null;
   visualEffect?:
     | 'none'

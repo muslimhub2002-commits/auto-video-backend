@@ -166,6 +166,11 @@ export class RenderVideosController {
       'flash',
       'fade',
       'chromaLeak',
+      'impactZoom',
+      'slicePush',
+      'irisReveal',
+      'echoStutter',
+      'tiltSnap',
     ] as const);
 
     const allowedVisualEffects = new Set([

@@ -103,7 +103,19 @@ export type TimelineScene = {
     delaySeconds?: number;
     volume?: number;
   }>;
-  transitionToNext?: 'none' | 'glitch' | 'whip' | 'flash' | 'fade' | 'chromaLeak' | null;
+  transitionToNext?:
+    | 'none'
+    | 'glitch'
+    | 'whip'
+    | 'flash'
+    | 'fade'
+    | 'chromaLeak'
+    | 'impactZoom'
+    | 'slicePush'
+    | 'irisReveal'
+    | 'echoStutter'
+    | 'tiltSnap'
+    | null;
   visualEffect?:
     | 'none'
     | 'colorGrading'

@@ -13,9 +13,16 @@ import {
   CHROMA_EDGE_FRAMES,
   CHROMA_MAX_BLUR_PX,
   CHROMA_MAX_SHIFT_PX,
+  ECHO_STUTTER_EDGE_FRAMES,
+  ECHO_STUTTER_MAX_BLUR_PX,
+  ECHO_STUTTER_MAX_SCALE_DELTA,
+  ECHO_STUTTER_MAX_SHIFT_MULTIPLIER,
   FADE_EDGE_FRAMES,
   FLASH_EDGE_FRAMES,
   GLITCH_EDGE_FRAMES,
+  IMPACT_ZOOM_EDGE_FRAMES,
+  IMPACT_ZOOM_MAX_BLUR_PX,
+  IMPACT_ZOOM_MAX_SCALE_DELTA,
   IMAGE_CINEMATIC_PAN_X_MULTIPLIER,
   IMAGE_DIAGONAL_DRIFT_X_MULTIPLIER,
   IMAGE_DIAGONAL_DRIFT_Y_MULTIPLIER,
@@ -33,6 +40,17 @@ import {
   IMAGE_SPLIT_MOTION_X_MULTIPLIER,
   IMAGE_SPLIT_MOTION_Y_MULTIPLIER,
   IMAGE_ZOOM_PER_SECOND,
+  IRIS_REVEAL_EDGE_FRAMES,
+  IRIS_REVEAL_MAX_GLOW_OPACITY,
+  IRIS_REVEAL_MAX_RADIUS_PERCENT,
+  SLICE_PUSH_EDGE_FRAMES,
+  SLICE_PUSH_MAX_BLUR_PX,
+  SLICE_PUSH_MAX_SHIFT_MULTIPLIER,
+  TILT_SNAP_EDGE_FRAMES,
+  TILT_SNAP_MAX_BLUR_PX,
+  TILT_SNAP_MAX_ROTATION_DEG,
+  TILT_SNAP_MAX_SCALE_DELTA,
+  TILT_SNAP_MAX_SHIFT_MULTIPLIER,
   WHIP_DISTANCE_MULTIPLIER,
   WHIP_EDGE_FRAMES,
   WHIP_MAX_BLUR_PX,
@@ -566,6 +584,177 @@ export const Scene: React.FC<{
 
     const whipSkew = (whipBlur / WHIP_MAX_BLUR_PX) * 6 * (whipX >= 0 ? 1 : -1);
 
+    const hasImpactZoomIn =
+      transitionFromPrev === 'impactZoom' && frame < IMPACT_ZOOM_EDGE_FRAMES;
+    const hasImpactZoomOut =
+      transitionToNext === 'impactZoom' &&
+      frame >= scene.durationFrames - IMPACT_ZOOM_EDGE_FRAMES;
+    const impactZoomInEnergy = hasImpactZoomIn
+      ? interpolate(frame, [0, IMPACT_ZOOM_EDGE_FRAMES - 1], [1, 0], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.out(Easing.cubic),
+        })
+      : 0;
+    const impactZoomOutEnergy = hasImpactZoomOut
+      ? interpolate(
+          frame,
+          [
+            scene.durationFrames - IMPACT_ZOOM_EDGE_FRAMES,
+            scene.durationFrames - 1,
+          ],
+          [0, 1],
+          {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+            easing: Easing.in(Easing.cubic),
+          },
+        )
+      : 0;
+    const impactZoomEnergy = Math.max(impactZoomInEnergy, impactZoomOutEnergy);
+    const impactZoomScale =
+      1 +
+      IMPACT_ZOOM_MAX_SCALE_DELTA * impactZoomInEnergy +
+      IMPACT_ZOOM_MAX_SCALE_DELTA * 0.65 * impactZoomOutEnergy;
+    const impactZoomBlur = IMPACT_ZOOM_MAX_BLUR_PX * impactZoomEnergy;
+
+    const tiltDirFromPrev = mulberry32((scene.index + 1) * 4253)() < 0.5 ? -1 : 1;
+    const tiltDirToNext = mulberry32(((scene.index + 1) * 4253) ^ 0x9e3779b9)() < 0.5 ? -1 : 1;
+    const hasTiltSnapIn =
+      transitionFromPrev === 'tiltSnap' && frame < TILT_SNAP_EDGE_FRAMES;
+    const hasTiltSnapOut =
+      transitionToNext === 'tiltSnap' &&
+      frame >= scene.durationFrames - TILT_SNAP_EDGE_FRAMES;
+    const tiltSnapInEnergy = hasTiltSnapIn
+      ? interpolate(frame, [0, TILT_SNAP_EDGE_FRAMES - 1], [1, 0], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.out(Easing.cubic),
+        })
+      : 0;
+    const tiltSnapOutEnergy = hasTiltSnapOut
+      ? interpolate(
+          frame,
+          [scene.durationFrames - TILT_SNAP_EDGE_FRAMES, scene.durationFrames - 1],
+          [0, 1],
+          {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+            easing: Easing.in(Easing.cubic),
+          },
+        )
+      : 0;
+    const tiltSnapEnergy = Math.max(tiltSnapInEnergy, tiltSnapOutEnergy);
+    const tiltSnapTranslateX =
+      width *
+      TILT_SNAP_MAX_SHIFT_MULTIPLIER *
+      (-tiltDirFromPrev * tiltSnapInEnergy + tiltDirToNext * tiltSnapOutEnergy);
+    const tiltSnapTranslateY =
+      -height * 0.02 * (tiltSnapInEnergy + tiltSnapOutEnergy);
+    const tiltSnapRotate =
+      TILT_SNAP_MAX_ROTATION_DEG *
+      (-tiltDirFromPrev * tiltSnapInEnergy + tiltDirToNext * tiltSnapOutEnergy);
+    const tiltSnapScale = 1 + TILT_SNAP_MAX_SCALE_DELTA * tiltSnapEnergy;
+    const tiltSnapBlur = TILT_SNAP_MAX_BLUR_PX * tiltSnapEnergy;
+
+    const hasIrisRevealIn =
+      transitionFromPrev === 'irisReveal' && frame < IRIS_REVEAL_EDGE_FRAMES;
+    const hasIrisRevealOut =
+      transitionToNext === 'irisReveal' &&
+      frame >= scene.durationFrames - IRIS_REVEAL_EDGE_FRAMES;
+    const irisRevealInProgress = hasIrisRevealIn
+      ? interpolate(frame, [0, IRIS_REVEAL_EDGE_FRAMES - 1], [0, 1], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.out(Easing.cubic),
+        })
+      : 0;
+    const irisRevealOutProgress = hasIrisRevealOut
+      ? interpolate(
+          frame,
+          [scene.durationFrames - IRIS_REVEAL_EDGE_FRAMES, scene.durationFrames - 1],
+          [0, 1],
+          {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+            easing: Easing.in(Easing.cubic),
+          },
+        )
+      : 0;
+    const irisRevealRadiusPercent = hasIrisRevealIn
+      ? IRIS_REVEAL_MAX_RADIUS_PERCENT * irisRevealInProgress
+      : hasIrisRevealOut
+      ? IRIS_REVEAL_MAX_RADIUS_PERCENT * (1 - irisRevealOutProgress)
+      : IRIS_REVEAL_MAX_RADIUS_PERCENT;
+    const irisRevealGlowStrength = hasIrisRevealIn
+      ? 4 * irisRevealInProgress * (1 - irisRevealInProgress)
+      : hasIrisRevealOut
+      ? 4 * irisRevealOutProgress * (1 - irisRevealOutProgress)
+      : 0;
+    const irisRevealClipPath = hasIrisRevealIn || hasIrisRevealOut
+      ? `circle(${irisRevealRadiusPercent.toFixed(2)}% at 50% 50%)`
+      : undefined;
+
+    const hasSlicePushIn =
+      transitionFromPrev === 'slicePush' && frame < SLICE_PUSH_EDGE_FRAMES;
+    const hasSlicePushOut =
+      transitionToNext === 'slicePush' &&
+      frame >= scene.durationFrames - SLICE_PUSH_EDGE_FRAMES;
+    const slicePushInEnergy = hasSlicePushIn
+      ? interpolate(frame, [0, SLICE_PUSH_EDGE_FRAMES - 1], [1, 0], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.out(Easing.cubic),
+        })
+      : 0;
+    const slicePushOutEnergy = hasSlicePushOut
+      ? interpolate(
+          frame,
+          [scene.durationFrames - SLICE_PUSH_EDGE_FRAMES, scene.durationFrames - 1],
+          [0, 1],
+          {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+            easing: Easing.in(Easing.cubic),
+          },
+        )
+      : 0;
+    const slicePushEnergy = Math.max(slicePushInEnergy, slicePushOutEnergy);
+    const slicePushBaseOpacity = clampNumber(1 - slicePushEnergy, 0, 1);
+
+    const hasEchoStutterIn =
+      transitionFromPrev === 'echoStutter' && frame < ECHO_STUTTER_EDGE_FRAMES;
+    const hasEchoStutterOut =
+      transitionToNext === 'echoStutter' &&
+      frame >= scene.durationFrames - ECHO_STUTTER_EDGE_FRAMES;
+    const echoStutterInEnergy = hasEchoStutterIn
+      ? interpolate(frame, [0, ECHO_STUTTER_EDGE_FRAMES - 1], [1, 0], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.out(Easing.cubic),
+        })
+      : 0;
+    const echoStutterOutEnergy = hasEchoStutterOut
+      ? interpolate(
+          frame,
+          [
+            scene.durationFrames - ECHO_STUTTER_EDGE_FRAMES,
+            scene.durationFrames - 1,
+          ],
+          [0, 1],
+          {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+            easing: Easing.in(Easing.cubic),
+          },
+        )
+      : 0;
+    const echoStutterEnergy = Math.max(
+      echoStutterInEnergy,
+      echoStutterOutEnergy,
+    );
+    const echoStutterDirection = hasEchoStutterIn ? -1 : 1;
+
     // Glitch (generic overlay so it works for both images and videos).
     const hasGlitchIn =
       transitionFromPrev === 'glitch' && frame < GLITCH_EDGE_FRAMES;
@@ -608,16 +797,57 @@ export const Scene: React.FC<{
         ? (glitchRand() * 2 - 1) * 6 * glitchAlpha
         : 0;
 
+    const combinedBlurPx = Math.max(whipBlur, impactZoomBlur, tiltSnapBlur);
+    const combinedContrast =
+      1 +
+      (whipBlur > 0.01 ? 0.08 : 0) +
+      impactZoomEnergy * 0.05 +
+      tiltSnapEnergy * 0.04;
+    const combinedSaturate =
+      1 +
+      (whipBlur > 0.01 ? 0.04 : 0) +
+      impactZoomEnergy * 0.08 +
+      tiltSnapEnergy * 0.03;
+    const combinedBrightness =
+      1 + impactZoomEnergy * 0.14 + irisRevealGlowStrength * 0.05;
+    const mediaTransformFilterParts: string[] = [];
+    if (combinedBlurPx > 0.01) {
+      mediaTransformFilterParts.push(`blur(${combinedBlurPx.toFixed(2)}px)`);
+    }
+    if (combinedContrast > 1.001) {
+      mediaTransformFilterParts.push(`contrast(${combinedContrast.toFixed(3)})`);
+    }
+    if (combinedSaturate > 1.001) {
+      mediaTransformFilterParts.push(`saturate(${combinedSaturate.toFixed(3)})`);
+    }
+    if (combinedBrightness > 1.001) {
+      mediaTransformFilterParts.push(`brightness(${combinedBrightness.toFixed(3)})`);
+    }
+
     const mediaTransformStyle: React.CSSProperties = {
       width: '100%',
       height: '100%',
       transformOrigin: motionTransformOrigin,
-      transform: `translate(${(motionTranslateX + whipX + glitchJitterX).toFixed(2)}px, ${(motionTranslateY + glitchJitterY).toFixed(2)}px) rotate(${motionRotate.toFixed(2)}deg) skewX(${whipSkew.toFixed(2)}deg) scale(${motionScale.toFixed(6)})`,
+      transform: `translate(${(
+        motionTranslateX +
+        whipX +
+        glitchJitterX +
+        tiltSnapTranslateX
+      ).toFixed(2)}px, ${(
+        motionTranslateY +
+        glitchJitterY +
+        tiltSnapTranslateY
+      ).toFixed(2)}px) rotate(${(
+        motionRotate + tiltSnapRotate
+      ).toFixed(2)}deg) skewX(${whipSkew.toFixed(2)}deg) scale(${(
+        motionScale * impactZoomScale * tiltSnapScale
+      ).toFixed(6)})`,
       willChange: 'transform, filter',
       filter:
-        whipBlur > 0.01
-          ? `blur(${whipBlur.toFixed(2)}px) contrast(1.08) saturate(1.04)`
+        mediaTransformFilterParts.length > 0
+          ? mediaTransformFilterParts.join(' ')
           : undefined,
+      clipPath: irisRevealClipPath,
     };
 
     // Camera flash.
@@ -856,45 +1086,189 @@ export const Scene: React.FC<{
       </AbsoluteFill>
     );
 
-    const mediaContent = isTextScene ? (
-      <TextScene
-        scene={scene}
-        frame={frame}
-        fps={fps}
-        width={width}
-        height={height}
-        isShort={isShort}
-        fontFamily={subtitleFontFamily}
-      />
-    ) : isOverlayScene ? (
-      <OverlayScene
-        scene={scene}
-        frame={frame}
-        fps={fps}
-        width={width}
-        height={height}
-        isShort={isShort}
-        fontFamily={subtitleFontFamily}
-      />
-    ) : scene.videoSrc ? (
-      <OffthreadVideo
-        src={resolveMediaSrc(scene.videoSrc)}
-        muted
-        pauseWhenBuffering
+    const renderMediaContent = () => {
+      if (isTextScene) {
+        return (
+          <TextScene
+            scene={scene}
+            frame={frame}
+            fps={fps}
+            width={width}
+            height={height}
+            isShort={isShort}
+            fontFamily={subtitleFontFamily}
+          />
+        );
+      }
+
+      if (isOverlayScene) {
+        return (
+          <OverlayScene
+            scene={scene}
+            frame={frame}
+            fps={fps}
+            width={width}
+            height={height}
+            isShort={isShort}
+            fontFamily={subtitleFontFamily}
+          />
+        );
+      }
+
+      if (scene.videoSrc) {
+        return (
+          <OffthreadVideo
+            src={resolveMediaSrc(scene.videoSrc)}
+            muted
+            pauseWhenBuffering
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              filter: mediaLookFilter,
+            }}
+          />
+        );
+      }
+
+      if (resolvedPrimaryImageSrc) {
+        return (
+          <>
+            {renderImageLayer(resolvedPrimaryImageSrc, primaryImageOpacity)}
+            {resolvedSecondaryImageSrc
+              ? renderImageLayer(resolvedSecondaryImageSrc, secondaryImageOpacity)
+              : null}
+          </>
+        );
+      }
+
+      return null;
+    };
+
+    const mediaContent = renderMediaContent();
+
+    const slicePushSegments = [
+      { start: 0, end: 33.334, direction: -1, speed: 0.85 },
+      { start: 33.334, end: 66.667, direction: 1, speed: 1.1 },
+      { start: 66.667, end: 100, direction: -1, speed: 0.95 },
+    ];
+
+    const slicePushLayers = slicePushEnergy > 0.001
+      ? slicePushSegments.map((segment, idx) => {
+          const shift =
+            width *
+            SLICE_PUSH_MAX_SHIFT_MULTIPLIER *
+            segment.direction *
+            segment.speed *
+            slicePushEnergy;
+          const blur = SLICE_PUSH_MAX_BLUR_PX * segment.speed * slicePushEnergy;
+
+          return (
+            <AbsoluteFill
+              key={`slice-push-${idx}`}
+              style={{
+                clipPath: `inset(0 ${(100 - segment.end).toFixed(3)}% 0 ${segment.start.toFixed(3)}%)`,
+                opacity: 0.98,
+                pointerEvents: 'none',
+              }}
+            >
+              <AbsoluteFill style={mediaTransformStyle}>
+                <AbsoluteFill
+                  style={{
+                    transform: `translateX(${shift.toFixed(2)}px)`,
+                    filter:
+                      blur > 0.01
+                        ? `blur(${blur.toFixed(2)}px) contrast(1.05) saturate(1.06)`
+                        : undefined,
+                    willChange: 'transform, filter',
+                  }}
+                >
+                  {renderMediaContent()}
+                </AbsoluteFill>
+              </AbsoluteFill>
+            </AbsoluteFill>
+          );
+        })
+      : null;
+
+    const echoStutterLayers = echoStutterEnergy > 0.001
+      ? [0, 1, 2].map((layerIndex) => {
+          const depth = layerIndex + 1;
+          const shift =
+            width *
+            ECHO_STUTTER_MAX_SHIFT_MULTIPLIER *
+            depth *
+            echoStutterDirection *
+            echoStutterEnergy;
+          const scale =
+            1 + ECHO_STUTTER_MAX_SCALE_DELTA * depth * echoStutterEnergy;
+          const blur = ECHO_STUTTER_MAX_BLUR_PX * depth * 0.35 * echoStutterEnergy;
+          const opacity = Math.max(0, 0.4 - layerIndex * 0.075) * echoStutterEnergy;
+
+          return (
+            <AbsoluteFill
+              key={`echo-stutter-${layerIndex}`}
+              style={{
+                opacity,
+                mixBlendMode: layerIndex === 0 ? 'screen' : 'lighten',
+                pointerEvents: 'none',
+              }}
+            >
+              <AbsoluteFill style={mediaTransformStyle}>
+                <AbsoluteFill
+                  style={{
+                    transform: `translate(${shift.toFixed(2)}px, ${(
+                      depth * 4 * echoStutterEnergy
+                    ).toFixed(2)}px) scale(${scale.toFixed(4)})`,
+                    filter:
+                      blur > 0.01
+                        ? `blur(${blur.toFixed(2)}px) saturate(1.18) brightness(1.08)`
+                        : undefined,
+                    willChange: 'transform, filter',
+                  }}
+                >
+                  {renderMediaContent()}
+                </AbsoluteFill>
+              </AbsoluteFill>
+            </AbsoluteFill>
+          );
+        })
+      : null;
+
+    const impactZoomOverlay = impactZoomEnergy > 0.001 ? (
+      <AbsoluteFill
         style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          filter: mediaLookFilter,
+          opacity: 0.22 * impactZoomEnergy,
+          mixBlendMode: 'screen',
+          background:
+            'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.08) 32%, rgba(0,0,0,0) 72%)',
+          pointerEvents: 'none',
         }}
       />
-    ) : resolvedPrimaryImageSrc ? (
-      <>
-        {renderImageLayer(resolvedPrimaryImageSrc, primaryImageOpacity)}
-        {resolvedSecondaryImageSrc
-          ? renderImageLayer(resolvedSecondaryImageSrc, secondaryImageOpacity)
-          : null}
-      </>
+    ) : null;
+
+    const irisRevealOverlay = irisRevealGlowStrength > 0.001 ? (
+      <AbsoluteFill
+        style={{
+          opacity: IRIS_REVEAL_MAX_GLOW_OPACITY * irisRevealGlowStrength,
+          mixBlendMode: 'screen',
+          background:
+            'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.18) 12%, rgba(255,255,255,0.00) 34%)',
+          pointerEvents: 'none',
+        }}
+      />
+    ) : null;
+
+    const slicePushOverlay = slicePushEnergy > 0.001 ? (
+      <AbsoluteFill
+        style={{
+          opacity: 0.16 * slicePushEnergy,
+          mixBlendMode: 'screen',
+          background:
+            'linear-gradient(120deg, rgba(255,255,255,0.00) 0%, rgba(255,255,255,0.16) 36%, rgba(255,255,255,0.00) 72%)',
+          pointerEvents: 'none',
+        }}
+      />
     ) : null;
 
     const animatedLightingOn = resolvedLook.animatedLightingIntensity > 0.001;
@@ -910,9 +1284,16 @@ export const Scene: React.FC<{
 
     const mediaLayer = mediaContent ? (
       <AbsoluteFill style={{ ...backgroundStyle, filter: wrapperFilter }}>
-        <AbsoluteFill style={mediaTransformStyle}>{mediaContent}</AbsoluteFill>
+        <AbsoluteFill style={{ ...mediaTransformStyle, opacity: slicePushBaseOpacity }}>
+          {mediaContent}
+        </AbsoluteFill>
+        {slicePushLayers}
+        {echoStutterLayers}
         {chromaOverlay}
         {glitchOverlay}
+        {impactZoomOverlay}
+        {irisRevealOverlay}
+        {slicePushOverlay}
         {animatedLightingOn ? (
           <AbsoluteFill
             style={{

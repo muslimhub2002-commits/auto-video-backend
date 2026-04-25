@@ -7,7 +7,25 @@ export type TransitionType =
   | 'whip'
   | 'flash'
   | 'fade'
-  | 'chromaLeak';
+  | 'chromaLeak'
+  | 'impactZoom'
+  | 'slicePush'
+  | 'irisReveal'
+  | 'echoStutter'
+  | 'tiltSnap';
+
+export const AUTO_CUT_TRANSITIONS: TransitionType[] = [
+  'glitch',
+  'whip',
+  'flash',
+  'fade',
+  'chromaLeak',
+  'impactZoom',
+  'slicePush',
+  'irisReveal',
+  'echoStutter',
+  'tiltSnap',
+];
 
 const hasVisualMedia = (scene?: TimelineScene) => {
   return Boolean(
@@ -38,10 +56,29 @@ const shuffleInPlace = <T,>(arr: T[], rand: () => number) => {
   return arr;
 };
 
+const rotateBagToValidStart = (params: {
+  bag: TransitionType[];
+  lastUsed: TransitionType | null;
+  avoidFade: boolean;
+}) => {
+  if (params.bag.length <= 1) return params.bag;
+
+  for (let offset = 0; offset < params.bag.length; offset += 1) {
+    const candidate = params.bag[offset];
+    if (params.avoidFade && candidate === 'fade') continue;
+    if (params.lastUsed && candidate === params.lastUsed) continue;
+    if (offset === 0) return params.bag;
+    return [...params.bag.slice(offset), ...params.bag.slice(0, offset)];
+  }
+
+  return params.bag;
+};
+
 // Transition plan per cut index (i = cut from scenes[i-1] -> scenes[i]).
 // Rules:
-// - Glitch happens ONLY on first and last eligible cut.
-// - Other transitions don't repeat until all have been used once.
+// - Every eligible cut pulls from the same deterministic auto pool.
+// - Auto transitions don't repeat until the full pool has been exhausted once.
+// - The first auto-picked cut must not be `fade`.
 export const buildCutTransitions = (scenes: TimelineScene[]): TransitionType[] => {
   const transitions: TransitionType[] = new Array(scenes.length).fill('none');
   if (scenes.length < 2) return transitions;
@@ -52,70 +89,35 @@ export const buildCutTransitions = (scenes: TimelineScene[]): TransitionType[] =
   }
   if (eligibleCuts.length === 0) return transitions;
 
-  const firstCut = eligibleCuts[0];
-  const lastCut = eligibleCuts[eligibleCuts.length - 1];
-  transitions[firstCut] = 'glitch';
-  if (lastCut !== firstCut) transitions[lastCut] = 'glitch';
-
-  // The second transition of the video (first non-glitch eligible cut) must not be fade.
-  const firstNonGlitchCut = eligibleCuts.find(
-    (c) => c !== firstCut && c !== lastCut,
-  );
-
-  const pool: TransitionType[] = ['whip', 'flash', 'fade', 'chromaLeak'];
-  if (pool.length === 0) return transitions;
-
   // Deterministic shuffle seed for this timeline.
   const seed =
     (scenes.length * 1337) ^ getCutSeed(scenes[0], scenes[scenes.length - 1]);
   const rand = mulberry32(seed);
 
-  let bag = shuffleInPlace([...pool], rand);
+  let bag = rotateBagToValidStart({
+    bag: shuffleInPlace([...AUTO_CUT_TRANSITIONS], rand),
+    lastUsed: null,
+    avoidFade: true,
+  });
   let bagIdx = 0;
-  let reshuffleCount = 1; // initial shuffle
   let lastUsed: TransitionType | null = null;
-
-  const ensureNextIsNotFade = () => {
-    if (bag[bagIdx] !== 'fade') return;
-    // Swap with the next non-fade element if possible (deterministic, no extra randomness).
-    for (let j = bagIdx + 1; j < bag.length; j += 1) {
-      if (bag[j] !== 'fade') {
-        const tmp = bag[bagIdx];
-        bag[bagIdx] = bag[j];
-        bag[j] = tmp;
-        return;
-      }
-    }
-  };
+  let isFirstAutoPick = true;
 
   for (const cutIndex of eligibleCuts) {
-    if (cutIndex === firstCut || cutIndex === lastCut) continue;
-
     if (bagIdx >= bag.length) {
-      bag = shuffleInPlace([...pool], rand);
+      bag = rotateBagToValidStart({
+        bag: shuffleInPlace([...AUTO_CUT_TRANSITIONS], rand),
+        lastUsed,
+        avoidFade: isFirstAutoPick,
+      });
       bagIdx = 0;
-      reshuffleCount += 1;
-
-      // Extra rule: on the *second* reshuffle, don't let the next pick be `fade`.
-      // (Keeps the early pacing snappier.)
-      if (reshuffleCount === 2 && bag.length > 1 && bag[0] === 'fade') {
-        bag.push(bag.shift() as TransitionType);
-      }
-
-      // Optional: avoid immediate repeat across cycle boundary.
-      if (lastUsed && bag.length > 1 && bag[0] === lastUsed) {
-        bag.push(bag.shift() as TransitionType);
-      }
-    }
-
-    if (firstNonGlitchCut && cutIndex === firstNonGlitchCut) {
-      ensureNextIsNotFade();
     }
 
     const t = bag[bagIdx];
     bagIdx += 1;
     transitions[cutIndex] = t;
     lastUsed = t;
+    isFirstAutoPick = false;
   }
 
   return transitions;
