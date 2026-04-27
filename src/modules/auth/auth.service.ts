@@ -10,6 +10,8 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { OAuth2Client } from 'google-auth-library';
 import { User } from '../users/entities/user.entity';
+import { ScriptsService } from '../scripts/scripts.service';
+import { SocialAccountsService } from '../social-accounts/social-accounts.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleExchangeDto } from './dto/google-exchange.dto';
@@ -24,6 +26,8 @@ export class AuthService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly jwtService: JwtService,
+    private readonly scriptsService: ScriptsService,
+    private readonly socialAccountsService: SocialAccountsService,
   ) {}
 
   private sanitizeUser(user: User) {
@@ -201,5 +205,36 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  async getProfileSummary(user: User) {
+    const [scriptSummary, socialAccounts] = await Promise.all([
+      this.scriptsService.getProfileSummary(user.id),
+      this.socialAccountsService.list(user.id),
+    ]);
+
+    return {
+      user: this.sanitizeUser(user),
+      generation: {
+        videosGenerated: Number(user.number_of_videos_generated ?? 0),
+        imagesGenerated: Number(user.number_of_images_generated ?? 0),
+        voicesGenerated: Number(user.number_of_voices_generated ?? 0),
+      },
+      workspace: scriptSummary,
+      socialAccounts: {
+        ...socialAccounts.summary,
+        providers: socialAccounts.providers.map((provider) => ({
+          provider: provider.provider,
+          providerLabel: provider.providerLabel,
+          total: provider.total,
+          defaultAccountId: provider.defaultAccountId,
+          attentionCount: provider.items.filter((item) =>
+            ['attention', 'reconnect_required', 'error'].includes(
+              item.connectionStatus,
+            ),
+          ).length,
+        })),
+      },
+    };
   }
 }

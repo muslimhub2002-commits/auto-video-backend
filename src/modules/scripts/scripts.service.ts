@@ -59,6 +59,45 @@ type VideoLibraryPlatform = 'all' | 'youtube' | 'facebook' | 'instagram' | 'tikt
 
 type PublishedPlatform = Exclude<VideoLibraryPlatform, 'all'>;
 
+type ScriptProfileRecentItem = {
+  id: string;
+  title: string | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+type ScriptProfileRecentPublishedItem = {
+  id: string;
+  title: string | null;
+  updated_at: Date;
+  youtube_url: string | null;
+  facebook_url: string | null;
+  instagram_url: string | null;
+  tiktok_url: string | null;
+};
+
+type ScriptProfileSummary = {
+  totalScripts: number;
+  draftScripts: number;
+  videoLibraryCount: number;
+  publishedVideoCount: number;
+  publishedByPlatform: Record<PublishedPlatform, number>;
+  recentActivity: {
+    latestScript: {
+      id: string;
+      title: string | null;
+      createdAt: string;
+      updatedAt: string;
+    } | null;
+    latestPublishedVideo: {
+      id: string;
+      title: string | null;
+      updatedAt: string;
+      publishedPlatforms: PublishedPlatform[];
+    } | null;
+  };
+};
+
 type NormalizedVoiceOverChunk = {
   index: number;
   text: string;
@@ -313,6 +352,139 @@ export class ScriptsService implements OnModuleInit {
       case 'tiktok':
         return 'script.tiktok_url';
     }
+  }
+
+  private createOwnedTopLevelScriptsQuery(userId: string) {
+    return this.scriptRepository
+      .createQueryBuilder('script')
+      .leftJoin(
+        (qb) =>
+          qb
+            .subQuery()
+            .select(
+              'DISTINCT jsonb_array_elements_text(parent.shorts_scripts)',
+              'short_id',
+            )
+            .from(Script, 'parent')
+            .where('parent.user_id = :userId', { userId })
+            .andWhere('parent.shorts_scripts IS NOT NULL'),
+        'short_ref',
+        'short_ref.short_id = script.id::text',
+      )
+      .where('script.user_id = :userId', { userId })
+      .andWhere('(script.isShortScript IS NULL OR script.isShortScript = false)')
+      .andWhere('short_ref.short_id IS NULL');
+  }
+
+  async getProfileSummary(userId: string): Promise<ScriptProfileSummary> {
+    await this.ensureScriptsSchemaLazy();
+
+    const baseQb = this.createOwnedTopLevelScriptsQuery(userId);
+    const publishedPredicate =
+      "(COALESCE(BTRIM(script.youtube_url), '') <> '' OR COALESCE(BTRIM(script.facebook_url), '') <> '' OR COALESCE(BTRIM(script.instagram_url), '') <> '' OR COALESCE(BTRIM(script.tiktok_url), '') <> '')";
+    const videoLibraryPredicate =
+      "(COALESCE(BTRIM(script.video_url), '') <> '' OR COALESCE(BTRIM(script.youtube_url), '') <> '' OR COALESCE(BTRIM(script.facebook_url), '') <> '' OR COALESCE(BTRIM(script.instagram_url), '') <> '' OR COALESCE(BTRIM(script.tiktok_url), '') <> '')";
+
+    const [aggregateRaw, latestScriptRaw, latestPublishedVideoRaw] =
+      await Promise.all([
+        baseQb
+          .clone()
+          .select('COUNT(*)', 'total_scripts')
+          .addSelect(
+            `SUM(CASE WHEN COALESCE(BTRIM(script.youtube_url), '') = '' AND COALESCE(BTRIM(script.facebook_url), '') = '' AND COALESCE(BTRIM(script.instagram_url), '') = '' AND COALESCE(BTRIM(script.tiktok_url), '') = '' THEN 1 ELSE 0 END)`,
+            'draft_scripts',
+          )
+          .addSelect(
+            `SUM(CASE WHEN ${videoLibraryPredicate} THEN 1 ELSE 0 END)`,
+            'video_library_count',
+          )
+          .addSelect(
+            `SUM(CASE WHEN ${publishedPredicate} THEN 1 ELSE 0 END)`,
+            'published_video_count',
+          )
+          .addSelect(
+            `SUM(CASE WHEN COALESCE(BTRIM(script.youtube_url), '') <> '' THEN 1 ELSE 0 END)`,
+            'youtube_count',
+          )
+          .addSelect(
+            `SUM(CASE WHEN COALESCE(BTRIM(script.facebook_url), '') <> '' THEN 1 ELSE 0 END)`,
+            'facebook_count',
+          )
+          .addSelect(
+            `SUM(CASE WHEN COALESCE(BTRIM(script.instagram_url), '') <> '' THEN 1 ELSE 0 END)`,
+            'instagram_count',
+          )
+          .addSelect(
+            `SUM(CASE WHEN COALESCE(BTRIM(script.tiktok_url), '') <> '' THEN 1 ELSE 0 END)`,
+            'tiktok_count',
+          )
+          .getRawOne<{
+            total_scripts: string | null;
+            draft_scripts: string | null;
+            video_library_count: string | null;
+            published_video_count: string | null;
+            youtube_count: string | null;
+            facebook_count: string | null;
+            instagram_count: string | null;
+            tiktok_count: string | null;
+          }>(),
+        baseQb
+          .clone()
+          .select('script.id', 'id')
+          .addSelect('script.title', 'title')
+          .addSelect('script.created_at', 'created_at')
+          .addSelect('script.updated_at', 'updated_at')
+          .orderBy('script.created_at', 'DESC')
+          .addOrderBy('script.updated_at', 'DESC')
+          .getRawOne<ScriptProfileRecentItem>(),
+        baseQb
+          .clone()
+          .andWhere(publishedPredicate)
+          .select('script.id', 'id')
+          .addSelect('script.title', 'title')
+          .addSelect('script.updated_at', 'updated_at')
+          .addSelect('script.youtube_url', 'youtube_url')
+          .addSelect('script.facebook_url', 'facebook_url')
+          .addSelect('script.instagram_url', 'instagram_url')
+          .addSelect('script.tiktok_url', 'tiktok_url')
+          .orderBy('script.updated_at', 'DESC')
+          .addOrderBy('script.created_at', 'DESC')
+          .getRawOne<ScriptProfileRecentPublishedItem>(),
+      ]);
+
+    const toCount = (value: string | null | undefined) =>
+      Number.parseInt(String(value ?? '0'), 10) || 0;
+
+    return {
+      totalScripts: toCount(aggregateRaw?.total_scripts),
+      draftScripts: toCount(aggregateRaw?.draft_scripts),
+      videoLibraryCount: toCount(aggregateRaw?.video_library_count),
+      publishedVideoCount: toCount(aggregateRaw?.published_video_count),
+      publishedByPlatform: {
+        youtube: toCount(aggregateRaw?.youtube_count),
+        facebook: toCount(aggregateRaw?.facebook_count),
+        instagram: toCount(aggregateRaw?.instagram_count),
+        tiktok: toCount(aggregateRaw?.tiktok_count),
+      },
+      recentActivity: {
+        latestScript: latestScriptRaw
+          ? {
+              id: latestScriptRaw.id,
+              title: latestScriptRaw.title,
+              createdAt: new Date(latestScriptRaw.created_at).toISOString(),
+              updatedAt: new Date(latestScriptRaw.updated_at).toISOString(),
+            }
+          : null,
+        latestPublishedVideo: latestPublishedVideoRaw
+          ? {
+              id: latestPublishedVideoRaw.id,
+              title: latestPublishedVideoRaw.title,
+              updatedAt: new Date(latestPublishedVideoRaw.updated_at).toISOString(),
+              publishedPlatforms: this.getPublishedPlatforms(latestPublishedVideoRaw),
+            }
+          : null,
+      },
+    };
   }
 
   private normalizeVoiceOverChunksInput(

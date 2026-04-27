@@ -43,4 +43,10 @@ export class AuthController {
   async getProfile(@GetUser() user: User) {
     return sanitizeAuthUser(user);
   }
+
+  @Get('profile-summary')
+  @UseGuards(JwtAuthGuard)
+  async getProfileSummary(@GetUser() user: User) {
+    return this.authService.getProfileSummary(user);
+  }
 }
