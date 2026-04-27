@@ -56,6 +56,7 @@ const ALLOWED_SCENE_TABS = ['image', 'video', 'text', 'overlay'] as const;
 const ALLOWED_TEXT_ANIMATION_EFFECTS = [
   'popInBounceHook',
   'slideCutFast',
+  'typewriter',
   'scalePunchZoom',
   'maskReveal',
   'glitchFlashHook',

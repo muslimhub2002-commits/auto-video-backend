@@ -52,13 +52,15 @@ describe('buildTimeline', () => {
         {
           text: 'This hook should use a solid background',
           mediaType: 'text',
-          textAnimationEffect: 'slideCutFast',
+          textAnimationEffect: 'typewriter',
           textAnimationText: 'Solid hook',
           textAnimationSettings: {
             backgroundMode: 'solid',
             backgroundColor: '#111827',
-            animatePerWord: true,
-            wordDelaySeconds: 0.12,
+            textBoxEnabled: true,
+            textBoxPaddingPx: 18,
+            textBoxRadiusPx: 16,
+            textBoxColor: '#172554',
           },
         },
         {
@@ -80,6 +82,8 @@ describe('buildTimeline', () => {
           textAnimationEffect: 'slideCutFast',
           textAnimationSettings: {
             backgroundMode: 'inheritVideo',
+            shadowOpacity: 0.58,
+            shadowBlurPx: 30,
           },
           textBackgroundVideoUrl: 'looping-hook.mp4',
           visualEffect: 'glassReflections',
@@ -98,12 +102,14 @@ describe('buildTimeline', () => {
 
     expect(timeline.scenes[0]).toMatchObject({
       mediaType: 'text',
-      textAnimationEffect: 'slideCutFast',
+      textAnimationEffect: 'typewriter',
       textAnimationText: 'Solid hook',
       textAnimationSettings: {
         backgroundMode: 'solid',
-        animatePerWord: true,
-        wordDelaySeconds: 0.12,
+        textBoxEnabled: true,
+        textBoxPaddingPx: 18,
+        textBoxRadiusPx: 16,
+        textBoxColor: '#172554',
       },
     });
     expect(timeline.scenes[0].imageSrc).toBeUndefined();
@@ -127,6 +133,8 @@ describe('buildTimeline', () => {
       textAnimationEffect: 'slideCutFast',
       textAnimationSettings: {
         backgroundMode: 'inheritVideo',
+        shadowOpacity: 0.58,
+        shadowBlurPx: 30,
       },
       visualEffect: 'glassReflections',
       imageFilterSettings: {
@@ -163,6 +171,12 @@ describe('buildTimeline', () => {
             offsetY: -8,
             textColor: '#f8fafc',
             accentColor: '#22d3ee',
+            shadowOpacity: 0.44,
+            shadowBlurPx: 20,
+            textBoxEnabled: true,
+            textBoxPaddingPx: 14,
+            textBoxRadiusPx: 10,
+            textBoxColor: '#0f172a',
           },
         },
         {
@@ -212,6 +226,12 @@ describe('buildTimeline', () => {
         offsetY: -8,
         textColor: '#f8fafc',
         accentColor: '#22d3ee',
+        shadowOpacity: 0.44,
+        shadowBlurPx: 20,
+        textBoxEnabled: true,
+        textBoxPaddingPx: 14,
+        textBoxRadiusPx: 10,
+        textBoxColor: '#0f172a',
       },
       imageSrc: 'overlay-background.png',
     });

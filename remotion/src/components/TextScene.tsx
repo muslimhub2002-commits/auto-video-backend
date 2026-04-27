@@ -17,6 +17,7 @@ const LoopingOffthreadVideo =
 const TEXT_ANIMATION_EFFECT_VALUES: readonly TextAnimationEffect[] = [
   'popInBounceHook',
   'slideCutFast',
+  'typewriter',
   'scalePunchZoom',
   'maskReveal',
   'glitchFlashHook',
@@ -84,6 +85,29 @@ const getWords = (value: string) =>
     .trim()
     .split(/\s+/u)
     .filter(Boolean);
+
+const getGraphemes = (value: string) => {
+  const text = String(value ?? '');
+  if (!text) return [] as string[];
+
+  const IntlWithSegmenter = Intl as typeof Intl & {
+    Segmenter?: new (
+      locales?: string | string[],
+      options?: { granularity?: 'grapheme' | 'word' | 'sentence' },
+    ) => {
+      segment(input: string): Iterable<{ segment: string }>;
+    };
+  };
+
+  if (typeof IntlWithSegmenter.Segmenter === 'function') {
+    const segmenter = new IntlWithSegmenter.Segmenter(undefined, {
+      granularity: 'grapheme',
+    });
+    return Array.from(segmenter.segment(text), (item) => item.segment);
+  }
+
+  return Array.from(text);
+};
 
 const resolveLegacyTextAnimationEffect = (
   value: unknown,
@@ -160,6 +184,10 @@ const getDefaultTextAnimationSettings = (
     animatePerWord: false,
     wordDelaySeconds: DEFAULT_TEXT_ANIMATION_WORD_DELAY,
     textCase: 'uppercase',
+    textBoxEnabled: false,
+    textBoxPaddingPx: isShortVideo ? 12 : 10,
+    textBoxRadiusPx: isShortVideo ? 12 : 10,
+    textBoxColor: '#0f172a',
   };
 
   if (normalizedEffect === 'popInBounceHook') {
@@ -169,6 +197,17 @@ const getDefaultTextAnimationSettings = (
       offsetY: -10,
       animationIntensity: 1.02,
       shadowOpacity: 0.4,
+    };
+  }
+
+  if (normalizedEffect === 'typewriter') {
+    return {
+      ...defaults,
+      speed: 0.95,
+      fontWeight: 780,
+      letterSpacingEm: 0.01,
+      animationIntensity: 0.76,
+      maxWidthPercent: isShortVideo ? 74 : 48,
     };
   }
 
@@ -258,10 +297,15 @@ const normalizeTextAnimationSettings = (
     resolveLegacyTextAnimationEffect(fallbackEffect) ?? 'slideCutFast',
     isShortVideo,
   );
+  const resolvedPresetKey =
+    resolveLegacyTextAnimationEffect(settings?.presetKey) ?? defaults.presetKey;
+  const animatePerWord =
+    resolvedPresetKey !== 'typewriter' && settings?.animatePerWord === true;
+  const textBoxEnabled =
+    resolvedPresetKey !== 'typewriter' && settings?.textBoxEnabled === true;
 
   return {
-    presetKey:
-      resolveLegacyTextAnimationEffect(settings?.presetKey) ?? defaults.presetKey,
+    presetKey: resolvedPresetKey,
     speed: getNumeric(settings?.speed, defaults.speed ?? DEFAULT_TEXT_ANIMATION_SPEED, 0.4, 2.4),
     horizontalAlign: getEnumValue(
       settings?.horizontalAlign,
@@ -333,13 +377,27 @@ const normalizeTextAnimationSettings = (
       TEXT_ANIMATION_START_DELAY_MIN,
       TEXT_ANIMATION_START_DELAY_MAX,
     ),
-    animatePerWord: settings?.animatePerWord === true,
+    animatePerWord,
     wordDelaySeconds: getNumeric(
       settings?.wordDelaySeconds,
       defaults.wordDelaySeconds ?? DEFAULT_TEXT_ANIMATION_WORD_DELAY,
       TEXT_ANIMATION_WORD_DELAY_MIN,
       TEXT_ANIMATION_WORD_DELAY_MAX,
     ),
+    textBoxEnabled,
+    textBoxPaddingPx: getNumeric(
+      settings?.textBoxPaddingPx,
+      defaults.textBoxPaddingPx ?? 12,
+      0,
+      48,
+    ),
+    textBoxRadiusPx: getNumeric(
+      settings?.textBoxRadiusPx,
+      defaults.textBoxRadiusPx ?? 12,
+      0,
+      48,
+    ),
+    textBoxColor: getColor(settings?.textBoxColor, defaults.textBoxColor ?? '#0f172a'),
     textCase: getEnumValue(
       settings?.textCase,
       ['original', 'uppercase'] as const,
@@ -393,6 +451,51 @@ const getWordDelayFrames = (fps: number, settings: TextAnimationSettings) => {
     TEXT_ANIMATION_WORD_DELAY_MAX,
   );
   return Math.max(1, Math.round(delaySeconds * fps));
+};
+
+const getTypewriterVisibleGraphemeCount = (
+  frame: number,
+  introFrames: number,
+  totalGraphemes: number,
+) => {
+  if (totalGraphemes <= 0) return 0;
+
+  const progress = clampNumber(frame / Math.max(introFrames, 1), 0, 1);
+  if (progress <= 0) return 0;
+  if (progress >= 1) return totalGraphemes;
+
+  return Math.min(totalGraphemes, Math.max(1, Math.ceil(progress * totalGraphemes)));
+};
+
+const buildTextBoxStyle = (
+  settings: TextAnimationSettings,
+): React.CSSProperties | null => {
+  if (settings.textBoxEnabled !== true) {
+    return null;
+  }
+
+  return {
+    backgroundColor: settings.textBoxColor,
+    padding: `${(settings.textBoxPaddingPx ?? 12).toFixed(1)}px`,
+    borderRadius: `${(settings.textBoxRadiusPx ?? 12).toFixed(1)}px`,
+  };
+};
+
+const renderAccentText = (
+  displayText: string,
+  accentBoundary: number,
+  accentColor?: string,
+) => {
+  const safeBoundary = clampNumber(accentBoundary, 0, displayText.length);
+
+  return (
+    <>
+      <span style={{ color: accentColor }}>
+        {displayText.slice(0, safeBoundary)}
+      </span>
+      {displayText.slice(safeBoundary)}
+    </>
+  );
 };
 
 const buildBackgroundStyle = (
@@ -573,6 +676,12 @@ const getAnimatedBlockStyle = (params: {
     easing: Easing.bezier(0.12, 0.88, 0.24, 1),
   });
   const normalizedIntensity = clampNumber(params.animationIntensity, 0, 1.2);
+
+  if (params.effect === 'typewriter') {
+    return {
+      opacity: progress <= 0 ? 0 : 1,
+    };
+  }
 
   if (params.effect === 'popInBounceHook') {
     const startScale = 0.58 - normalizedIntensity * 0.06;
@@ -859,7 +968,10 @@ export const TextScene: React.FC<{
     resolvedSettings.textCase ?? 'uppercase',
   );
   const words = getWords(resolvedText);
-  const animatePerWord = resolvedSettings.animatePerWord === true && words.length > 1;
+  const animatePerWord =
+    resolvedEffect !== 'typewriter' &&
+    resolvedSettings.animatePerWord === true &&
+    words.length > 1;
   const introFrames = getAnimationFrames(
     fps,
     resolvedSettings.speed ?? DEFAULT_TEXT_ANIMATION_SPEED,
@@ -909,11 +1021,15 @@ export const TextScene: React.FC<{
     resolvedSettings,
     hasBackgroundMedia,
   );
+  const textBoxStyle = buildTextBoxStyle(resolvedSettings);
   const fontSizePx = Math.min(width, height) * ((resolvedSettings.fontSizePercent ?? 12) / 100);
   const maxWidthPx = width * ((resolvedSettings.maxWidthPercent ?? 76) / 100);
   const strokeWidthPx = resolvedSettings.strokeWidthPx ?? 0;
   const containerPadding = Math.round(Math.min(width, height) * 0.07);
   const contentAlign = resolveContentTextAlign(resolvedSettings);
+  const accentBoundary = words[0]?.length ?? resolvedText.length;
+  const typewriterGraphemes =
+    resolvedEffect === 'typewriter' ? getGraphemes(resolvedText) : [];
   const animatedBlockStyle = getAnimatedBlockStyle({
     effect: resolvedEffect,
     frame: delayedAnimationFrame,
@@ -928,15 +1044,29 @@ export const TextScene: React.FC<{
     (0.22 + 0.1 * Math.sin(lightingSeed * 12)) * resolvedLook.animatedLightingIntensity;
   const glassOverlayOpacity = clampNumber(resolvedLook.glassOverlayOpacity, 0, 0.4);
   const glassOverlayOn = glassOverlayOpacity > 0.001;
+  const typewriterVisibleText =
+    resolvedEffect === 'typewriter'
+      ? typewriterGraphemes
+          .slice(
+            0,
+            getTypewriterVisibleGraphemeCount(
+              delayedAnimationFrame,
+              introFrames,
+              typewriterGraphemes.length,
+            ),
+          )
+          .join('')
+      : '';
 
   const baseTextStyle: React.CSSProperties = {
+    display: 'inline-block',
     color: resolvedSettings.textColor,
     fontWeight: resolvedSettings.fontWeight,
     fontSize: `${fontSizePx.toFixed(2)}px`,
     lineHeight: String(resolvedSettings.lineHeight ?? 0.92),
     letterSpacing: `${(resolvedSettings.letterSpacingEm ?? 0.02).toFixed(3)}em`,
     textAlign: contentAlign,
-    maxWidth: `${maxWidthPx.toFixed(2)}px`,
+    maxWidth: '100%',
     fontFamily,
     textShadow: `0 ${(6 + animationIntensity * 6).toFixed(1)}px ${(resolvedSettings.shadowBlurPx ?? 18).toFixed(1)}px rgba(2, 6, 23, ${(resolvedSettings.shadowOpacity ?? 0.34).toFixed(3)})`,
     WebkitTextStroke:
@@ -945,6 +1075,14 @@ export const TextScene: React.FC<{
         : undefined,
     paintOrder: 'stroke fill',
     whiteSpace: 'pre-wrap',
+  };
+  const textBlockWrapperStyle: React.CSSProperties = {
+    display: 'inline-block',
+    maxWidth: `${maxWidthPx.toFixed(2)}px`,
+    boxSizing: 'content-box',
+    position: resolvedEffect === 'typewriter' ? 'relative' : undefined,
+    ...(textBoxStyle ?? null),
+    ...(animatePerWord ? null : animatedBlockStyle),
   };
 
   return (
@@ -1025,48 +1163,77 @@ export const TextScene: React.FC<{
         }}
       >
         <div
-          style={{
-            ...baseTextStyle,
-            ...(animatePerWord ? null : animatedBlockStyle),
-          }}
+          style={textBlockWrapperStyle}
         >
           {animatePerWord
-            ? words.map((word, index) => {
-                const wordFrame = Math.max(
-                  0,
-                  delayedAnimationFrame - index * wordDelayFrames,
-                );
-                const animatedWordStyle = getAnimatedBlockStyle({
-                  effect: resolvedEffect,
-                  frame: wordFrame,
-                  introFrames,
-                  animationIntensity,
-                });
+            ? (
+              <div style={baseTextStyle}>
+                {words.map((word, index) => {
+                  const wordFrame = Math.max(
+                    0,
+                    delayedAnimationFrame - index * wordDelayFrames,
+                  );
+                  const animatedWordStyle = getAnimatedBlockStyle({
+                    effect: resolvedEffect,
+                    frame: wordFrame,
+                    introFrames,
+                    animationIntensity,
+                  });
 
-                return (
-                  <span key={`${word}-${index}`}>
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        color:
-                          index === 0
-                            ? resolvedSettings.accentColor
-                            : resolvedSettings.textColor,
-                        ...animatedWordStyle,
-                      }}
-                    >
-                      {word}
+                  return (
+                    <span key={`${word}-${index}`}>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          color:
+                            index === 0
+                              ? resolvedSettings.accentColor
+                              : resolvedSettings.textColor,
+                          ...animatedWordStyle,
+                        }}
+                      >
+                        {word}
+                      </span>
+                      {index < words.length - 1 ? ' ' : null}
                     </span>
-                    {index < words.length - 1 ? ' ' : null}
-                  </span>
-                );
-              })
-            : (
+                  );
+                })}
+              </div>
+            )
+            : resolvedEffect === 'typewriter'
+              ? (
+                <>
+                  <div style={{ ...baseTextStyle, opacity: 0 }}>
+                    {renderAccentText(
+                      resolvedText,
+                      accentBoundary,
+                      resolvedSettings.accentColor,
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      ...baseTextStyle,
+                      position: 'absolute',
+                      inset: 0,
+                    }}
+                  >
+                    {renderAccentText(
+                      typewriterVisibleText,
+                      accentBoundary,
+                      resolvedSettings.accentColor,
+                    )}
+                  </div>
+                </>
+              )
+              : (
               <>
-                <span style={{ color: resolvedSettings.accentColor }}>
-                  {words[0] ?? resolvedText}
-                </span>
-                {words.length > 1 ? ` ${words.slice(1).join(' ')}` : ''}
+                <div style={baseTextStyle}>
+                  {renderAccentText(
+                    resolvedText,
+                    accentBoundary,
+                    resolvedSettings.accentColor,
+                  )}
+                </div>
               </>
             )}
         </div>

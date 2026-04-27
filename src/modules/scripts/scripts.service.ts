@@ -95,6 +95,7 @@ type NormalizedElevenLabsVoiceSettings = {
 const ALLOWED_TEXT_ANIMATION_EFFECTS = new Set([
   'popInBounceHook',
   'slideCutFast',
+  'typewriter',
   'scalePunchZoom',
   'maskReveal',
   'glitchFlashHook',
@@ -182,7 +183,11 @@ export class ScriptsService implements OnModuleInit {
       delete next.contentAlign;
     }
 
-    next.animatePerWord = next.animatePerWord === true;
+    next.animatePerWord =
+      next.presetKey === 'typewriter' ? false : next.animatePerWord === true;
+
+    next.textBoxEnabled =
+      next.presetKey === 'typewriter' ? false : next.textBoxEnabled === true;
 
     const wordDelaySeconds = this.normalizeOptionalNumber(
       next.wordDelaySeconds,
@@ -191,6 +196,41 @@ export class ScriptsService implements OnModuleInit {
       delete next.wordDelaySeconds;
     } else {
       next.wordDelaySeconds = Math.min(0.4, Math.max(0.03, wordDelaySeconds));
+    }
+
+    const shadowOpacity = this.normalizeOptionalNumber(next.shadowOpacity);
+    if (shadowOpacity === null) {
+      delete next.shadowOpacity;
+    } else {
+      next.shadowOpacity = Math.min(1, Math.max(0, shadowOpacity));
+    }
+
+    const shadowBlurPx = this.normalizeOptionalNumber(next.shadowBlurPx);
+    if (shadowBlurPx === null) {
+      delete next.shadowBlurPx;
+    } else {
+      next.shadowBlurPx = Math.min(48, Math.max(0, shadowBlurPx));
+    }
+
+    const textBoxPaddingPx = this.normalizeOptionalNumber(next.textBoxPaddingPx);
+    if (textBoxPaddingPx === null) {
+      delete next.textBoxPaddingPx;
+    } else {
+      next.textBoxPaddingPx = Math.min(48, Math.max(0, textBoxPaddingPx));
+    }
+
+    const textBoxRadiusPx = this.normalizeOptionalNumber(next.textBoxRadiusPx);
+    if (textBoxRadiusPx === null) {
+      delete next.textBoxRadiusPx;
+    } else {
+      next.textBoxRadiusPx = Math.min(48, Math.max(0, textBoxRadiusPx));
+    }
+
+    const textBoxColor = String(next.textBoxColor ?? '').trim();
+    if (!textBoxColor) {
+      delete next.textBoxColor;
+    } else {
+      next.textBoxColor = textBoxColor;
     }
 
     return next;

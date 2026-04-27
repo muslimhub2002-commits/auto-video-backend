@@ -1,6 +1,7 @@
 export type TextAnimationEffect =
   | 'popInBounceHook'
   | 'slideCutFast'
+  | 'typewriter'
   | 'scalePunchZoom'
   | 'maskReveal'
   | 'glitchFlashHook'
@@ -45,6 +46,10 @@ export type TextAnimationSettings = {
   animatePerWord?: boolean;
   wordDelaySeconds?: number;
   textCase?: 'original' | 'uppercase';
+  textBoxEnabled?: boolean;
+  textBoxPaddingPx?: number;
+  textBoxRadiusPx?: number;
+  textBoxColor?: string;
 };
 
 export type OverlaySettings = {

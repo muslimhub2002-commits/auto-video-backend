@@ -18,6 +18,7 @@ type TextAnimationSoundEffectRow = NonNullable<
 const ALLOWED_TEXT_ANIMATION_EFFECTS: ReadonlySet<string> = new Set([
   'popInBounceHook',
   'slideCutFast',
+  'typewriter',
   'scalePunchZoom',
   'maskReveal',
   'glitchFlashHook',
