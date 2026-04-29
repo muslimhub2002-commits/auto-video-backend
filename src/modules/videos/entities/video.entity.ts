@@ -3,6 +3,7 @@ import {
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  Index,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
@@ -14,6 +15,7 @@ export enum VideoSize {
 }
 
 @Entity('videos')
+@Index(['user_id', 'hash'])
 export class Video {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -24,21 +26,24 @@ export class Video {
   @Column({ type: 'uuid', nullable: false })
   user_id: string;
 
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  hash: string | null;
+
   @Column({
     type: 'enum',
     enum: VideoSize,
     nullable: true,
   })
-  video_size: VideoSize;
+  video_size: VideoSize | null;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
-  video_type: string;
+  video_type: string | null;
 
   @Column({ type: 'int', nullable: true })
-  height: number;
+  height: number | null;
 
   @Column({ type: 'int', nullable: true })
-  width: number;
+  width: number | null;
 
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;

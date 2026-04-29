@@ -23,6 +23,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { extname, join } from 'path';
 import { randomUUID } from 'crypto';
+import { buildVideoUrlHash } from '../videos/video-hash.utils';
 
 type FindVideoFilters = {
   query?: string;
@@ -191,6 +192,56 @@ export class VideosLibraryService {
     private readonly videosRepository: Repository<Video>,
   ) {}
 
+  private async findExistingVideo(params: {
+    user_id: string;
+    hash: string;
+    video?: string;
+  }): Promise<Video | null> {
+    const where: Array<Partial<Video>> = [
+      {
+        user_id: params.user_id,
+        hash: params.hash,
+      },
+    ];
+
+    if (params.video) {
+      where.push({
+        user_id: params.user_id,
+        video: params.video,
+      });
+    }
+
+    return this.videosRepository.findOne({ where: where as any });
+  }
+
+  private applyVideoMetadata(
+    target: Video,
+    params: {
+      hash: string;
+      video_type?: string;
+      video_size?: Video['video_size'] | null;
+      width?: number | null;
+      height?: number | null;
+    },
+  ): Video {
+    if (!target.hash) {
+      target.hash = params.hash;
+    }
+    if (params.video_type) {
+      target.video_type = params.video_type;
+    }
+    if (params.video_size) {
+      target.video_size = params.video_size;
+    }
+    if (params.width !== null && params.width !== undefined) {
+      target.width = params.width;
+    }
+    if (params.height !== null && params.height !== undefined) {
+      target.height = params.height;
+    }
+    return target;
+  }
+
   async createFromUrl(params: {
     videoUrl: string;
     user_id: string;
@@ -215,33 +266,30 @@ export class VideosLibraryService {
       normalizeOrientation(params.video_size) ??
       inferVideoOrientation(width, height) ??
       null;
+    const hash = buildVideoUrlHash(videoUrl);
 
-    const existing = await this.videosRepository.findOne({
-      where: {
-        user_id: params.user_id,
-        video: videoUrl,
-      },
+    const existing = await this.findExistingVideo({
+      user_id: params.user_id,
+      hash,
+      video: videoUrl,
     });
 
     if (existing) {
-      if (videoType) {
-        existing.video_type = videoType;
-      }
-      if (orientation) {
-        existing.video_size = orientation;
-      }
-      if (width) {
-        existing.width = width;
-      }
-      if (height) {
-        existing.height = height;
-      }
-      return this.videosRepository.save(existing);
+      return this.videosRepository.save(
+        this.applyVideoMetadata(existing, {
+          hash,
+          video_type: videoType,
+          video_size: orientation,
+          width,
+          height,
+        }),
+      );
     }
 
     const videoEntity = this.videosRepository.create({
       video: videoUrl,
       user_id: params.user_id,
+      hash,
       video_type: videoType,
       video_size: orientation,
       width,
@@ -520,17 +568,18 @@ export class VideosLibraryService {
       throw new NotFoundException('Missing freestock video URL');
     }
 
+    const hash = buildVideoUrlHash(sourceUrl);
+
     if (this.isServerlessRuntime()) {
       throw new ServiceUnavailableException(
         'Saving freestock videos requires persistent storage and is not supported on serverless runtimes.',
       );
     }
 
-    const existing = await this.videosRepository.findOne({
-      where: {
-        user_id,
-        video: sourceUrl,
-      },
+    const existing = await this.findExistingVideo({
+      user_id,
+      hash,
+      video: sourceUrl,
     });
     if (existing) return existing;
 
@@ -550,6 +599,7 @@ export class VideosLibraryService {
     const saved = this.videosRepository.create({
       video: this.toStaticUrl(relPath),
       user_id,
+      hash,
       video_type:
         String(body.video_type ?? body.source ?? 'freestock').trim() ||
         'freestock',

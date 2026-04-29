@@ -19,6 +19,10 @@ import { TiktokModule } from './modules/tiktok/tiktok.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { SocialAccountsModule } from './modules/social-accounts/social-accounts.module';
 
+const enableVercelTypeOrmSynchronize =
+  String(process.env.VERCEL_TYPEORM_SYNCHRONIZE ?? '').trim().toLowerCase() ===
+  'true';
+
 /**
  * Vercel deployment module.
  *
@@ -37,7 +41,7 @@ import { SocialAccountsModule } from './modules/social-accounts/social-accounts.
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,
       autoLoadEntities: true,
-      synchronize: true,
+      synchronize: enableVercelTypeOrmSynchronize,
       ssl:
         process.env.DB_SSL === 'true'
           ? { rejectUnauthorized: false }

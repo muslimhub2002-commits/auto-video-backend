@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -10,6 +11,7 @@ import {
 import { User } from '../../users/entities/user.entity';
 
 @Entity('overlays')
+@Index(['user_id', 'hash'])
 export class Overlay {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -28,6 +30,12 @@ export class Overlay {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   mime_type: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  hash: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  asset_hash: string | null;
 
   @Column({ type: 'jsonb', nullable: false, default: () => "'{}'::jsonb" })
   settings: Record<string, unknown>;

@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { MetaCredentialsService } from './meta-credentials.service';
+import { shouldRunStartupTasks } from '../../common/runtime/runtime.utils';
 
 @Injectable()
 export class MetaCredentialsMaintenanceService implements OnModuleInit {
@@ -11,6 +12,10 @@ export class MetaCredentialsMaintenanceService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    if (!shouldRunStartupTasks()) {
+      return;
+    }
+
     await this.runMaintenance('startup');
   }
 

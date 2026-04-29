@@ -32,6 +32,11 @@ import { TranslateScriptDto } from './dto/translate-script.dto';
 import { ScriptTranslationGroup } from './entities/script-translation-group.entity';
 import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
 import { normalizeSoundEffectAudioSettings } from '../sound-effects/audio-settings.types';
+import { shouldRunStartupTasks } from '../../common/runtime/runtime.utils';
+import {
+  buildVideoBufferHash,
+  buildVideoUrlHash,
+} from '../videos/video-hash.utils';
 
 type UploadedImageFile = {
   buffer: Buffer;
@@ -306,6 +311,61 @@ export class ScriptsService implements OnModuleInit {
     if (value === null || value === undefined || value === '') return null;
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  private async findExistingVideoEntity(params: {
+    userId: string;
+    hash: string;
+    videoUrl?: string;
+  }): Promise<VideoEntity | null> {
+    const where: Array<Partial<VideoEntity>> = [
+      {
+        user_id: params.userId,
+        hash: params.hash,
+      },
+    ];
+
+    if (params.videoUrl) {
+      where.push({
+        user_id: params.userId,
+        video: params.videoUrl,
+      });
+    }
+
+    return this.videoRepository.findOne({ where: where as any });
+  }
+
+  private async reuseOrCreateVideoEntity(params: {
+    userId: string;
+    hash: string;
+    videoUrl: string;
+    videoType: string;
+    videoSize: VideoEntity['video_size'] | null;
+  }): Promise<VideoEntity> {
+    const existing = await this.findExistingVideoEntity({
+      userId: params.userId,
+      hash: params.hash,
+      videoUrl: params.videoUrl,
+    });
+
+    if (existing) {
+      if (!existing.hash) {
+        existing.hash = params.hash;
+      }
+      existing.video_type = params.videoType;
+      existing.video_size = params.videoSize;
+      return this.videoRepository.save(existing);
+    }
+
+    const videoEntity = this.videoRepository.create({
+      video: params.videoUrl,
+      user_id: params.userId,
+      hash: params.hash,
+      video_type: params.videoType,
+      video_size: params.videoSize,
+    });
+
+    return this.videoRepository.save(videoEntity);
   }
 
   private normalizeScriptListCategory(value?: string): ScriptListCategory {
@@ -992,6 +1052,10 @@ export class ScriptsService implements OnModuleInit {
   async onModuleInit() {
     // Best-effort on boot. We also call this lazily in request paths because
     // in some setups the `scripts` table may not exist yet during module init.
+    if (!shouldRunStartupTasks()) {
+      return;
+    }
+
     await this.ensureScriptsSchemaLazy();
   }
 
@@ -2221,12 +2285,43 @@ export class ScriptsService implements OnModuleInit {
     const hasUploadedFile = Boolean(file?.buffer && file.buffer.length > 0);
 
     let finalVideoUrl: string;
+    let videoHash: string;
+    const videoType = (dto?.video_type ?? 'gemini').trim() || 'gemini';
+    const videoSize = dto?.video_size ?? VideoSize.PORTRAIT;
 
     if (hasUploadedFile) {
       const mimeType =
         String(file?.mimetype ?? '').trim() || 'application/octet-stream';
       if (!mimeType.startsWith('video/')) {
         throw new BadRequestException('Video file must be a video');
+      }
+
+      videoHash = buildVideoBufferHash(file!.buffer);
+      const existingVideo = await this.findExistingVideoEntity({
+        userId,
+        hash: videoHash,
+      });
+
+      if (existingVideo) {
+        const saved = await this.reuseOrCreateVideoEntity({
+          userId,
+          hash: videoHash,
+          videoUrl: existingVideo.video,
+          videoType,
+          videoSize,
+        });
+
+        const updatePayload =
+          target === 'textBackground'
+            ? { text_background_video_id: saved.id }
+            : { video_id: saved.id };
+
+        await this.sentenceRepository.update(
+          { id: sentenceId, script_id: scriptId },
+          updatePayload,
+        );
+
+        return { id: saved.id, video: saved.video };
       }
 
       const cloudinaryConfigured =
@@ -2279,6 +2374,8 @@ export class ScriptsService implements OnModuleInit {
       } else {
         finalVideoUrl = this.assertHttpUrl(rawUrl, 'videoUrl');
       }
+
+      videoHash = buildVideoUrlHash(finalVideoUrl);
     }
 
     // Column length is 255; keep a safety cap.
@@ -2286,13 +2383,13 @@ export class ScriptsService implements OnModuleInit {
       throw new BadRequestException('Video URL is too long');
     }
 
-    const videoEntity = this.videoRepository.create({
-      video: finalVideoUrl,
-      user_id: userId,
-      video_type: (dto?.video_type ?? 'gemini').trim() || 'gemini',
-      video_size: dto?.video_size ?? VideoSize.PORTRAIT,
+    const saved = await this.reuseOrCreateVideoEntity({
+      userId,
+      hash: videoHash,
+      videoUrl: finalVideoUrl,
+      videoType,
+      videoSize,
     });
-    const saved = await this.videoRepository.save(videoEntity);
 
     const updatePayload =
       target === 'textBackground'
@@ -2411,6 +2508,27 @@ export class ScriptsService implements OnModuleInit {
         : undefined,
     });
 
+    const videoHash = buildVideoBufferHash(generated.buffer);
+    const existingVideo = await this.findExistingVideoEntity({
+      userId,
+      hash: videoHash,
+    });
+
+    if (existingVideo) {
+      const savedVideo = await this.reuseOrCreateVideoEntity({
+        userId,
+        hash: videoHash,
+        videoUrl: existingVideo.video,
+        videoType: 'gemini',
+        videoSize: VideoSize.PORTRAIT,
+      });
+
+      sentence.video_id = savedVideo.id;
+      await this.sentenceRepository.save(sentence);
+
+      return this.findOne(scriptId, userId);
+    }
+
     const cloudinaryConfigured =
       Boolean(process.env.CLOUDINARY_CLOUD_NAME) &&
       Boolean(process.env.CLOUDINARY_API_KEY) &&
@@ -2447,13 +2565,13 @@ export class ScriptsService implements OnModuleInit {
       finalVideoUrl = this.toStaticUrl(relPath);
     }
 
-    const videoEntity = this.videoRepository.create({
-      video: finalVideoUrl,
-      user_id: userId,
-      video_type: 'gemini',
-      video_size: VideoSize.PORTRAIT,
+    const savedVideo = await this.reuseOrCreateVideoEntity({
+      userId,
+      hash: videoHash,
+      videoUrl: finalVideoUrl,
+      videoType: 'gemini',
+      videoSize: VideoSize.PORTRAIT,
     });
-    const savedVideo = await this.videoRepository.save(videoEntity);
 
     sentence.video_id = savedVideo.id;
     await this.sentenceRepository.save(sentence);

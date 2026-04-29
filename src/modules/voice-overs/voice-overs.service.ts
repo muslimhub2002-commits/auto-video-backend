@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  OnModuleInit,
   InternalServerErrorException,
   BadRequestException,
   NotFoundException,
@@ -8,8 +9,10 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Not, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, In, IsNull, Not, Repository } from 'typeorm';
+import { sha256Hex, stableSerializeValue } from '../../common/utils/stable-hash.utils';
+import { shouldRunStartupTasks } from '../../common/runtime/runtime.utils';
 import { VoiceOver } from './entities/voice-over.entity';
 import { AiService } from '../ai/ai.service';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
@@ -46,9 +49,26 @@ type GeminiPrebuiltVoice = {
   style?: string;
 };
 
+type VoiceOverPersistencePayload = {
+  user_id: string;
+  hash: string;
+  provider: VoiceProvider;
+  voice_id: string;
+  name: string;
+  preview_url: string | null;
+  description: string | null;
+  category: string | null;
+  gender: string | null;
+  accent: string | null;
+  descriptive: string | null;
+  use_case: string | null;
+};
+
 @Injectable()
-export class VoiceOversService {
+export class VoiceOversService implements OnModuleInit {
   private readonly logger = new Logger(VoiceOversService.name);
+  private schemaEnsuring: Promise<void> | null = null;
+  private schemaEnsured = false;
 
   // Gemini TTS (AI Studio) prebuilt voices.
   // Source: https://ai.google.dev/gemini-api/docs/speech-generation#voice_options
@@ -90,7 +110,291 @@ export class VoiceOversService {
     private readonly voiceOverRepository: Repository<VoiceOver>,
     private readonly aiService: AiService,
     private readonly uploadsService: UploadsService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    if (!shouldRunStartupTasks()) {
+      return;
+    }
+
+    await this.ensureSchema();
+  }
+
+  private async ensureSchema(): Promise<void> {
+    if (this.schemaEnsured) return;
+    if (this.schemaEnsuring) {
+      await this.schemaEnsuring;
+      return;
+    }
+
+    this.schemaEnsuring = (async () => {
+      try {
+        await this.dataSource.query(
+          'ALTER TABLE voice_overs ADD COLUMN IF NOT EXISTS user_id UUID NULL',
+        );
+        await this.dataSource.query(
+          'ALTER TABLE voice_overs ADD COLUMN IF NOT EXISTS hash VARCHAR(64) NULL',
+        );
+        await this.dataSource.query(
+          'CREATE INDEX IF NOT EXISTS idx_voice_overs_user_provider ON voice_overs (user_id, provider)',
+        );
+        await this.dataSource.query(`
+          DO $$
+          DECLARE constraint_record RECORD;
+          BEGIN
+            FOR constraint_record IN
+              SELECT con.conname
+              FROM pg_constraint con
+              JOIN pg_class rel ON rel.oid = con.conrelid
+              JOIN unnest(con.conkey) WITH ORDINALITY AS cols(attnum, ordinality) ON TRUE
+              JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = cols.attnum
+              WHERE rel.relname = 'voice_overs'
+                AND con.contype = 'u'
+              GROUP BY con.conname, con.conrelid
+              HAVING array_agg(att.attname ORDER BY cols.ordinality) = ARRAY['voice_id']
+            LOOP
+              EXECUTE format('ALTER TABLE voice_overs DROP CONSTRAINT IF EXISTS %I', constraint_record.conname);
+            END LOOP;
+          END
+          $$;
+        `);
+        await this.dataSource.query(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_overs_user_voice_id_unique ON voice_overs (user_id, voice_id) WHERE user_id IS NOT NULL',
+        );
+      } catch (error: any) {
+        const message = String(error?.message ?? '');
+        if (
+          message.includes('does not exist') ||
+          message.includes('permission denied')
+        ) {
+          return;
+        }
+
+        throw error;
+      } finally {
+        this.schemaEnsured = true;
+        this.schemaEnsuring = null;
+      }
+    })();
+
+    await this.schemaEnsuring;
+  }
+
+  private buildVoiceHash(params: {
+    provider: VoiceProvider;
+    voice_id: string;
+    name: string;
+    description?: string | null;
+    category?: string | null;
+    gender?: string | null;
+    accent?: string | null;
+    descriptive?: string | null;
+    use_case?: string | null;
+  }): string {
+    return sha256Hex(
+      stableSerializeValue({
+        provider: params.provider,
+        voice_id: params.voice_id,
+        name: params.name,
+        description: params.description ?? null,
+        category: params.category ?? null,
+        gender: params.gender ?? null,
+        accent: params.accent ?? null,
+        descriptive: params.descriptive ?? null,
+        use_case: params.use_case ?? null,
+      }),
+    );
+  }
+
+  private buildVoicePayload(params: {
+    user_id: string;
+    provider: VoiceProvider;
+    voice_id: string;
+    name: string;
+    preview_url?: string | null;
+    description?: string | null;
+    category?: string | null;
+    gender?: string | null;
+    accent?: string | null;
+    descriptive?: string | null;
+    use_case?: string | null;
+  }): VoiceOverPersistencePayload {
+    const payload = {
+      user_id: params.user_id,
+      provider: params.provider,
+      voice_id: params.voice_id,
+      name: String(params.name ?? '').trim() || params.voice_id,
+      preview_url: params.preview_url ?? null,
+      description: params.description ?? null,
+      category: params.category ?? null,
+      gender: params.gender ?? null,
+      accent: params.accent ?? null,
+      descriptive: params.descriptive ?? null,
+      use_case: params.use_case ?? null,
+    };
+
+    return {
+      ...payload,
+      hash: this.buildVoiceHash({
+      provider: payload.provider!,
+      voice_id: payload.voice_id!,
+      name: payload.name!,
+      description: payload.description ?? null,
+      category: payload.category ?? null,
+      gender: payload.gender ?? null,
+      accent: payload.accent ?? null,
+      descriptive: payload.descriptive ?? null,
+      use_case: payload.use_case ?? null,
+      }),
+    };
+  }
+
+  private async findVoiceByCandidates(params: {
+    user_id: string | null;
+    candidates: string[];
+    provider?: VoiceProvider;
+  }): Promise<VoiceOver | null> {
+    const candidates = params.candidates
+      .map((candidate) => String(candidate ?? '').trim())
+      .filter(Boolean);
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    return this.voiceOverRepository.findOne({
+      where: candidates.map((voice_id) => ({
+        user_id: (params.user_id === null ? IsNull() : params.user_id) as any,
+        voice_id,
+        ...(params.provider ? { provider: params.provider } : {}),
+      })) as any,
+    });
+  }
+
+  private async upsertUserVoice(params: {
+    user_id: string;
+    provider: VoiceProvider;
+    rawId: string;
+    name: string;
+    preview_url?: string | null;
+    description?: string | null;
+    category?: string | null;
+    gender?: string | null;
+    accent?: string | null;
+    descriptive?: string | null;
+    use_case?: string | null;
+  }): Promise<{
+    row: VoiceOver;
+    outcome: 'imported' | 'updated' | 'unchanged';
+  }> {
+    const normalizedRawId = String(params.rawId ?? '').trim();
+    if (!normalizedRawId) {
+      throw new BadRequestException('voiceId is required');
+    }
+
+    const nextVoiceId = this.namespacedVoiceId(params.provider, normalizedRawId);
+    const candidates = [nextVoiceId, normalizedRawId].filter(Boolean);
+    const existing = await this.findVoiceByCandidates({
+      user_id: params.user_id,
+      candidates,
+      provider: params.provider,
+    });
+    const legacy = existing
+      ? null
+      : await this.findVoiceByCandidates({
+          user_id: null,
+          candidates,
+          provider: params.provider,
+        });
+
+    const payload = this.buildVoicePayload({
+      user_id: params.user_id,
+      provider: params.provider,
+      voice_id: nextVoiceId,
+      name: params.name,
+      preview_url:
+        params.preview_url ?? existing?.preview_url ?? legacy?.preview_url ?? null,
+      description: params.description ?? null,
+      category: params.category ?? null,
+      gender: params.gender ?? null,
+      accent: params.accent ?? null,
+      descriptive: params.descriptive ?? null,
+      use_case: params.use_case ?? null,
+    });
+
+    if (existing) {
+      const unchanged =
+        existing.voice_id === payload.voice_id &&
+        existing.hash === payload.hash &&
+        (existing.preview_url ?? null) === (payload.preview_url ?? null);
+
+      if (unchanged) {
+        return { row: existing, outcome: 'unchanged' };
+      }
+
+      await this.voiceOverRepository.update({ id: existing.id }, payload);
+      const updated = await this.voiceOverRepository.findOne({
+        where: { id: existing.id },
+      });
+      if (!updated) {
+        throw new InternalServerErrorException('Failed to update voice');
+      }
+
+      return { row: updated, outcome: 'updated' };
+    }
+
+    const created = await this.voiceOverRepository.save(
+      this.voiceOverRepository.create({
+        ...payload,
+        isFavorite: false,
+      }),
+    );
+
+    return { row: created, outcome: 'imported' };
+  }
+
+  private async ensureUserVoiceByCandidates(params: {
+    user_id: string;
+    candidates: string[];
+    provider?: VoiceProvider;
+  }): Promise<VoiceOver | null> {
+    const existing = await this.findVoiceByCandidates({
+      user_id: params.user_id,
+      candidates: params.candidates,
+      provider: params.provider,
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    const legacy = await this.findVoiceByCandidates({
+      user_id: null,
+      candidates: params.candidates,
+      provider: params.provider,
+    });
+
+    if (!legacy) {
+      return null;
+    }
+
+    const materialized = await this.upsertUserVoice({
+      user_id: params.user_id,
+      provider: legacy.provider,
+      rawId: this.stripNamespace(legacy.provider, legacy.voice_id),
+      name: legacy.name,
+      preview_url: legacy.preview_url ?? null,
+      description: legacy.description ?? null,
+      category: legacy.category ?? null,
+      gender: legacy.gender ?? null,
+      accent: legacy.accent ?? null,
+      descriptive: legacy.descriptive ?? null,
+      use_case: legacy.use_case ?? null,
+    });
+
+    return materialized.row;
+  }
 
   private inferAudioMimeType(format?: string | null): string | undefined {
     const normalized = String(format ?? '')
@@ -131,15 +435,19 @@ export class VoiceOversService {
   }
 
   async getOrCreatePreviewUrl(
+    user_id: string,
     voiceId: string,
   ): Promise<{ preview_url: string }> {
+    await this.ensureSchema();
+
     const raw = String(voiceId ?? '').trim();
     const candidates = raw.includes(':')
       ? [raw]
       : [raw, `google:${raw}`, `elevenlabs:${raw}`];
 
-    const voice = await this.voiceOverRepository.findOne({
-      where: { voice_id: In(candidates) },
+    const voice = await this.ensureUserVoiceByCandidates({
+      user_id,
+      candidates,
     });
 
     if (!voice) {
@@ -176,7 +484,7 @@ export class VoiceOversService {
     });
 
     await this.voiceOverRepository.update(
-      { id: voice.id },
+      { id: voice.id, user_id },
       { preview_url: previewUrl },
     );
 
@@ -210,6 +518,8 @@ export class VoiceOversService {
   private async ensureNamespacedForProvider(
     provider: VoiceProvider,
   ): Promise<void> {
+    await this.ensureSchema();
+
     const prefix = `${provider}:`;
     const rows = await this.voiceOverRepository.find({ where: { provider } });
 
@@ -230,42 +540,88 @@ export class VoiceOversService {
     }
   }
 
-  private async ensureSeeded(provider: VoiceProvider): Promise<void> {
+  private async ensureSeeded(
+    user_id: string,
+    provider: VoiceProvider,
+  ): Promise<void> {
     await this.ensureNamespacedForProvider(provider);
 
-    const count = await this.voiceOverRepository.count({ where: { provider } });
+    const count = await this.voiceOverRepository.count({
+      where: { user_id, provider },
+    });
     if (count > 0) {
       // Keep Google/AI Studio catalog aligned to the prebuilt Gemini voice list.
       if (provider === 'google' && count !== this.geminiPrebuiltVoices.length) {
-        await this.syncAllFromGoogleTts();
+        await this.syncAllFromGoogleTts(user_id);
+      }
+      return;
+    }
+
+    const legacyRows = await this.voiceOverRepository.find({
+      where: { user_id: IsNull(), provider } as any,
+      order: { name: 'ASC' },
+    });
+
+    if (legacyRows.length > 0) {
+      for (const row of legacyRows) {
+        await this.upsertUserVoice({
+          user_id,
+          provider,
+          rawId: this.stripNamespace(provider, row.voice_id),
+          name: row.name,
+          preview_url: row.preview_url ?? null,
+          description: row.description ?? null,
+          category: row.category ?? null,
+          gender: row.gender ?? null,
+          accent: row.accent ?? null,
+          descriptive: row.descriptive ?? null,
+          use_case: row.use_case ?? null,
+        });
+      }
+
+      const hydratedCount = await this.voiceOverRepository.count({
+        where: { user_id, provider },
+      });
+      if (
+        provider === 'google' &&
+        hydratedCount !== this.geminiPrebuiltVoices.length
+      ) {
+        await this.syncAllFromGoogleTts(user_id);
       }
       return;
     }
 
     // If table is empty for this provider, pull the catalog once.
     if (provider === 'elevenlabs') {
-      await this.syncAllFromElevenLabs();
+      await this.syncAllFromElevenLabs(user_id);
       return;
     }
 
     if (provider === 'google') {
-      await this.syncAllFromGoogleTts();
+      await this.syncAllFromGoogleTts(user_id);
       return;
     }
   }
 
   async syncAll(params?: {
+    user_id: string;
     provider?: string;
   }): Promise<{ imported: number; updated: number }> {
+    await this.ensureSchema();
+
     const provider = this.normalizeProvider(params?.provider);
-    if (provider === 'elevenlabs') return this.syncAllFromElevenLabs();
-    return this.syncAllFromGoogleTts();
+    if (provider === 'elevenlabs') {
+      return this.syncAllFromElevenLabs(params!.user_id);
+    }
+    return this.syncAllFromGoogleTts(params!.user_id);
   }
 
-  async syncAllFromElevenLabs(): Promise<{
+  async syncAllFromElevenLabs(user_id: string): Promise<{
     imported: number;
     updated: number;
   }> {
+    await this.ensureSchema();
+
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) {
       this.logger.error('ELEVENLABS_API_KEY is not set');
@@ -305,17 +661,13 @@ export class VoiceOversService {
       const provider: VoiceProvider = 'elevenlabs';
       const rawId = String(voice.voice_id ?? '').trim();
       if (!rawId) continue;
-      const nextVoiceId = this.namespacedVoiceId(provider, rawId);
-
-      const existing = await this.voiceOverRepository.findOne({
-        where: [{ voice_id: nextVoiceId }, { voice_id: rawId }],
-      });
 
       const labels = voice.labels || {};
 
-      const payload: Partial<VoiceOver> = {
+      const result = await this.upsertUserVoice({
+        user_id,
         provider,
-        voice_id: nextVoiceId,
+        rawId,
         name: voice.name,
         preview_url: voice.preview_url ?? null,
         description: voice.description ?? null,
@@ -324,20 +676,12 @@ export class VoiceOversService {
         accent: voice.accent ?? labels.accent ?? null,
         descriptive: labels.descriptive ?? null,
         use_case: labels.use_case ?? null,
-      };
+      });
 
-      if (existing) {
-        // Normalize legacy, non-namespaced IDs in-place.
-        if (!String(existing.voice_id ?? '').includes(':')) {
-          payload.voice_id = nextVoiceId;
-        }
-        await this.voiceOverRepository.update({ id: existing.id }, payload);
-        updated += 1;
-      } else {
-        await this.voiceOverRepository.save(
-          this.voiceOverRepository.create(payload),
-        );
+      if (result.outcome === 'imported') {
         imported += 1;
+      } else if (result.outcome === 'updated') {
+        updated += 1;
       }
     }
 
@@ -346,7 +690,12 @@ export class VoiceOversService {
     return { imported, updated };
   }
 
-  async importOneFromElevenLabs(voiceId: string): Promise<VoiceOver> {
+  async importOneFromElevenLabs(
+    user_id: string,
+    voiceId: string,
+  ): Promise<VoiceOver> {
+    await this.ensureSchema();
+
     const provider: VoiceProvider = 'elevenlabs';
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) {
@@ -473,15 +822,12 @@ export class VoiceOversService {
     }
 
     const nextVoiceId = this.namespacedVoiceId(provider, resolvedRawId);
-    const existing = await this.voiceOverRepository.findOne({
-      where: [{ voice_id: nextVoiceId }, { voice_id: resolvedRawId }],
-    });
-
     const labels = voice.labels || {};
 
-    const payload: Partial<VoiceOver> = {
+    const result = await this.upsertUserVoice({
+      user_id,
       provider,
-      voice_id: nextVoiceId,
+      rawId: resolvedRawId,
       name: String(voice.name ?? '').trim() || nextVoiceId,
       preview_url: voice.preview_url ?? null,
       description: voice.description ?? null,
@@ -490,30 +836,16 @@ export class VoiceOversService {
       accent: voice.accent ?? labels.accent ?? null,
       descriptive: labels.descriptive ?? null,
       use_case: labels.use_case ?? null,
-    };
-
-    if (existing) {
-      if (!String(existing.voice_id ?? '').includes(':')) {
-        payload.voice_id = nextVoiceId;
-      }
-      await this.voiceOverRepository.update({ id: existing.id }, payload);
-    } else {
-      await this.voiceOverRepository.save(
-        this.voiceOverRepository.create(payload),
-      );
-    }
-
-    const saved = await this.voiceOverRepository.findOne({
-      where: { voice_id: nextVoiceId },
     });
-    if (!saved) {
-      throw new InternalServerErrorException('Failed to save imported voice');
-    }
 
-    return saved;
+    return result.row;
   }
 
-  async syncAllFromGoogleTts(): Promise<{ imported: number; updated: number }> {
+  async syncAllFromGoogleTts(
+    user_id: string,
+  ): Promise<{ imported: number; updated: number }> {
+    await this.ensureSchema();
+
     let imported = 0;
     let updated = 0;
 
@@ -525,37 +857,24 @@ export class VoiceOversService {
     for (const voice of this.geminiPrebuiltVoices) {
       const rawId = String(voice.name ?? '').trim();
       if (!rawId) continue;
-      const nextVoiceId = this.namespacedVoiceId(provider, rawId);
 
-      const existing = await this.voiceOverRepository.findOne({
-        where: [{ voice_id: nextVoiceId }, { voice_id: rawId }],
-      });
-
-      const payload: Partial<VoiceOver> = {
+      const result = await this.upsertUserVoice({
+        user_id,
         provider,
-        voice_id: nextVoiceId,
+        rawId,
         name: rawId,
-        // Preserve any cached preview URL we may have generated.
-        preview_url: existing?.preview_url ?? null,
         description: null,
         category: 'gemini-tts',
         gender: null,
         accent: null,
         descriptive: null,
         use_case: voice.style ?? 'AI Studio',
-      };
+      });
 
-      if (existing) {
-        if (!String(existing.voice_id ?? '').includes(':')) {
-          payload.voice_id = nextVoiceId;
-        }
-        await this.voiceOverRepository.update({ id: existing.id }, payload);
-        updated += 1;
-      } else {
-        await this.voiceOverRepository.save(
-          this.voiceOverRepository.create(payload),
-        );
+      if (result.outcome === 'imported') {
         imported += 1;
+      } else if (result.outcome === 'updated') {
+        updated += 1;
       }
     }
 
@@ -563,6 +882,7 @@ export class VoiceOversService {
     // This keeps the UI aligned with AI Studio's prebuilt voice library.
     if (allowedVoiceIds.length > 0) {
       await this.voiceOverRepository.delete({
+        user_id,
         provider,
         voice_id: Not(In(allowedVoiceIds)),
       });
@@ -571,12 +891,17 @@ export class VoiceOversService {
     return { imported, updated };
   }
 
-  async findAll(params?: { provider?: string }): Promise<VoiceOver[]> {
+  async findAll(params: {
+    user_id: string;
+    provider?: string;
+  }): Promise<VoiceOver[]> {
+    await this.ensureSchema();
+
     const provider = this.normalizeProvider(params?.provider);
-    await this.ensureSeeded(provider);
+    await this.ensureSeeded(params.user_id, provider);
 
     return this.voiceOverRepository.find({
-      where: { provider },
+      where: { user_id: params.user_id, provider },
       order: {
         isFavorite: 'DESC',
         name: 'ASC',
@@ -584,7 +909,12 @@ export class VoiceOversService {
     });
   }
 
-  async setFavoriteByVoiceId(voiceId: string): Promise<VoiceOver> {
+  async setFavoriteByVoiceId(
+    user_id: string,
+    voiceId: string,
+  ): Promise<VoiceOver> {
+    await this.ensureSchema();
+
     const id = String(voiceId ?? '').trim();
     const candidates = [
       id,
@@ -592,8 +922,9 @@ export class VoiceOversService {
       this.namespacedVoiceId('elevenlabs', id),
     ].filter(Boolean);
 
-    const target = await this.voiceOverRepository.findOne({
-      where: candidates.map((voice_id) => ({ voice_id })),
+    const target = await this.ensureUserVoiceByCandidates({
+      user_id,
+      candidates,
     });
 
     if (!target) {
@@ -605,14 +936,14 @@ export class VoiceOversService {
 
       // Use TypeORM metadata-aware updates so column naming/quoting works in Postgres
       await repo.update(
-        { provider: target.provider, isFavorite: true },
+        { user_id, provider: target.provider, isFavorite: true },
         { isFavorite: false },
       );
-      await repo.update({ voice_id: target.voice_id }, { isFavorite: true });
+      await repo.update({ id: target.id, user_id }, { isFavorite: true });
     });
 
     const updated = await this.voiceOverRepository.findOne({
-      where: { voice_id: target.voice_id },
+      where: { id: target.id, user_id },
     });
 
     if (!updated) {

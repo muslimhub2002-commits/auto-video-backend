@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
+import { shouldRunStartupTasks } from '../../common/runtime/runtime.utils';
 import { normalizeSoundEffectAudioSettings } from '../sound-effects/audio-settings.types';
 import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
 import { Sentence } from '../scripts/entities/sentence.entity';
@@ -49,6 +50,10 @@ export class TextAnimationsService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    if (!shouldRunStartupTasks()) {
+      return;
+    }
+
     await this.ensureSchema();
   }
 

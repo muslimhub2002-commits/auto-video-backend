@@ -14,6 +14,7 @@ import {
   normalizeSoundEffectAudioSettings,
 } from '../sound-effects/audio-settings.types';
 import { UploadsService } from '../uploads/uploads.service';
+import { shouldRunStartupTasks } from '../../common/runtime/runtime.utils';
 
 @Injectable()
 export class BackgroundSoundtracksService implements OnModuleInit {
@@ -24,6 +25,10 @@ export class BackgroundSoundtracksService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    if (!shouldRunStartupTasks()) {
+      return;
+    }
+
     await this.ensureBackgroundSoundtracksSchema();
   }
 

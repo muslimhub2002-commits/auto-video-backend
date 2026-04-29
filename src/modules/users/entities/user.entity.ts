@@ -14,6 +14,7 @@ import { ScriptTemplate } from '../../scripts/entities/script-template.entity';
 import { BackgroundSoundtrack } from '../../background-soundtracks/entities/background-soundtrack.entity';
 import { ImageFilter } from '../../image-filters/entities/image-filter.entity';
 import { MotionEffect } from '../../motion-effects/entities/motion-effect.entity';
+import { VoiceOver } from '../../voice-overs/entities/voice-over.entity';
 import type {
   UserMetaAccountSection,
   UserTikTokAccountSection,
@@ -144,4 +145,7 @@ export class User {
 
   @OneToMany(() => MotionEffect, (motionEffect) => motionEffect.user)
   motion_effects!: MotionEffect[];
+
+  @OneToMany(() => VoiceOver, (voiceOver) => voiceOver.user)
+  voice_overs!: VoiceOver[];
 }

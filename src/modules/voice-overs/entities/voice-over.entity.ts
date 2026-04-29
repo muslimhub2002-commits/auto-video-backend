@@ -4,18 +4,29 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  Index,
 } from 'typeorm';
+import { User } from '../../users/entities/user.entity';
 
 @Entity('voice_overs')
+@Index(['user_id', 'provider'])
 export class VoiceOver {
   @PrimaryGeneratedColumn()
   id: number;
+
+  @Column({ type: 'uuid', nullable: true })
+  user_id: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  hash: string | null;
 
   // Provider for the voice catalog (ElevenLabs vs Google TTS / AI Studio)
   @Column({ type: 'varchar', default: 'elevenlabs' })
   provider!: 'elevenlabs' | 'google';
 
-  @Column({ type: 'varchar', length: 255, unique: true })
+  @Column({ type: 'varchar', length: 255 })
   voice_id: string;
 
   @Column({ type: 'varchar', length: 255 })
@@ -50,4 +61,8 @@ export class VoiceOver {
 
   @UpdateDateColumn({ type: 'timestamp' })
   updated_at: Date;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'user_id' })
+  user: User | null;
 }

@@ -19,6 +19,7 @@ import type {
 } from '../users/entities/social-account-storage.types';
 import { CreateSocialAccountDto } from './dto/create-social-account.dto';
 import { UpdateSocialAccountDto } from './dto/update-social-account.dto';
+import { shouldRunStartupTasks } from '../../common/runtime/runtime.utils';
 
 export const SOCIAL_ACCOUNT_PROVIDERS = ['youtube', 'meta', 'tiktok'] as const;
 
@@ -173,6 +174,10 @@ export class SocialAccountsService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    if (!shouldRunStartupTasks()) {
+      return;
+    }
+
     await this.ensureSocialAccountSchema();
   }
 

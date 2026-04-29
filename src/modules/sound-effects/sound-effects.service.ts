@@ -21,6 +21,7 @@ import {
   normalizeSoundEffectAudioSettings,
 } from './audio-settings.types';
 import { UploadsService } from '../uploads/uploads.service';
+import { shouldRunStartupTasks } from '../../common/runtime/runtime.utils';
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const clampPercent = (v: number) => Math.max(0, Math.min(300, v));
@@ -36,6 +37,10 @@ export class SoundEffectsService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    if (!shouldRunStartupTasks()) {
+      return;
+    }
+
     await this.ensureSoundEffectsSchema();
   }
 

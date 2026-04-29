@@ -6,10 +6,16 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
+import { stableSerializeValue, sha256Hex } from '../../common/utils/stable-hash.utils';
 import { normalizeSoundEffectAudioSettings } from '../sound-effects/audio-settings.types';
 import { SoundEffect } from '../sound-effects/entities/sound-effect.entity';
 import { Sentence } from '../scripts/entities/sentence.entity';
 import { UploadsService } from '../uploads/uploads.service';
+import { shouldRunStartupTasks } from '../../common/runtime/runtime.utils';
+import {
+  buildVideoBufferHash,
+  buildVideoUrlHash,
+} from '../videos/video-hash.utils';
 import { Overlay } from './entities/overlay.entity';
 
 type OverlayUploadFile = {
@@ -47,6 +53,10 @@ export class OverlaysService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    if (!shouldRunStartupTasks()) {
+      return;
+    }
+
     await this.ensureSchema();
   }
 
@@ -61,6 +71,15 @@ export class OverlaysService implements OnModuleInit {
       try {
         await this.dataSource.query(
           'ALTER TABLE overlays ADD COLUMN IF NOT EXISTS sound_effects JSONB NULL',
+        );
+        await this.dataSource.query(
+          'ALTER TABLE overlays ADD COLUMN IF NOT EXISTS hash VARCHAR(64) NULL',
+        );
+        await this.dataSource.query(
+          'ALTER TABLE overlays ADD COLUMN IF NOT EXISTS asset_hash VARCHAR(64) NULL',
+        );
+        await this.dataSource.query(
+          'CREATE INDEX IF NOT EXISTS idx_overlays_user_hash ON overlays (user_id, hash)',
         );
       } catch (error: any) {
         const message = String(error?.message ?? '');
@@ -231,6 +250,89 @@ export class OverlaysService implements OnModuleInit {
     return normalized.length > 0 ? normalized : null;
   }
 
+  private resolveOverlayAssetHash(params: {
+    file?: OverlayUploadFile | null;
+    sourceUrl?: string | null;
+    currentOverlay?: Overlay | null;
+  }): string {
+    if (params.file?.buffer?.length) {
+      return buildVideoBufferHash(params.file.buffer);
+    }
+
+    const sourceUrl = String(params.sourceUrl ?? '').trim();
+    if (sourceUrl) {
+      return buildVideoUrlHash(sourceUrl);
+    }
+
+    const currentHash = String(params.currentOverlay?.asset_hash ?? '').trim();
+    if (currentHash) {
+      return currentHash;
+    }
+
+    const currentUrl = String(params.currentOverlay?.url ?? '').trim();
+    if (currentUrl) {
+      return buildVideoUrlHash(currentUrl);
+    }
+
+    throw new BadRequestException('Overlay file or sourceUrl is required');
+  }
+
+  private buildOverlayHash(params: {
+    title: string;
+    assetHash: string;
+    settings: Record<string, unknown>;
+    sound_effects: Array<OverlaySoundEffectRow> | null;
+  }): string {
+    return sha256Hex(
+      stableSerializeValue({
+        title: String(params.title ?? '').trim(),
+        asset_hash: params.assetHash,
+        settings: params.settings ?? {},
+        sound_effects: params.sound_effects ?? null,
+      }),
+    );
+  }
+
+  private async findExistingOverlayByHash(params: {
+    user_id: string;
+    hash: string;
+    excludeId?: string;
+  }): Promise<Overlay | null> {
+    const qb = this.repo
+      .createQueryBuilder('overlay')
+      .where('overlay.user_id = :user_id', { user_id: params.user_id })
+      .andWhere('overlay.hash = :hash', { hash: params.hash });
+
+    if (params.excludeId) {
+      qb.andWhere('overlay.id <> :excludeId', { excludeId: params.excludeId });
+    }
+
+    return qb
+      .orderBy('overlay.updated_at', 'DESC')
+      .addOrderBy('overlay.created_at', 'DESC')
+      .getOne();
+  }
+
+  private async deleteOverlayAsset(
+    providerRef: string | null,
+    overlayId: string,
+  ): Promise<void> {
+    if (!providerRef) return;
+
+    try {
+      await this.uploadsService.deleteByRef({
+        providerRef,
+        resourceType: 'video',
+      });
+    } catch (error) {
+      console.error('Failed to delete overlay asset', {
+        overlayId,
+        providerRef,
+        error,
+      });
+    }
+  }
+
   private async syncLinkedSentences(
     sentenceRepo: Repository<Sentence>,
     params: SyncLinkedOverlaySentencesParams,
@@ -352,6 +454,32 @@ export class OverlaysService implements OnModuleInit {
   }): Promise<Overlay> {
     await this.ensureSchema();
 
+    const title = String(params.title ?? '').trim();
+    const settings = this.normalizeSettings(params.settings);
+    const soundEffects =
+      (await this.normalizeSoundEffectsForUser({
+        user_id: params.user_id,
+        sound_effects: params.sound_effects,
+      })) ?? null;
+    const assetHash = this.resolveOverlayAssetHash({
+      file: params.file,
+      sourceUrl: params.sourceUrl,
+    });
+    const hash = this.buildOverlayHash({
+      title,
+      assetHash,
+      settings,
+      sound_effects: soundEffects,
+    });
+    const existing = await this.findExistingOverlayByHash({
+      user_id: params.user_id,
+      hash,
+    });
+
+    if (existing) {
+      return existing;
+    }
+
     const upload = await this.resolveUpload({
       file: params.file,
       sourceUrl: params.sourceUrl,
@@ -359,16 +487,14 @@ export class OverlaysService implements OnModuleInit {
 
     const entity = this.repo.create({
       user_id: params.user_id,
-      title: String(params.title ?? '').trim(),
+      title,
       url: upload.url,
       public_id: upload.providerRef,
       mime_type: upload.mimeType,
-      settings: this.normalizeSettings(params.settings),
-      sound_effects:
-        (await this.normalizeSoundEffectsForUser({
-          user_id: params.user_id,
-          sound_effects: params.sound_effects,
-        })) ?? null,
+      hash,
+      asset_hash: assetHash,
+      settings,
+      sound_effects: soundEffects,
     });
 
     return this.repo.save(entity);
@@ -397,22 +523,83 @@ export class OverlaysService implements OnModuleInit {
       throw new NotFoundException('Overlay not found');
     }
 
-    if (params.title !== undefined) {
-      target.title = String(params.title ?? '').trim() || target.title;
-    }
-    if (params.settings !== undefined) {
-      target.settings = this.normalizeSettings(params.settings);
-    }
-    if (params.sound_effects !== undefined) {
-      target.sound_effects =
-        (await this.normalizeSoundEffectsForUser({
-          user_id: params.user_id,
-          sound_effects: params.sound_effects,
-        })) ?? null;
+    const nextTitle =
+      params.title !== undefined
+        ? String(params.title ?? '').trim() || target.title
+        : target.title;
+    const nextSettings =
+      params.settings !== undefined
+        ? this.normalizeSettings(params.settings)
+        : target.settings;
+    const nextSoundEffects =
+      params.sound_effects !== undefined
+        ? ((await this.normalizeSoundEffectsForUser({
+            user_id: params.user_id,
+            sound_effects: params.sound_effects,
+          })) ?? null)
+        : target.sound_effects;
+    const nextAssetHash = this.resolveOverlayAssetHash({
+      file: params.file,
+      sourceUrl: params.sourceUrl,
+      currentOverlay: target,
+    });
+    const nextHash = this.buildOverlayHash({
+      title: nextTitle,
+      assetHash: nextAssetHash,
+      settings: nextSettings,
+      sound_effects: nextSoundEffects,
+    });
+    const previousProviderRef = String(target.public_id ?? '').trim() || null;
+
+    target.title = nextTitle;
+    target.settings = nextSettings;
+    target.sound_effects = nextSoundEffects;
+    target.hash = nextHash;
+    target.asset_hash = nextAssetHash;
+
+    const duplicate = await this.findExistingOverlayByHash({
+      user_id: params.user_id,
+      hash: nextHash,
+      excludeId: target.id,
+    });
+
+    if (duplicate) {
+      target.url = duplicate.url;
+      target.public_id = duplicate.public_id;
+      target.mime_type = duplicate.mime_type;
+
+      const saved = await this.dataSource.transaction(async (manager) => {
+        const overlayRepo = manager.getRepository(Overlay);
+        const sentenceRepo = manager.getRepository(Sentence);
+        const merged = await overlayRepo.save(target);
+
+        await sentenceRepo.update(
+          { overlay_id: duplicate.id } as any,
+          {
+            overlay_id: merged.id,
+            overlay_settings: merged.settings,
+            overlay_sound_effects: merged.sound_effects ?? null,
+          } as any,
+        );
+
+        await this.syncLinkedSentences(sentenceRepo, {
+          overlayId: merged.id,
+          settings: merged.settings,
+          sound_effects: merged.sound_effects ?? null,
+        });
+
+        await overlayRepo.delete({ id: duplicate.id, user_id: params.user_id } as any);
+        return merged;
+      });
+
+      if (previousProviderRef && previousProviderRef !== saved.public_id) {
+        await this.deleteOverlayAsset(previousProviderRef, saved.id);
+      }
+
+      return saved;
     }
 
     if (params.file?.buffer?.length || String(params.sourceUrl ?? '').trim()) {
-      const previousProviderRef = String(target.public_id ?? '').trim() || null;
       const upload = await this.resolveUpload({
         file: params.file,
         sourceUrl: params.sourceUrl,
@@ -421,35 +608,34 @@ export class OverlaysService implements OnModuleInit {
       target.url = upload.url;
       target.public_id = upload.providerRef;
       target.mime_type = upload.mimeType;
-
-      if (previousProviderRef && previousProviderRef !== upload.providerRef) {
-        try {
-          await this.uploadsService.deleteByRef({
-            providerRef: previousProviderRef,
-            resourceType: 'video',
-          });
-        } catch (error) {
-          console.error('Failed to delete previous overlay asset', {
-            overlayId,
-            previousProviderRef,
-            error,
-          });
-        }
-      }
     }
 
-    return this.dataSource.transaction(async (manager) => {
-      const saved = await manager.getRepository(Overlay).save(target);
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const overlayRepo = manager.getRepository(Overlay);
+      const sentenceRepo = manager.getRepository(Sentence);
+      const persisted = await overlayRepo.save(target);
 
-      await this.syncLinkedSentences(manager.getRepository(Sentence), {
-        overlayId: saved.id,
-        settings: params.settings !== undefined ? saved.settings : undefined,
+      await this.syncLinkedSentences(sentenceRepo, {
+        overlayId: persisted.id,
+        settings: params.settings !== undefined ? persisted.settings : undefined,
         sound_effects:
-          params.sound_effects !== undefined ? saved.sound_effects ?? null : undefined,
+          params.sound_effects !== undefined
+            ? persisted.sound_effects ?? null
+            : undefined,
       });
 
-      return saved;
+      return persisted;
     });
+
+    if (
+      (params.file?.buffer?.length || String(params.sourceUrl ?? '').trim()) &&
+      previousProviderRef &&
+      previousProviderRef !== saved.public_id
+    ) {
+      await this.deleteOverlayAsset(previousProviderRef, saved.id);
+    }
+
+    return saved;
   }
 
   async deleteById(params: {
@@ -471,20 +657,7 @@ export class OverlaysService implements OnModuleInit {
     }
 
     const providerRef = String(target.public_id ?? '').trim() || null;
-    if (providerRef) {
-      try {
-        await this.uploadsService.deleteByRef({
-          providerRef,
-          resourceType: 'video',
-        });
-      } catch (error) {
-        console.error('Failed to delete overlay asset', {
-          overlayId,
-          providerRef,
-          error,
-        });
-      }
-    }
+    await this.deleteOverlayAsset(providerRef, target.id);
 
     await this.repo.delete({ id: target.id, user_id: params.user_id } as any);
     return target.id;
