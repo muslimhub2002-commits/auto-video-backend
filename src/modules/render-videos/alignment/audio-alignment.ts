@@ -298,6 +298,7 @@ const normalizeWord = (raw: string) =>
 const sanitizeSentenceTextForAlignment = (text: string) =>
   String(text ?? '')
     .replace(/\[[^\]]*\]/gu, ' ')
+    .replace(/[—–-]+/gu, ' ')
     .replace(/_/gu, '')
     .trim();
 

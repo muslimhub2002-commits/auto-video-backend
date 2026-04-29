@@ -43,7 +43,7 @@ export class Script {
   @Column({ type: 'varchar', length: 100, nullable: true })
   subject: string | null;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: 'text', nullable: true })
   subject_content: string | null;
 
   @Column({ type: 'varchar', length: 50, nullable: true })

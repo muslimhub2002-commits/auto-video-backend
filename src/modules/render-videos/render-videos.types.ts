@@ -50,6 +50,7 @@ export type TextAnimationSettings = {
   lineHeight?: number;
   textColor?: string;
   accentColor?: string;
+  strokeEnabled?: boolean;
   strokeColor?: string;
   strokeWidthPx?: number;
   shadowOpacity?: number;

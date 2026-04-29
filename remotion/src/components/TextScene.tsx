@@ -153,15 +153,15 @@ const getDefaultTextAnimationSettings = (
   isShortVideo: boolean,
 ): TextAnimationSettings => {
   const normalizedEffect = resolveLegacyTextAnimationEffect(effect) ?? 'slideCutFast';
-  const baseFontSize = isShortVideo ? 13.2 : 8.6;
+  const baseFontSize = 12;
   const defaults: TextAnimationSettings = {
     presetKey: normalizedEffect,
     speed: DEFAULT_TEXT_ANIMATION_SPEED,
-    horizontalAlign: 'left',
-    contentAlign: 'left',
+    horizontalAlign: 'center',
+    contentAlign: 'center',
     verticalAlign: 'middle',
-    offsetX: -5,
-    offsetY: -14,
+    offsetX: 0,
+    offsetY: 0,
     fontSizePercent: baseFontSize,
     maxWidthPercent: isShortVideo ? 72 : 46,
     fontWeight: 820,
@@ -169,6 +169,7 @@ const getDefaultTextAnimationSettings = (
     lineHeight: 0.92,
     textColor: '#ffffff',
     accentColor: '#ffd60a',
+    strokeEnabled: false,
     strokeColor: '#0f172a',
     strokeWidthPx: 0,
     shadowOpacity: 0.34,
@@ -303,6 +304,10 @@ const normalizeTextAnimationSettings = (
     resolvedPresetKey !== 'typewriter' && settings?.animatePerWord === true;
   const textBoxEnabled =
     resolvedPresetKey !== 'typewriter' && settings?.textBoxEnabled === true;
+  const strokeWidthPx = getNumeric(settings?.strokeWidthPx, defaults.strokeWidthPx ?? 0, 0, 8);
+  const strokeEnabled =
+    settings?.strokeEnabled === true ||
+    (settings?.strokeEnabled == null && strokeWidthPx > 0);
 
   return {
     presetKey: resolvedPresetKey,
@@ -346,8 +351,9 @@ const normalizeTextAnimationSettings = (
     lineHeight: getNumeric(settings?.lineHeight, defaults.lineHeight ?? 0.92, 0.75, 1.5),
     textColor: getColor(settings?.textColor, defaults.textColor ?? '#ffffff'),
     accentColor: getColor(settings?.accentColor, defaults.accentColor ?? '#facc15'),
+    strokeEnabled,
     strokeColor: getColor(settings?.strokeColor, defaults.strokeColor ?? '#0f172a'),
-    strokeWidthPx: getNumeric(settings?.strokeWidthPx, defaults.strokeWidthPx ?? 0, 0, 8),
+    strokeWidthPx,
     shadowOpacity: getNumeric(settings?.shadowOpacity, defaults.shadowOpacity ?? 0.34, 0, 1),
     shadowBlurPx: getNumeric(settings?.shadowBlurPx, defaults.shadowBlurPx ?? 18, 0, 48),
     backgroundMode: getEnumValue(
@@ -1025,6 +1031,7 @@ export const TextScene: React.FC<{
   const fontSizePx = Math.min(width, height) * ((resolvedSettings.fontSizePercent ?? 12) / 100);
   const maxWidthPx = width * ((resolvedSettings.maxWidthPercent ?? 76) / 100);
   const strokeWidthPx = resolvedSettings.strokeWidthPx ?? 0;
+  const strokeEnabled = resolvedSettings.strokeEnabled === true && strokeWidthPx > 0;
   const containerPadding = Math.round(Math.min(width, height) * 0.07);
   const contentAlign = resolveContentTextAlign(resolvedSettings);
   const accentBoundary = words[0]?.length ?? resolvedText.length;
@@ -1070,7 +1077,7 @@ export const TextScene: React.FC<{
     fontFamily,
     textShadow: `0 ${(6 + animationIntensity * 6).toFixed(1)}px ${(resolvedSettings.shadowBlurPx ?? 18).toFixed(1)}px rgba(2, 6, 23, ${(resolvedSettings.shadowOpacity ?? 0.34).toFixed(3)})`,
     WebkitTextStroke:
-      strokeWidthPx > 0
+      strokeEnabled
         ? `${strokeWidthPx.toFixed(2)}px ${resolvedSettings.strokeColor}`
         : undefined,
     paintOrder: 'stroke fill',

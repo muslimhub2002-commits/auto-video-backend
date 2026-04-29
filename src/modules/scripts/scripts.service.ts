@@ -244,6 +244,28 @@ export class ScriptsService implements OnModuleInit {
       next.shadowOpacity = Math.min(1, Math.max(0, shadowOpacity));
     }
 
+    if (next.strokeEnabled === true) {
+      next.strokeEnabled = true;
+    } else if (next.strokeEnabled === false) {
+      next.strokeEnabled = false;
+    } else {
+      delete next.strokeEnabled;
+    }
+
+    const strokeWidthPx = this.normalizeOptionalNumber(next.strokeWidthPx);
+    if (strokeWidthPx === null) {
+      delete next.strokeWidthPx;
+    } else {
+      next.strokeWidthPx = Math.min(8, Math.max(0, strokeWidthPx));
+    }
+
+    const strokeColor = String(next.strokeColor ?? '').trim();
+    if (!strokeColor) {
+      delete next.strokeColor;
+    } else {
+      next.strokeColor = strokeColor;
+    }
+
     const shadowBlurPx = this.normalizeOptionalNumber(next.shadowBlurPx);
     if (shadowBlurPx === null) {
       delete next.shadowBlurPx;
@@ -1006,6 +1028,35 @@ export class ScriptsService implements OnModuleInit {
     }
   }
 
+  private async scriptsColumnDefinition(columnName: string): Promise<{
+    dataType: string | null;
+    udtName: string | null;
+    characterMaximumLength: number | null;
+  } | null> {
+    const name = String(columnName ?? '').trim();
+    if (!name) return null;
+
+    try {
+      const rows = await this.dataSource.query(
+        `
+          SELECT
+            data_type AS "dataType",
+            udt_name AS "udtName",
+            character_maximum_length AS "characterMaximumLength"
+          FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = 'scripts'
+            AND column_name = $1
+          LIMIT 1
+        `,
+        [name],
+      );
+      return rows?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private async sentencesTableExists(): Promise<boolean> {
     try {
       const rows = await this.dataSource.query(
@@ -1089,6 +1140,11 @@ export class ScriptsService implements OnModuleInit {
       const hasTiktokUrl = await this.scriptsColumnExists('tiktok_url');
       const hasLocations = await this.scriptsColumnExists('locations');
       const hasLanguage = await this.scriptsColumnExists('language');
+      const subjectContentColumn = await this.scriptsColumnDefinition(
+        'subject_content',
+      );
+      const hasSubjectContentText =
+        String(subjectContentColumn?.udtName ?? '').toLowerCase() === 'text';
       const hasVoiceOverChunks =
         await this.scriptsColumnExists('voice_over_chunks');
 
@@ -1129,6 +1185,7 @@ export class ScriptsService implements OnModuleInit {
         !hasTiktokUrl ||
         !hasLocations ||
         !hasLanguage ||
+        !hasSubjectContentText ||
         !hasVoiceOverChunks ||
         !hasSentenceCharacterKeys ||
         !hasSentenceLocationKey ||
@@ -1153,6 +1210,12 @@ export class ScriptsService implements OnModuleInit {
       const finalHasTiktokUrl = await this.scriptsColumnExists('tiktok_url');
       const finalHasLocations = await this.scriptsColumnExists('locations');
       const finalHasLanguage = await this.scriptsColumnExists('language');
+      const finalSubjectContentColumn = await this.scriptsColumnDefinition(
+        'subject_content',
+      );
+      const finalHasSubjectContentText =
+        String(finalSubjectContentColumn?.udtName ?? '').toLowerCase() ===
+        'text';
       const finalHasVoiceOverChunks =
         await this.scriptsColumnExists('voice_over_chunks');
 
@@ -1195,6 +1258,7 @@ export class ScriptsService implements OnModuleInit {
         !finalHasTiktokUrl ||
         !finalHasLocations ||
         !finalHasLanguage ||
+        !finalHasSubjectContentText ||
         !finalHasVoiceOverChunks ||
         !finalHasSentenceCharacterKeys ||
         !finalHasSentenceLocationKey ||
@@ -1206,7 +1270,7 @@ export class ScriptsService implements OnModuleInit {
       ) {
         throw new InternalServerErrorException(
           'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, facebook_url, instagram_url, tiktok_url, locations, language, and sentences.character_keys/location_key/forced_location_key). ' +
-            'This also includes scripts.voice_over_chunks. ' +
+            'This also includes scripts.voice_over_chunks and scripts.subject_content as TEXT. ' +
             'Ensure your DB user has ALTER permissions, or apply the schema update SQL in `ScriptsService.ensureScriptsSchema()`.',
         );
       }
@@ -1348,6 +1412,26 @@ export class ScriptsService implements OnModuleInit {
         return;
       }
       throw err;
+    }
+
+    const subjectContentColumn = await this.scriptsColumnDefinition(
+      'subject_content',
+    );
+    if (
+      subjectContentColumn &&
+      String(subjectContentColumn.udtName ?? '').toLowerCase() !== 'text'
+    ) {
+      try {
+        await this.dataSource.query(
+          'ALTER TABLE scripts ALTER COLUMN subject_content TYPE TEXT USING subject_content::TEXT',
+        );
+      } catch (err: any) {
+        const message = String(err?.message || '');
+        if (message.includes('permission denied')) {
+          return;
+        }
+        throw err;
+      }
     }
 
     try {
