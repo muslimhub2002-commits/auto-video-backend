@@ -1,9 +1,15 @@
 import React from 'react';
 import { AbsoluteFill, Img, OffthreadVideo, Sequence } from 'remotion';
 import type { OverlaySettings, TimelineScene } from '../types';
+import { getSceneImageMotionStyle } from '../utils/imageMotion';
 import { resolveMediaSrc } from '../utils/media';
 import { mulberry32 } from '../utils/random';
 import { TextScene } from './TextScene';
+
+const LoopingOffthreadVideo =
+  OffthreadVideo as unknown as React.ComponentType<
+    React.ComponentProps<typeof OffthreadVideo> & { loop?: boolean }
+  >;
 
 const OVERLAY_BACKGROUND_MODE_VALUES = [
   'image',
@@ -345,6 +351,14 @@ export const OverlayScene: React.FC<{
   const glassOverlayOpacity = clampNumber(resolvedLook.glassOverlayOpacity, 0, 0.4);
   const animatedLightingOn = resolvedLook.animatedLightingIntensity > 0.001;
   const glassOverlayOn = glassOverlayOpacity > 0.001;
+  const backgroundImageMotionStyle = backgroundImageSrc
+    ? getSceneImageMotionStyle({
+        scene,
+        elapsedSeconds: Math.max(0, frame) / fps,
+        width,
+        height,
+      })
+    : null;
 
   const textScene: TimelineScene = {
     ...scene,
@@ -390,12 +404,17 @@ export const OverlayScene: React.FC<{
           {resolvedOverlay.backgroundMode === 'image' && backgroundImageSrc ? (
             <Img
               src={backgroundImageSrc}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                ...(backgroundImageMotionStyle ?? null),
+              }}
             />
           ) : null}
 
           {resolvedOverlay.backgroundMode === 'video' && backgroundVideoSrc ? (
-            <OffthreadVideo
+            <LoopingOffthreadVideo
               src={backgroundVideoSrc}
               muted
               loop
@@ -495,7 +514,7 @@ export const OverlayScene: React.FC<{
             }}
           >
             {overlayIsVideo ? (
-              <OffthreadVideo
+              <LoopingOffthreadVideo
                 src={overlaySrc!}
                 muted
                 loop

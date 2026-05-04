@@ -5,7 +5,7 @@ import type {
   TextAnimationSettings,
   TimelineScene,
 } from '../types';
-import { IMAGE_ZOOM_PER_SECOND } from '../constants';
+import { getSceneImageMotionStyle } from '../utils/imageMotion';
 import { resolveMediaSrc } from '../utils/media';
 import { mulberry32 } from '../utils/random';
 
@@ -37,8 +37,6 @@ const LEGACY_TEXT_ANIMATION_EFFECT_VALUES = [
 
 const DEFAULT_TEXT_ANIMATION_SPEED = 1.1;
 const MAX_TEXT_ANIMATION_WORDS = 5;
-const DEFAULT_IMAGE_MOTION_SPEED = 1.2;
-const LANDSCAPE_IMAGE_MOTION_SPEED = 0.5;
 const TEXT_ANIMATION_SPEED_MIN = 0.4;
 const TEXT_ANIMATION_SPEED_MAX = 2.4;
 const DEFAULT_TEXT_ANIMATION_WORD_DELAY = 0.08;
@@ -140,9 +138,6 @@ const resolveTextAnimationText = (
 
   return getDefaultTextAnimationText(sentenceText);
 };
-
-const getDefaultBackgroundMotionSpeed = (isShortVideo: boolean) =>
-  isShortVideo ? DEFAULT_IMAGE_MOTION_SPEED : LANDSCAPE_IMAGE_MOTION_SPEED;
 
 const isTextAnimationEffect = (value: unknown): value is TextAnimationEffect => {
   return TEXT_ANIMATION_EFFECT_VALUES.includes(value as TextAnimationEffect);
@@ -1016,13 +1011,14 @@ export const TextScene: React.FC<{
     scene.visualEffect ?? null,
   );
   const backgroundMediaFilter = buildImageLookFilter(resolvedLook);
-  const backgroundScale = hasBackgroundMedia
-    ? clampNumber(
-        1 + (Math.max(0, frame) / fps) * IMAGE_ZOOM_PER_SECOND * getDefaultBackgroundMotionSpeed(isShort),
-        0.5,
-        2,
-      )
-    : 1;
+  const backgroundImageMotionStyle = backgroundImageSrc
+    ? getSceneImageMotionStyle({
+        scene,
+        elapsedSeconds: Math.max(0, frame) / fps,
+        width,
+        height,
+      })
+    : null;
   const backgroundStyle = buildBackgroundStyle(
     resolvedSettings,
     hasBackgroundMedia,
@@ -1106,8 +1102,6 @@ export const TextScene: React.FC<{
                 width: '100%',
                 height: '100%',
                 objectFit: 'cover',
-                transform: `scale(${backgroundScale.toFixed(6)})`,
-                transformOrigin: '50% 50%',
               }}
             />
           ) : null}
@@ -1119,8 +1113,7 @@ export const TextScene: React.FC<{
                 width: '100%',
                 height: '100%',
                 objectFit: 'cover',
-                transform: `scale(${backgroundScale.toFixed(6)})`,
-                transformOrigin: '50% 50%',
+                ...(backgroundImageMotionStyle ?? null),
               }}
             />
           ) : null}
