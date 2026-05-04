@@ -38,6 +38,8 @@ import { SoundEffect } from './modules/sound-effects/entities/sound-effect.entit
 import { SoundEditPreset } from './modules/sound-effects/entities/sound-edit-preset.entity';
 import { TextAnimationsModule } from './modules/text-animations/text-animations.module';
 import { OverlaysModule } from './modules/overlays/overlays.module';
+import { SavedSequence } from './modules/saved-sequences/entities/saved-sequence.entity';
+import { SavedSequencesModule } from './modules/saved-sequences/saved-sequences.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { SocialAccountsModule } from './modules/social-accounts/social-accounts.module';
 
@@ -80,6 +82,7 @@ import { SocialAccountsModule } from './modules/social-accounts/social-accounts.
         BackgroundSoundtrack,
         SoundEffect,
         SoundEditPreset,
+        SavedSequence,
         MetaCredential,
         VoiceOver,
         Video,
@@ -106,6 +109,7 @@ import { SocialAccountsModule } from './modules/social-accounts/social-accounts.
     TextAnimationsModule,
     BackgroundSoundtracksModule,
     SoundEffectsModule,
+    SavedSequencesModule,
     ScriptsModule,
     SocialAccountsModule,
     YoutubeModule,

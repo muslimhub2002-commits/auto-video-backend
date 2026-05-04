@@ -12,6 +12,7 @@ import { MotionEffectsModule } from './modules/motion-effects/motion-effects.mod
 import { TextAnimationsModule } from './modules/text-animations/text-animations.module';
 import { BackgroundSoundtracksModule } from './modules/background-soundtracks/background-soundtracks.module';
 import { SoundEffectsModule } from './modules/sound-effects/sound-effects.module';
+import { SavedSequencesModule } from './modules/saved-sequences/saved-sequences.module';
 import { ScriptsModule } from './modules/scripts/scripts.module';
 import { YoutubeModule } from './modules/youtube/youtube.module';
 import { MetaModule } from './modules/meta/meta.module';
@@ -64,6 +65,7 @@ const enableVercelTypeOrmSynchronize =
     TextAnimationsModule,
     BackgroundSoundtracksModule,
     SoundEffectsModule,
+    SavedSequencesModule,
     ScriptsModule,
     SocialAccountsModule,
     YoutubeModule,

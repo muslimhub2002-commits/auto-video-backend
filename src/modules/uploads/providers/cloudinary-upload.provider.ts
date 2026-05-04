@@ -94,7 +94,7 @@ export class CloudinaryUploadProvider {
 
     const uploadPromise = this.isChunkedMediaUpload(params.resourceType)
       ? new Promise<any>((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_large_stream(
+          const stream = cloudinary.uploader.upload_chunked_stream(
             {
               folder,
               resource_type: resourceType,
@@ -102,13 +102,11 @@ export class CloudinaryUploadProvider {
               use_filename: false,
               chunk_size: CLOUDINARY_LARGE_MEDIA_CHUNK_SIZE_BYTES,
             },
-            (result: any) => {
-              if (!result) {
-                return reject(new Error('Cloudinary large upload failed'));
-              }
-
-              if (result.error) {
-                return reject(result.error);
+            (error, result) => {
+              if (error || !result) {
+                return reject(
+                  error ?? new Error('Cloudinary large upload failed'),
+                );
               }
 
               resolve(result);
