@@ -13,7 +13,7 @@ import {
 
 export class MergeSoundEffectItemDto {
   @IsUUID()
-  sound_effect_id: string;
+  sound_effect_id!: string;
 
   @IsOptional()
   @IsNumber()
@@ -30,6 +30,10 @@ export class MergeSoundEffectItemDto {
   @IsOptional()
   @IsNumber()
   duration_seconds?: number;
+
+  @IsOptional()
+  @IsObject()
+  audio_settings_override?: Record<string, unknown> | null;
 }
 
 export class MergeSoundEffectsDto {
@@ -37,7 +41,7 @@ export class MergeSoundEffectsDto {
   @ArrayMinSize(2)
   @ValidateNested({ each: true })
   @Type(() => MergeSoundEffectItemDto)
-  items: MergeSoundEffectItemDto[];
+  items!: MergeSoundEffectItemDto[];
 
   @IsOptional()
   @IsString()

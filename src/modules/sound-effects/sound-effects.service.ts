@@ -19,12 +19,373 @@ import type { MergeSoundEffectItemDto } from './dto/merge-sound-effects.dto';
 import {
   DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
   normalizeSoundEffectAudioSettings,
+  type SoundEffectAudioSettings,
 } from './audio-settings.types';
 import { UploadsService } from '../uploads/uploads.service';
 import { shouldRunStartupTasks } from '../../common/runtime/runtime.utils';
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const clampPercent = (v: number) => Math.max(0, Math.min(300, v));
+const COMPRESSOR_MIN_THRESHOLD = 0.000976563;
+
+type MergeSoundEffectRenderItem = {
+  delayMs: number;
+  volume: number;
+  trimStartSeconds: number;
+  trimDurationSeconds: number | null;
+  audioSettings: SoundEffectAudioSettings;
+};
+
+type MergeSoundEffectMergedFromItem = {
+  sound_effect_id: string;
+  delay_seconds: number;
+  volume_percent: number;
+  trim_start_seconds: number;
+  duration_seconds: number | null;
+  audio_settings_override: SoundEffectAudioSettings;
+};
+
+type ResolveMergeSoundEffectRenderItemParams = {
+  item: MergeSoundEffectItemDto;
+  sourceDefaults?: {
+    volumePercent?: number | null;
+    audioSettings?: unknown;
+  };
+};
+
+const formatFilterNumber = (value: number, digits = 6) => {
+  if (!Number.isFinite(value)) return '0';
+  return Number(value.toFixed(digits)).toString();
+};
+
+const shouldApplyGainDb = (value: number) => Math.abs(value) >= 0.001;
+
+const toCompressorThresholdLinear = (thresholdDb: number) => {
+  if (!Number.isFinite(thresholdDb)) return 0.125;
+  return Math.max(
+    COMPRESSOR_MIN_THRESHOLD,
+    Math.min(1, Math.pow(10, Math.min(0, thresholdDb) / 20)),
+  );
+};
+
+const toCompressorKneeValue = (knee: number) => {
+  const safeKnee = Number.isFinite(knee) ? Math.max(0, Math.min(40, knee)) : 0;
+  return 1 + (safeKnee / 40) * 7;
+};
+
+type DelayTap = {
+  delayMs: number;
+  gain: number;
+};
+
+const buildEchoTaps = (
+  settings: SoundEffectAudioSettings['echo'],
+): DelayTap[] => {
+  if (!settings.enabled || settings.mix <= 0) return [];
+
+  const delayMs = Math.max(20, Math.round(settings.delayMs));
+  const feedback = Math.max(0, Math.min(0.95, settings.feedback));
+  let gain = Math.max(0, Math.min(1, settings.mix));
+  const taps: DelayTap[] = [];
+
+  for (let repeatIndex = 1; repeatIndex <= 16; repeatIndex += 1) {
+    if (gain < 0.005) break;
+    taps.push({
+      delayMs: delayMs * repeatIndex,
+      gain,
+    });
+
+    if (feedback <= 0.001) break;
+    gain *= feedback;
+  }
+
+  return taps;
+};
+
+const buildReverbTaps = (
+  settings: SoundEffectAudioSettings['reverb'],
+): DelayTap[] => {
+  if (!settings.enabled || settings.mix <= 0) return [];
+
+  const durationSeconds = Math.max(0.1, Math.min(8, settings.duration));
+  const decay = Math.max(0.1, Math.min(8, settings.decay));
+  const mix = Math.max(0, Math.min(1, settings.mix));
+  const tapCount = Math.max(4, Math.min(12, Math.round(durationSeconds * 2)));
+  const taps: DelayTap[] = [];
+
+  for (let index = 0; index < tapCount; index += 1) {
+    const progress = (index + 1) / (tapCount + 1);
+    const gain = mix * Math.pow(1 - progress, decay);
+    if (gain < 0.005) continue;
+
+    taps.push({
+      delayMs: Math.max(20, Math.round(durationSeconds * 1000 * progress)),
+      gain,
+    });
+  }
+
+  return taps;
+};
+
+const appendTapMixFilters = (params: {
+  parts: string[];
+  inputLabel: string;
+  outputLabel: string;
+  scratchPrefix: string;
+  taps: DelayTap[];
+}) => {
+  const taps = params.taps.filter(
+    (tap) => tap.delayMs > 0 && Number.isFinite(tap.gain) && tap.gain > 0,
+  );
+  if (taps.length === 0) return;
+
+  if (taps.length === 1) {
+    const [tap] = taps;
+    params.parts.push(
+      `[${params.inputLabel}]adelay=${tap.delayMs}:all=1,volume=${formatFilterNumber(tap.gain)}[${params.outputLabel}]`,
+    );
+    return;
+  }
+
+  const tapSourceLabels = taps.map(
+    (_tap, index) => `${params.scratchPrefix}_src${index}`,
+  );
+  const tapOutputLabels = taps.map(
+    (_tap, index) => `${params.scratchPrefix}_out${index}`,
+  );
+
+  params.parts.push(
+    `[${params.inputLabel}]asplit=${taps.length}${tapSourceLabels
+      .map((label) => `[${label}]`)
+      .join('')}`,
+  );
+
+  taps.forEach((tap, index) => {
+    params.parts.push(
+      `[${tapSourceLabels[index]}]adelay=${tap.delayMs}:all=1,volume=${formatFilterNumber(tap.gain)}[${tapOutputLabels[index]}]`,
+    );
+  });
+
+  params.parts.push(
+    `${tapOutputLabels.map((label) => `[${label}]`).join('')}amix=inputs=${taps.length}:normalize=0[${params.outputLabel}]`,
+  );
+};
+
+export const resolveMergeSoundEffectRenderItem = ({
+  item,
+  sourceDefaults,
+}: ResolveMergeSoundEffectRenderItemParams): MergeSoundEffectRenderItem & {
+  mergedFromItem: MergeSoundEffectMergedFromItem;
+} => {
+  const normalizedAudioSettings = normalizeSoundEffectAudioSettings(
+    item.audio_settings_override ??
+      sourceDefaults?.audioSettings ??
+      DEFAULT_SOUND_EFFECT_AUDIO_SETTINGS,
+  );
+  const rawDelaySeconds = Number(item.delay_seconds ?? 0);
+  const rawVolumePercent = Number(
+    item.volume_percent ?? sourceDefaults?.volumePercent ?? 100,
+  );
+  const rawTrimStartSeconds = Number(
+    item.trim_start_seconds ?? normalizedAudioSettings.trim.startSeconds ?? 0,
+  );
+  const rawTrimDurationSeconds = Number(
+    item.duration_seconds ?? normalizedAudioSettings.trim.durationSeconds ?? 0,
+  );
+
+  const delaySeconds = Number.isFinite(rawDelaySeconds)
+    ? Math.max(0, rawDelaySeconds)
+    : 0;
+  const volumePercent = Number.isFinite(rawVolumePercent)
+    ? clampPercent(rawVolumePercent)
+    : 100;
+  const trimStartSeconds = Number.isFinite(rawTrimStartSeconds)
+    ? Math.max(0, rawTrimStartSeconds)
+    : 0;
+  const trimDurationSeconds =
+    Number.isFinite(rawTrimDurationSeconds) && rawTrimDurationSeconds > 0
+      ? Math.max(0, rawTrimDurationSeconds)
+      : null;
+
+  const effectiveAudioSettings: SoundEffectAudioSettings = {
+    ...normalizedAudioSettings,
+    trim: {
+      startSeconds: trimStartSeconds,
+      durationSeconds: trimDurationSeconds ?? 0,
+    },
+  };
+
+  return {
+    delayMs: Math.round(delaySeconds * 1000),
+    volume: clamp01(volumePercent / 100),
+    trimStartSeconds,
+    trimDurationSeconds,
+    audioSettings: effectiveAudioSettings,
+    mergedFromItem: {
+      sound_effect_id: item.sound_effect_id,
+      delay_seconds: delaySeconds,
+      volume_percent: volumePercent,
+      trim_start_seconds: trimStartSeconds,
+      duration_seconds: trimDurationSeconds,
+      audio_settings_override: effectiveAudioSettings,
+    },
+  };
+};
+
+export const buildMergedSoundEffectsFilterGraph = (params: {
+  items: MergeSoundEffectRenderItem[];
+}): { filterComplex: string; outLabel: string } => {
+  const parts: string[] = [];
+  const outLabels: string[] = [];
+
+  params.items.forEach((item, index) => {
+    const outputLabel = `a${index}`;
+    const scratchPrefix = `m${index}`;
+    let currentLabel = `${index}:a`;
+
+    const applySerialFilters = (filters: string[], suffix: string) => {
+      if (filters.length === 0) return;
+
+      const nextLabel = `${scratchPrefix}_${suffix}`;
+      parts.push(`[${currentLabel}]${filters.join(',')}[${nextLabel}]`);
+      currentLabel = nextLabel;
+    };
+
+    if (
+      item.trimStartSeconds > 0 ||
+      (item.trimDurationSeconds !== null && item.trimDurationSeconds > 0)
+    ) {
+      const trimArgs: string[] = [];
+      if (item.trimStartSeconds > 0) {
+        trimArgs.push(`start=${formatFilterNumber(item.trimStartSeconds)}`);
+      }
+      if (item.trimDurationSeconds !== null && item.trimDurationSeconds > 0) {
+        trimArgs.push(`duration=${formatFilterNumber(item.trimDurationSeconds)}`);
+      }
+      applySerialFilters(
+        [`atrim=${trimArgs.join(':')}`, 'asetpts=PTS-STARTPTS'],
+        'trim',
+      );
+    }
+
+    if (shouldApplyGainDb(item.audioSettings.eq.lowGainDb)) {
+      applySerialFilters(
+        [
+          `bass=f=${formatFilterNumber(item.audioSettings.eq.lowFrequencyHz)}:t=q:w=0.707107:g=${formatFilterNumber(item.audioSettings.eq.lowGainDb)}`,
+        ],
+        'eq_low',
+      );
+    }
+
+    if (shouldApplyGainDb(item.audioSettings.eq.midGainDb)) {
+      applySerialFilters(
+        [
+          `equalizer=f=${formatFilterNumber(item.audioSettings.eq.midFrequencyHz)}:t=q:w=${formatFilterNumber(item.audioSettings.eq.midQ)}:g=${formatFilterNumber(item.audioSettings.eq.midGainDb)}`,
+        ],
+        'eq_mid',
+      );
+    }
+
+    if (shouldApplyGainDb(item.audioSettings.eq.highGainDb)) {
+      applySerialFilters(
+        [
+          `treble=f=${formatFilterNumber(item.audioSettings.eq.highFrequencyHz)}:t=q:w=0.707107:g=${formatFilterNumber(item.audioSettings.eq.highGainDb)}`,
+        ],
+        'eq_high',
+      );
+    }
+
+    if (item.audioSettings.compressor.enabled) {
+      applySerialFilters(
+        [
+          `acompressor=threshold=${formatFilterNumber(toCompressorThresholdLinear(item.audioSettings.compressor.threshold))}:ratio=${formatFilterNumber(item.audioSettings.compressor.ratio)}:attack=${formatFilterNumber(item.audioSettings.compressor.attack * 1000)}:release=${formatFilterNumber(item.audioSettings.compressor.release * 1000)}:knee=${formatFilterNumber(toCompressorKneeValue(item.audioSettings.compressor.knee))}:mix=1:detection=rms:link=average`,
+        ],
+        'compressor',
+      );
+    }
+
+    const echoTaps = buildEchoTaps(item.audioSettings.echo);
+    const reverbTaps = buildReverbTaps(item.audioSettings.reverb);
+    const enableSaturation =
+      item.audioSettings.saturation.enabled && item.audioSettings.saturation.mix > 0;
+    const branchLabels = [
+      `${scratchPrefix}_dry`,
+      ...(enableSaturation ? [`${scratchPrefix}_sat_base`] : []),
+      ...(echoTaps.length > 0 ? [`${scratchPrefix}_echo_base`] : []),
+      ...(reverbTaps.length > 0 ? [`${scratchPrefix}_reverb_base`] : []),
+    ];
+
+    if (branchLabels.length > 1) {
+      parts.push(
+        `[${currentLabel}]asplit=${branchLabels.length}${branchLabels
+          .map((label) => `[${label}]`)
+          .join('')}`,
+      );
+
+      const mixInputs = [`[${branchLabels[0]}]`];
+      let branchIndex = 1;
+
+      if (enableSaturation) {
+        const saturationBaseLabel = branchLabels[branchIndex];
+        const saturationLabel = `${scratchPrefix}_sat`;
+        const driveGain = 1 + (item.audioSettings.saturation.drive - 1) * 0.35;
+        const outputCompensation = driveGain > 0 ? 1 / driveGain : 1;
+        const clipParam = 1 + ((item.audioSettings.saturation.drive - 1) / 9) * 1.5;
+
+        parts.push(
+          `[${saturationBaseLabel}]volume=${formatFilterNumber(driveGain)},asoftclip=type=tanh:threshold=1:output=${formatFilterNumber(outputCompensation)}:param=${formatFilterNumber(clipParam)}:oversample=4,volume=${formatFilterNumber(item.audioSettings.saturation.mix)}[${saturationLabel}]`,
+        );
+        mixInputs.push(`[${saturationLabel}]`);
+        branchIndex += 1;
+      }
+
+      if (echoTaps.length > 0) {
+        const echoBaseLabel = branchLabels[branchIndex];
+        const echoLabel = `${scratchPrefix}_echo`;
+        appendTapMixFilters({
+          parts,
+          inputLabel: echoBaseLabel,
+          outputLabel: echoLabel,
+          scratchPrefix: `${scratchPrefix}_echo`,
+          taps: echoTaps,
+        });
+        mixInputs.push(`[${echoLabel}]`);
+        branchIndex += 1;
+      }
+
+      if (reverbTaps.length > 0) {
+        const reverbBaseLabel = branchLabels[branchIndex];
+        const reverbLabel = `${scratchPrefix}_reverb`;
+        appendTapMixFilters({
+          parts,
+          inputLabel: reverbBaseLabel,
+          outputLabel: reverbLabel,
+          scratchPrefix: `${scratchPrefix}_reverb`,
+          taps: reverbTaps,
+        });
+        mixInputs.push(`[${reverbLabel}]`);
+      }
+
+      const mixedLabel = `${scratchPrefix}_wetmix`;
+      parts.push(
+        `${mixInputs.join('')}amix=inputs=${mixInputs.length}:normalize=0[${mixedLabel}]`,
+      );
+      currentLabel = mixedLabel;
+    }
+
+    parts.push(
+      `[${currentLabel}]adelay=${Math.max(0, Math.round(item.delayMs))}:all=1,volume=${formatFilterNumber(item.volume)},aresample=async=1[${outputLabel}]`,
+    );
+    outLabels.push(`[${outputLabel}]`);
+  });
+
+  const mixLabel = 'mix';
+  parts.push(
+    `${outLabels.join('')}amix=inputs=${params.items.length}:normalize=0[${mixLabel}]`,
+  );
+
+  return { filterComplex: parts.join(';'), outLabel: mixLabel };
+};
 
 @Injectable()
 export class SoundEffectsService implements OnModuleInit {
@@ -638,63 +999,10 @@ export class SoundEffectsService implements OnModuleInit {
 
   private buildFilterGraph(params: {
     inputCount: number;
-    items: Array<{
-      delayMs: number;
-      volume: number;
-      trimStartSeconds: number;
-      trimDurationSeconds: number | null;
-    }>;
+    items: MergeSoundEffectRenderItem[];
   }): { filterComplex: string; outLabel: string } {
-    const parts: string[] = [];
-    const outLabels: string[] = [];
-
-    for (let i = 0; i < params.inputCount; i += 1) {
-      const delayMs = Math.max(0, Math.round(params.items[i]?.delayMs ?? 0));
-      const volume = clamp01(params.items[i]?.volume ?? 1);
-      const trimStartSeconds = Math.max(
-        0,
-        Number(params.items[i]?.trimStartSeconds ?? 0) || 0,
-      );
-      const rawTrimDurationSeconds = params.items[i]?.trimDurationSeconds;
-      const trimDurationSeconds =
-        typeof rawTrimDurationSeconds === 'number' &&
-        Number.isFinite(rawTrimDurationSeconds)
-          ? Math.max(0, rawTrimDurationSeconds)
-          : null;
-      const out = `a${i}`;
-      const filters: string[] = [];
-
-      if (
-        trimStartSeconds > 0 ||
-        (trimDurationSeconds !== null && trimDurationSeconds > 0)
-      ) {
-        const trimArgs: string[] = [];
-        if (trimStartSeconds > 0) {
-          trimArgs.push(`start=${trimStartSeconds.toFixed(6)}`);
-        }
-        if (trimDurationSeconds !== null && trimDurationSeconds > 0) {
-          trimArgs.push(`duration=${trimDurationSeconds.toFixed(6)}`);
-        }
-        if (trimArgs.length > 0) {
-          filters.push(`atrim=${trimArgs.join(':')}`);
-          filters.push('asetpts=PTS-STARTPTS');
-        }
-      }
-
-      // aresample makes amix happier when inputs differ.
-      filters.push(`adelay=${delayMs}:all=1`);
-      filters.push(`volume=${volume.toFixed(6)}`);
-      filters.push('aresample=async=1');
-      parts.push(`[${i}:a]${filters.join(',')}[${out}]`);
-      outLabels.push(`[${out}]`);
-    }
-
-    const mixLabel = 'mix';
-    parts.push(
-      `${outLabels.join('')}amix=inputs=${params.inputCount}:normalize=0[${mixLabel}]`,
-    );
-
-    return { filterComplex: parts.join(';'), outLabel: mixLabel };
+    const items = params.items.slice(0, params.inputCount);
+    return buildMergedSoundEffectsFilterGraph({ items });
   }
 
   private async renderMergedAudio(params: {
@@ -711,6 +1019,7 @@ export class SoundEffectsService implements OnModuleInit {
         volume_percent: number;
         trim_start_seconds: number;
         duration_seconds: number | null;
+        audio_settings_override: SoundEffectAudioSettings;
       }>;
       created_at: string;
     };
@@ -772,30 +1081,19 @@ export class SoundEffectsService implements OnModuleInit {
         inputPaths.push(inputPath);
       }
 
-      const mapped = items.map((item) => {
-        const delaySeconds = Number(item.delay_seconds ?? 0);
-        const volumePercent = Number(item.volume_percent ?? 100);
-        const trimStartSeconds = Number(item.trim_start_seconds ?? 0);
-        const rawDurationSeconds = Number(item.duration_seconds);
-        return {
-          delayMs: Number.isFinite(delaySeconds)
-            ? Math.max(0, Math.round(delaySeconds * 1000))
-            : 0,
-          volume: Number.isFinite(volumePercent)
-            ? clamp01(clampPercent(volumePercent) / 100)
-            : 1,
-          trimStartSeconds: Number.isFinite(trimStartSeconds)
-            ? Math.max(0, trimStartSeconds)
-            : 0,
-          trimDurationSeconds: Number.isFinite(rawDurationSeconds)
-            ? Math.max(0, rawDurationSeconds)
-            : null,
-        };
-      });
+      const resolvedItems = items.map((item, index) =>
+        resolveMergeSoundEffectRenderItem({
+          item,
+          sourceDefaults: {
+            volumePercent: ordered[index]?.volume_percent,
+            audioSettings: ordered[index]?.audio_settings,
+          },
+        }),
+      );
 
       const { filterComplex, outLabel } = this.buildFilterGraph({
         inputCount: inputPaths.length,
-        items: mapped,
+        items: resolvedItems,
       });
 
       const outMp3 = path.join(tmpDir, 'merged.mp3');
@@ -848,17 +1146,7 @@ export class SoundEffectsService implements OnModuleInit {
         mergedFilename: path.basename(outPath),
         mergedDurationSeconds,
         mergedFrom: {
-          items: items.map((item) => ({
-            sound_effect_id: item.sound_effect_id,
-            delay_seconds: item.delay_seconds ?? 0,
-            volume_percent: item.volume_percent ?? 100,
-            trim_start_seconds: item.trim_start_seconds ?? 0,
-            duration_seconds:
-              typeof item.duration_seconds === 'number' &&
-              Number.isFinite(item.duration_seconds)
-                ? Math.max(0, item.duration_seconds)
-                : null,
-          })),
+          items: resolvedItems.map((item) => item.mergedFromItem),
           created_at: new Date().toISOString(),
         },
       };
