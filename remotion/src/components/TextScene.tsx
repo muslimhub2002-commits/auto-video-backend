@@ -299,7 +299,7 @@ const normalizeTextAnimationSettings = (
     resolvedPresetKey !== 'typewriter' && settings?.animatePerWord === true;
   const textBoxEnabled =
     resolvedPresetKey !== 'typewriter' && settings?.textBoxEnabled === true;
-  const strokeWidthPx = getNumeric(settings?.strokeWidthPx, defaults.strokeWidthPx ?? 0, 0, 8);
+  const strokeWidthPx = getNumeric(settings?.strokeWidthPx, defaults.strokeWidthPx ?? 0, 0, 4);
   const strokeEnabled =
     settings?.strokeEnabled === true ||
     (settings?.strokeEnabled == null && strokeWidthPx > 0);

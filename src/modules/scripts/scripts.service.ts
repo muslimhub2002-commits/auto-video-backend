@@ -256,7 +256,7 @@ export class ScriptsService implements OnModuleInit {
     if (strokeWidthPx === null) {
       delete next.strokeWidthPx;
     } else {
-      next.strokeWidthPx = Math.min(8, Math.max(0, strokeWidthPx));
+      next.strokeWidthPx = Math.min(4, Math.max(0, strokeWidthPx));
     }
 
     const strokeColor = String(next.strokeColor ?? '').trim();
