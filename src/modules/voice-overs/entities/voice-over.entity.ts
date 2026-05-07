@@ -11,7 +11,7 @@ import {
 import { User } from '../../users/entities/user.entity';
 
 @Entity('voice_overs')
-@Index(['user_id', 'provider'])
+@Index('idx_voice_overs_user_provider', ['user_id', 'provider'])
 export class VoiceOver {
   @PrimaryGeneratedColumn()
   id: number;

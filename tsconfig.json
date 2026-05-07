@@ -19,5 +19,15 @@
     "noFallthroughCasesInSwitch": false,
     "jsx": "react-jsx"
   },
-  "exclude": ["dist", "node_modules", "remotion"]
+  "watchOptions": {
+    "excludeDirectories": [
+      "dist",
+      "node_modules",
+      "remotion",
+      "storage",
+      ".vercel",
+      "coverage"
+    ]
+  },
+  "exclude": ["dist", "node_modules", "remotion", "storage", ".vercel", "coverage"]
 }

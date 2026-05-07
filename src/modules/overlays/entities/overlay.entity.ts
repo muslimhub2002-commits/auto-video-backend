@@ -11,7 +11,7 @@ import {
 import { User } from '../../users/entities/user.entity';
 
 @Entity('overlays')
-@Index(['user_id', 'hash'])
+@Index('idx_overlays_user_hash', ['user_id', 'hash'])
 export class Overlay {
   @PrimaryGeneratedColumn('uuid')
   id: string;

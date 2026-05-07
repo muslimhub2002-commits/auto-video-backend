@@ -11,6 +11,7 @@
     "test",
     "**/*.spec.ts",
     "remotion",
+    "storage",
     "scripts",
     "api",
     ".vercel"
