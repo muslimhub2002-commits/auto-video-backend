@@ -302,6 +302,34 @@ export class ScriptsService implements OnModuleInit {
     return normalized || null;
   }
 
+  private stripBracketedText(value: unknown): string {
+    return String(value ?? '')
+      .replace(/\[[\s\S]*?\]/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+  }
+
+  private getDefaultTextAnimationText(value: unknown): string {
+    return this.stripBracketedText(value)
+      .split(/\s+/u)
+      .filter(Boolean)
+      .slice(0, 5)
+      .join(' ')
+      .trim();
+  }
+
+  private getExplicitTextAnimationTextForTranslation(
+    sentence: Pick<Sentence, 'text' | 'text_animation_text'>,
+  ): string | null {
+    const raw = this.normalizeTextAnimationText(sentence.text_animation_text);
+    if (!raw) {
+      return null;
+    }
+
+    const fallback = this.getDefaultTextAnimationText(sentence.text);
+    return raw === fallback ? null : raw;
+  }
+
   private normalizeOptionalNumber(value: unknown): number | null {
     if (value === null || value === undefined || value === '') return null;
     const numeric = Number(value);
@@ -3866,17 +3894,33 @@ export class ScriptsService implements OnModuleInit {
     });
 
     const hasSentences = sourceSentences.length > 0;
+    const sourceTitle = String(source.title ?? '').trim();
 
     let translatedScriptText = '';
     let translatedSentences: string[] | null = null;
+    let translatedHookTexts: Array<string | null> | null = null;
+    let translatedTitle: string | null = sourceTitle || null;
 
     if (hasSentences) {
       const sentenceTexts = sourceSentences.map((s) => String(s.text ?? ''));
+      const explicitHookTextEntries = sourceSentences
+        .map((sentence, index) => ({
+          index,
+          text: this.getExplicitTextAnimationTextForTranslation(sentence),
+        }))
+        .filter(
+          (entry): entry is { index: number; text: string } =>
+            Boolean(entry.text),
+        );
+      const textsToTranslate = [
+        ...sentenceTexts,
+        ...explicitHookTextEntries.map((entry) => entry.text),
+      ];
       const result = await this.aiService.translate({
         targetLanguage,
         method: dto.method,
         model: dto.model,
-        sentences: sentenceTexts,
+        sentences: textsToTranslate,
       });
 
       if (!Array.isArray(result?.sentences)) {
@@ -3885,13 +3929,24 @@ export class ScriptsService implements OnModuleInit {
         );
       }
 
-      if (result.sentences.length !== sentenceTexts.length) {
+      if (result.sentences.length !== textsToTranslate.length) {
         throw new InternalServerErrorException(
           'Translation failed: sentence count mismatch',
         );
       }
 
-      translatedSentences = result.sentences;
+      const translatedValues = result.sentences.map((value) =>
+        String(value ?? ''),
+      );
+      translatedSentences = translatedValues.slice(0, sentenceTexts.length);
+      translatedHookTexts = Array<string | null>(sentenceTexts.length).fill(
+        null,
+      );
+      explicitHookTextEntries.forEach((entry, entryIndex) => {
+        translatedHookTexts![entry.index] =
+          String(translatedValues[sentenceTexts.length + entryIndex] ?? '').trim() ||
+          entry.text;
+      });
       translatedScriptText = translatedSentences.join('\n');
     } else {
       const sourceText = String(source.script ?? '').trim();
@@ -3915,6 +3970,24 @@ export class ScriptsService implements OnModuleInit {
       translatedScriptText = translated;
     }
 
+    if (sourceTitle) {
+      const titleResult = await this.aiService.translate({
+        targetLanguage,
+        method: dto.method,
+        model: dto.model,
+        sentences: [sourceTitle],
+      });
+
+      if (!Array.isArray(titleResult?.sentences) || titleResult.sentences.length !== 1) {
+        throw new InternalServerErrorException(
+          'Translation failed: expected translated title',
+        );
+      }
+
+      const nextTitle = String(titleResult.sentences[0] ?? '').trim();
+      translatedTitle = nextTitle || sourceTitle;
+    }
+
     const savedDraft = await this.dataSource.transaction(async (manager) => {
       const scriptRepo = manager.getRepository(Script);
       const sentenceRepo = manager.getRepository(Sentence);
@@ -3923,7 +3996,7 @@ export class ScriptsService implements OnModuleInit {
       const draft = scriptRepo.create({
         user_id: userId,
         language: targetLanguage,
-        title: source.title ?? null,
+        title: translatedTitle,
         script: translatedScriptText,
         subject: source.subject ?? null,
         subject_content: source.subject_content ?? null,
@@ -3992,7 +4065,7 @@ export class ScriptsService implements OnModuleInit {
               (s as any).image_motion_settings,
             ),
             text_animation_text: this.normalizeTextAnimationText(
-              (s as any).text_animation_text,
+              translatedHookTexts?.[idx] ?? null,
             ),
             text_animation_effect: this.normalizeTextAnimationEffect(
               (s as any).text_animation_effect,

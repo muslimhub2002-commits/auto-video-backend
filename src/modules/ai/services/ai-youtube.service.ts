@@ -230,8 +230,7 @@ export class AiYoutubeService {
               'You are an expert YouTube SEO copywriter. ' +
               'Given a video narration script, you produce metadata optimized for search and click-through. ' +
               'Return ONLY valid JSON as: {"title": string, "description": string, "tags": string[]}. ' +
-              `CRITICAL language rule: Write the title, description, and tags in ${languageDesc}. ` +
-              `Use language code "${languageCode}" exactly as the required output language. ` +
+              `CRITICAL language rule: Write the title, description, and tags in the same language of the script ` +
               'Do NOT switch languages. Preserve the requested writing system (e.g., Arabic/Cyrillic). ' +
               'Rules: title <= 100 chars, description <= 5000 chars, tags: 3-5 items, each tag <= 30 chars, no emojis. ' +
               (isShort
@@ -246,7 +245,7 @@ export class AiYoutubeService {
               (isShort
                 ? 'This is a SHORT. Provide a base title (no hashtags) and a one-sentence description idea (no hashtags). '
                 : 'This is a regular long-form video. Provide a base title (no hashtags) and a long SEO description (2-4 short paragraphs) that is NOT the same as the title. ') +
-              `Language rule: Title/description/tags MUST be in ${languageDesc} (code: ${languageCode}). ` +
+              `Language rule: Title/description/tags MUST be in the same language of the script. ` +
               'Tags should be relevant and specific (mix broad + long-tail). Return 3-5 tags max.\n\n' +
               trimmed,
           },

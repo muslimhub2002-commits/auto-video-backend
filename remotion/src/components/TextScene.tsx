@@ -45,6 +45,10 @@ const TEXT_ANIMATION_WORD_DELAY_MAX = 0.4;
 const DEFAULT_TEXT_ANIMATION_START_DELAY = 0;
 const TEXT_ANIMATION_START_DELAY_MIN = 0;
 const TEXT_ANIMATION_START_DELAY_MAX = 10;
+const DEFAULT_TEXT_ANIMATION_LINE_HEIGHT = 0.92;
+const ARABIC_TEXT_DEFAULT_LINE_HEIGHT = 1.5;
+const TEXT_ANIMATION_LINE_HEIGHT_MIN = 0.75;
+const TEXT_ANIMATION_LINE_HEIGHT_MAX = 2.2;
 
 const clampNumber = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -139,6 +143,32 @@ const resolveTextAnimationText = (
   return getDefaultTextAnimationText(sentenceText);
 };
 
+const containsArabicScript = (value: string) => {
+  return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/u.test(value);
+};
+
+const resolveDefaultTextAnimationLineHeight = (sampleText?: string | null) => {
+  return containsArabicScript(String(sampleText ?? ''))
+    ? ARABIC_TEXT_DEFAULT_LINE_HEIGHT
+    : DEFAULT_TEXT_ANIMATION_LINE_HEIGHT;
+};
+
+const isLegacyArabicDefaultLineHeight = (
+  value: unknown,
+  sampleText?: string | null,
+) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return false;
+  return (
+    containsArabicScript(String(sampleText ?? '')) &&
+    Math.abs(numeric - DEFAULT_TEXT_ANIMATION_LINE_HEIGHT) < 0.001
+  );
+};
+
+const resolveTextDirection = (value: string) => {
+  return containsArabicScript(value) ? 'rtl' : 'ltr';
+};
+
 const isTextAnimationEffect = (value: unknown): value is TextAnimationEffect => {
   return TEXT_ANIMATION_EFFECT_VALUES.includes(value as TextAnimationEffect);
 };
@@ -146,6 +176,7 @@ const isTextAnimationEffect = (value: unknown): value is TextAnimationEffect => 
 const getDefaultTextAnimationSettings = (
   effect: TextAnimationEffect,
   isShortVideo: boolean,
+  sampleText?: string | null,
 ): TextAnimationSettings => {
   const normalizedEffect = resolveLegacyTextAnimationEffect(effect) ?? 'slideCutFast';
   const baseFontSize = 12;
@@ -161,7 +192,7 @@ const getDefaultTextAnimationSettings = (
     maxWidthPercent: isShortVideo ? 72 : 46,
     fontWeight: 820,
     letterSpacingEm: 0.02,
-    lineHeight: 0.92,
+    lineHeight: resolveDefaultTextAnimationLineHeight(sampleText),
     textColor: '#ffffff',
     accentColor: '#ffd60a',
     strokeEnabled: false,
@@ -288,10 +319,12 @@ const normalizeTextAnimationSettings = (
   settings: TimelineScene['textAnimationSettings'],
   fallbackEffect: TextAnimationEffect,
   isShortVideo: boolean,
+  sampleText?: string | null,
 ): TextAnimationSettings => {
   const defaults = getDefaultTextAnimationSettings(
     resolveLegacyTextAnimationEffect(fallbackEffect) ?? 'slideCutFast',
     isShortVideo,
+    sampleText,
   );
   const resolvedPresetKey =
     resolveLegacyTextAnimationEffect(settings?.presetKey) ?? defaults.presetKey;
@@ -303,6 +336,16 @@ const normalizeTextAnimationSettings = (
   const strokeEnabled =
     settings?.strokeEnabled === true ||
     (settings?.strokeEnabled == null && strokeWidthPx > 0);
+  const defaultLineHeight =
+    defaults.lineHeight ?? resolveDefaultTextAnimationLineHeight(sampleText);
+  const lineHeight = isLegacyArabicDefaultLineHeight(settings?.lineHeight, sampleText)
+    ? defaultLineHeight
+    : getNumeric(
+        settings?.lineHeight,
+        defaultLineHeight,
+        TEXT_ANIMATION_LINE_HEIGHT_MIN,
+        TEXT_ANIMATION_LINE_HEIGHT_MAX,
+      );
 
   return {
     presetKey: resolvedPresetKey,
@@ -343,7 +386,7 @@ const normalizeTextAnimationSettings = (
       -0.08,
       0.24,
     ),
-    lineHeight: getNumeric(settings?.lineHeight, defaults.lineHeight ?? 0.92, 0.75, 1.5),
+    lineHeight,
     textColor: getColor(settings?.textColor, defaults.textColor ?? '#ffffff'),
     accentColor: getColor(settings?.accentColor, defaults.accentColor ?? '#facc15'),
     strokeEnabled,
@@ -415,6 +458,17 @@ const resolveJustifyContent = (
   return 'center';
 };
 
+const resolveWrappedWordJustifyContent = (
+  alignment: NonNullable<TextAnimationSettings['contentAlign']>,
+  direction: 'ltr' | 'rtl',
+) => {
+  if (alignment === 'center') return 'center';
+  if (direction === 'rtl') {
+    return alignment === 'right' ? 'flex-start' : 'flex-end';
+  }
+  return alignment === 'right' ? 'flex-end' : 'flex-start';
+};
+
 const resolveAlignItems = (
   alignment: NonNullable<TextAnimationSettings['verticalAlign']>,
 ) => {
@@ -432,6 +486,40 @@ const formatDisplayText = (
 
 const resolveContentTextAlign = (settings: TextAnimationSettings) => {
   return settings.contentAlign ?? settings.horizontalAlign ?? 'left';
+};
+
+const resolveDisplayTextAlign = (
+  settings: TextAnimationSettings,
+  direction: 'ltr' | 'rtl',
+) => {
+  const alignment = resolveContentTextAlign(settings);
+  if (direction === 'rtl' && alignment !== 'right') {
+    return 'right';
+  }
+  return alignment;
+};
+
+const resolveDisplayLineHeight = (
+  settings: TextAnimationSettings,
+  direction: 'ltr' | 'rtl',
+) => {
+  return (
+    settings.lineHeight ??
+    (direction === 'rtl'
+      ? ARABIC_TEXT_DEFAULT_LINE_HEIGHT
+      : DEFAULT_TEXT_ANIMATION_LINE_HEIGHT)
+  );
+};
+
+const resolveDisplayHorizontalAlign = (
+  settings: TextAnimationSettings,
+  direction: 'ltr' | 'rtl',
+) => {
+  const alignment = settings.horizontalAlign ?? 'center';
+  if (direction === 'rtl' && alignment !== 'right') {
+    return 'right';
+  }
+  return alignment;
 };
 
 const getAnimationFrames = (fps: number, speed: number) => {
@@ -1011,17 +1099,20 @@ export const TextScene: React.FC<{
   isShort: boolean;
   fontFamily: string;
 }> = ({ scene, frame, fps, width, height, isShort, fontFamily }) => {
+  const resolvedTextValue = resolveTextAnimationText(scene.textAnimationText, scene.text);
   const resolvedEffect =
     resolveLegacyTextAnimationEffect(scene.textAnimationEffect) ?? 'slideCutFast';
   const resolvedSettings = normalizeTextAnimationSettings(
     scene.textAnimationSettings,
     resolvedEffect,
     isShort,
+    resolvedTextValue,
   );
   const resolvedText = formatDisplayText(
-    resolveTextAnimationText(scene.textAnimationText, scene.text),
+    resolvedTextValue,
     resolvedSettings.textCase ?? 'uppercase',
   );
+  const textDirection = resolveTextDirection(resolvedText);
   const words = getWords(resolvedText);
   const animatePerWord =
     resolvedEffect !== 'typewriter' &&
@@ -1083,7 +1174,9 @@ export const TextScene: React.FC<{
   const strokeWidthPx = resolvedSettings.strokeWidthPx ?? 0;
   const strokeEnabled = resolvedSettings.strokeEnabled === true && strokeWidthPx > 0;
   const containerPadding = Math.round(Math.min(width, height) * 0.07);
-  const contentAlign = resolveContentTextAlign(resolvedSettings);
+  const contentAlign = resolveDisplayTextAlign(resolvedSettings, textDirection);
+  const horizontalAlign = resolveDisplayHorizontalAlign(resolvedSettings, textDirection);
+  const displayLineHeight = resolveDisplayLineHeight(resolvedSettings, textDirection);
   const accentBoundary = words[0]?.length ?? resolvedText.length;
   const typewriterGraphemes =
     resolvedEffect === 'typewriter' ? getGraphemes(resolvedText) : [];
@@ -1131,14 +1224,28 @@ export const TextScene: React.FC<{
     color: resolvedSettings.textColor,
     fontWeight: resolvedSettings.fontWeight,
     fontSize: `${fontSizePx.toFixed(2)}px`,
-    lineHeight: String(resolvedSettings.lineHeight ?? 0.92),
+    lineHeight: String(displayLineHeight),
     letterSpacing: `${(resolvedSettings.letterSpacingEm ?? 0.02).toFixed(3)}em`,
     textAlign: contentAlign,
+    direction: textDirection,
+    unicodeBidi: 'plaintext',
     maxWidth: '100%',
     fontFamily,
     textShadow: [...strokeShadowLayers, baseDropShadow].join(', '),
     ...textPaintStyle,
     whiteSpace: 'pre-wrap',
+  };
+  const perWordTextStyle: React.CSSProperties = {
+    ...baseTextStyle,
+    display: 'inline-flex',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    alignContent: 'flex-start',
+    columnGap: '0.35em',
+    rowGap: '0',
+    justifyContent: resolveWrappedWordJustifyContent(contentAlign, textDirection),
+    maxWidth: '100%',
+    whiteSpace: 'normal',
   };
   const textBlockWrapperStyle: React.CSSProperties = {
     display: 'inline-block',
@@ -1213,9 +1320,7 @@ export const TextScene: React.FC<{
       <AbsoluteFill
         style={{
           flexDirection: 'row',
-          justifyContent: resolveJustifyContent(
-            resolvedSettings.horizontalAlign ?? 'center',
-          ),
+          justifyContent: resolveJustifyContent(horizontalAlign),
           alignItems: resolveAlignItems(
             resolvedSettings.verticalAlign ?? 'middle',
           ),
@@ -1224,15 +1329,16 @@ export const TextScene: React.FC<{
         }}
       >
         <div
+          dir={textDirection}
           style={textBlockWrapperStyle}
         >
           {animatePerWord
             ? (
-              <div style={baseTextStyle}>
-                {words.map((word, index) => {
+              <div style={perWordTextStyle}>
+                {words.map((word, sourceIndex) => {
                   const wordFrame = Math.max(
                     0,
-                    delayedAnimationFrame - index * wordDelayFrames,
+                    delayedAnimationFrame - sourceIndex * wordDelayFrames,
                   );
                   const animatedWordStyle = getAnimatedBlockStyle({
                     effect: resolvedEffect,
@@ -1242,21 +1348,19 @@ export const TextScene: React.FC<{
                   });
 
                   return (
-                    <span key={`${word}-${index}`}>
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          color:
-                            index === 0
-                              ? resolvedSettings.accentColor
-                              : resolvedSettings.textColor,
-                          ...textPaintStyle,
-                          ...animatedWordStyle,
-                        }}
-                      >
-                        {word}
-                      </span>
-                      {index < words.length - 1 ? ' ' : null}
+                    <span
+                      key={`${word}-${sourceIndex}`}
+                      style={{
+                        display: 'inline-block',
+                        color:
+                          sourceIndex === 0
+                            ? resolvedSettings.accentColor
+                            : resolvedSettings.textColor,
+                        ...textPaintStyle,
+                        ...animatedWordStyle,
+                      }}
+                    >
+                      {word}
                     </span>
                   );
                 })}
