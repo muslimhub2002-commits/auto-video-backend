@@ -52,7 +52,7 @@ const applyCors = (req: any, res: any) => {
     );
     res.setHeader(
       'Access-Control-Expose-Headers',
-      'Content-Length, Content-Range, Accept-Ranges',
+      'Content-Length, Content-Range, Accept-Ranges, X-AI-Web-Search-Warning',
     );
     res.setHeader(
       'Access-Control-Allow-Methods',
@@ -90,7 +90,12 @@ async function bootstrap() {
       },
       credentials: true,
       // Intentionally not hardcoding allowedHeaders to reduce preflight brittleness.
-      exposedHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges'],
+      exposedHeaders: [
+        'Content-Length',
+        'Content-Range',
+        'Accept-Ranges',
+        'X-AI-Web-Search-Warning',
+      ],
     });
 
     await app.init();

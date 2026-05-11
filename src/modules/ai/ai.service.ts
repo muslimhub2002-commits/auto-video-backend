@@ -88,7 +88,10 @@ export class AiService {
     return this.imageService.listLeonardoModels(params);
   }
 
-  createScriptStream(options: GenerateScriptDto) {
+  createScriptStream(options: GenerateScriptDto): Promise<{
+    stream: AsyncIterable<string>;
+    warning?: string;
+  }> {
     return this.textService.createScriptStream(options);
   }
 
@@ -97,6 +100,7 @@ export class AiService {
       id: string;
       title: string;
     }>;
+    warning?: string;
   }> {
     return this.textService.generateScriptIdeas(dto);
   }

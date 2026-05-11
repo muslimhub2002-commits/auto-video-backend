@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 
 class ReferenceScriptDto {
   @IsString()
@@ -54,6 +60,10 @@ export class GenerateScriptDto {
   @IsString()
   @IsOptional()
   model?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  useWebSearch?: boolean;
 
   // Optional override for the system prompt. If provided, it replaces the default system prompt.
   @IsString()

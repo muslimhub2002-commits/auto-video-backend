@@ -482,19 +482,73 @@ const buildTextBoxStyle = (
   };
 };
 
+const buildStrokeShadowLayers = (
+  strokeWidthPx: number,
+  strokeColor: string | undefined,
+) => {
+  const radius = clampNumber(strokeWidthPx, 0, 4);
+  const color = String(strokeColor ?? '').trim();
+
+  if (!color || radius <= 0.001) {
+    return [] as string[];
+  }
+
+  const directions = [
+    [1, 0],
+    [0.9239, 0.3827],
+    [0.7071, 0.7071],
+    [0.3827, 0.9239],
+    [0, 1],
+    [-0.3827, 0.9239],
+    [-0.7071, 0.7071],
+    [-0.9239, 0.3827],
+    [-1, 0],
+    [-0.9239, -0.3827],
+    [-0.7071, -0.7071],
+    [-0.3827, -0.9239],
+    [0, -1],
+    [0.3827, -0.9239],
+    [0.7071, -0.7071],
+    [0.9239, -0.3827],
+  ] as const;
+  const radii =
+    radius >= 1.5
+      ? [radius, radius * 0.72, radius * 0.42]
+      : radius >= 0.75
+        ? [radius, radius * 0.5]
+        : [radius];
+
+  return radii.flatMap((ringRadius) =>
+    directions.map(
+      ([x, y]) =>
+        `${(x * ringRadius).toFixed(2)}px ${(y * ringRadius).toFixed(2)}px 0 ${color}`,
+    ),
+  );
+};
+
 const renderAccentText = (
   displayText: string,
   accentBoundary: number,
   accentColor?: string,
+  baseColor?: string,
+  textPaintStyle?: React.CSSProperties,
 ) => {
   const safeBoundary = clampNumber(accentBoundary, 0, displayText.length);
+  const accentText = displayText.slice(0, safeBoundary);
+  const baseText = displayText.slice(safeBoundary);
 
   return (
     <>
-      <span style={{ color: accentColor }}>
-        {displayText.slice(0, safeBoundary)}
-      </span>
-      {displayText.slice(safeBoundary)}
+      {accentText ? (
+        <span style={{ ...(textPaintStyle ?? null), color: accentColor }}>
+          {accentText}
+        </span>
+      ) : null}
+      {baseText ? (
+        <span style={{ ...(textPaintStyle ?? null), color: baseColor }}>
+          {baseText}
+        </span>
+      ) : null}
     </>
   );
 };
@@ -1060,6 +1114,17 @@ export const TextScene: React.FC<{
           )
           .join('')
       : '';
+  const textPaintStyle: React.CSSProperties = {
+    WebkitTextStroke:
+      strokeEnabled
+        ? `${strokeWidthPx.toFixed(2)}px ${resolvedSettings.strokeColor}`
+        : undefined,
+    paintOrder: 'stroke fill',
+  };
+  const baseDropShadow = `0 ${(6 + animationIntensity * 6).toFixed(1)}px ${(resolvedSettings.shadowBlurPx ?? 18).toFixed(1)}px rgba(2, 6, 23, ${(resolvedSettings.shadowOpacity ?? 0.34).toFixed(3)})`;
+  const strokeShadowLayers = strokeEnabled
+    ? buildStrokeShadowLayers(strokeWidthPx, resolvedSettings.strokeColor)
+    : [];
 
   const baseTextStyle: React.CSSProperties = {
     display: 'inline-block',
@@ -1071,12 +1136,8 @@ export const TextScene: React.FC<{
     textAlign: contentAlign,
     maxWidth: '100%',
     fontFamily,
-    textShadow: `0 ${(6 + animationIntensity * 6).toFixed(1)}px ${(resolvedSettings.shadowBlurPx ?? 18).toFixed(1)}px rgba(2, 6, 23, ${(resolvedSettings.shadowOpacity ?? 0.34).toFixed(3)})`,
-    WebkitTextStroke:
-      strokeEnabled
-        ? `${strokeWidthPx.toFixed(2)}px ${resolvedSettings.strokeColor}`
-        : undefined,
-    paintOrder: 'stroke fill',
+    textShadow: [...strokeShadowLayers, baseDropShadow].join(', '),
+    ...textPaintStyle,
     whiteSpace: 'pre-wrap',
   };
   const textBlockWrapperStyle: React.CSSProperties = {
@@ -1189,6 +1250,7 @@ export const TextScene: React.FC<{
                             index === 0
                               ? resolvedSettings.accentColor
                               : resolvedSettings.textColor,
+                          ...textPaintStyle,
                           ...animatedWordStyle,
                         }}
                       >
@@ -1208,6 +1270,8 @@ export const TextScene: React.FC<{
                       resolvedText,
                       accentBoundary,
                       resolvedSettings.accentColor,
+                      resolvedSettings.textColor,
+                      textPaintStyle,
                     )}
                   </div>
                   <div
@@ -1221,6 +1285,8 @@ export const TextScene: React.FC<{
                       typewriterVisibleText,
                       accentBoundary,
                       resolvedSettings.accentColor,
+                      resolvedSettings.textColor,
+                      textPaintStyle,
                     )}
                   </div>
                 </>
@@ -1232,6 +1298,8 @@ export const TextScene: React.FC<{
                     resolvedText,
                     accentBoundary,
                     resolvedSettings.accentColor,
+                    resolvedSettings.textColor,
+                    textPaintStyle,
                   )}
                 </div>
               </>

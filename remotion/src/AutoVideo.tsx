@@ -273,7 +273,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   return (
     <AbsoluteFill>
       {timeline.audioSrc && (
-        <Audio src={resolveMediaSrc(timeline.audioSrc)} volume={voiceOverVolume} />
+        <Audio src={resolveMediaSrc(timeline.audioSrc)}/>
       )}
       {backgroundMusicSrc ? (
         <Audio src={resolveMediaSrc(backgroundMusicSrc)} volume={backgroundMusicVolume} loop />

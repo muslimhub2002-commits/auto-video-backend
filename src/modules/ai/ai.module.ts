@@ -3,6 +3,7 @@ import { AiService } from './ai.service';
 import { AiController } from './ai.controller';
 import { ImagesModule } from '../images/images.module';
 import { AiRuntimeService } from './services/ai-runtime.service';
+import { AiWebSearchService } from './services/ai-web-search.service';
 import { AiTextService } from './services/ai-text.service';
 import { AiYoutubeService } from './services/ai-youtube.service';
 import { AiImageService } from './services/ai-image.service';
@@ -14,6 +15,7 @@ import { AiVideoService } from './services/ai-video.service';
   controllers: [AiController],
   providers: [
     AiRuntimeService,
+    AiWebSearchService,
     AiTextService,
     AiYoutubeService,
     AiImageService,

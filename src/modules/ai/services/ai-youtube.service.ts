@@ -4,10 +4,14 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { AiRuntimeService } from './ai-runtime.service';
+import { AiWebSearchService } from './ai-web-search.service';
 
 @Injectable()
 export class AiYoutubeService {
-  constructor(private readonly runtime: AiRuntimeService) {}
+  constructor(
+    private readonly runtime: AiRuntimeService,
+    private readonly webSearch: AiWebSearchService,
+  ) {}
 
   private describeLanguage(languageCode: string): string {
     switch (languageCode.toLowerCase()) {
@@ -317,25 +321,6 @@ export class AiYoutubeService {
     return { title, description, tags };
   }
 
-  private tryExtractJson(raw: string): string {
-    const s = String(raw || '').trim();
-    if (!s) return s;
-
-    const firstObj = s.indexOf('{');
-    const lastObj = s.lastIndexOf('}');
-    if (firstObj !== -1 && lastObj !== -1 && lastObj > firstObj) {
-      return s.slice(firstObj, lastObj + 1).trim();
-    }
-
-    const firstArr = s.indexOf('[');
-    const lastArr = s.lastIndexOf(']');
-    if (firstArr !== -1 && lastArr !== -1 && lastArr > firstArr) {
-      return s.slice(firstArr, lastArr + 1).trim();
-    }
-
-    return s;
-  }
-
   private normalizeYoutubeTag(raw: string): string | null {
     const s = String(raw ?? '')
       .replace(/\s+/g, ' ')
@@ -363,28 +348,10 @@ export class AiYoutubeService {
     return out;
   }
 
-  private getAnthropicWebSearchModel(): string {
-    const fromEnv = String(process.env.ANTHROPIC_WEB_SEARCH_MODEL ?? '').trim();
-    if (fromEnv) return fromEnv;
-
-    const defaultAnthropic = String(
-      process.env.ANTHROPIC_DEFAULT_MODEL ?? '',
-    ).trim();
-    if (defaultAnthropic) return defaultAnthropic;
-
-    return 'claude-sonnet-4-5';
-  }
-
   private async tryGetViralTagsViaClaudeWebSearch(
     script: string,
     languageCode: string,
   ): Promise<string[]> {
-    const anthropic = this.runtime.anthropic;
-    if (!anthropic) return [];
-
-    // If Anthropic's web_search tool is not enabled for the account/model, this will throw.
-    // Always use Anthropic here (ignore the UI-selected model).
-    const model = this.getAnthropicWebSearchModel();
     const languageDesc = this.describeLanguage(languageCode);
 
     const baseSystem =
@@ -406,102 +373,35 @@ export class AiYoutubeService {
       'SCRIPT:\n' +
       script;
 
-    const maxAttempts = 2;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const system =
-        attempt === 1
-          ? baseSystem
-          : baseSystem +
-            '\n\nIMPORTANT: Your previous response was invalid. Return ONLY valid JSON (no prose, no markdown, no code fences).';
+    const result = await this.webSearch.completeJson<{ tags?: unknown[] }>({
+      system: baseSystem,
+      user: userMsg,
+      followUpUser:
+        'Using the web search results above, return ONLY valid JSON as {"tags": string[]}. ' +
+        `Language rule: tags MUST be in ${languageDesc} (code: ${languageCode}). ` +
+        'Constraints: 3-5 tags, no leading #, each <= 30 chars, only relevant to the script topic.',
+      maxTokens: 700,
+      followUpMaxTokens: 500,
+      temperature: 0.2,
+      retries: 2,
+    });
 
-      try {
-        const msg: any = await anthropic.messages.create({
-          model,
-          max_tokens: 700,
-          temperature: 0.2,
-          system,
-          tools: [
-            {
-              name: 'web_search',
-              type: 'web_search_20250305',
-            },
-          ],
-          messages: [{ role: 'user', content: userMsg }],
-        } as any);
-
-        const extractTagsFromMessage = (m: any): string[] | null => {
-          const blocks = Array.isArray(m?.content) ? m.content : [];
-          const text = blocks
-            .filter((b: any) => b && typeof b.text === 'string')
-            .map((b: any) => String(b.text ?? ''))
-            .join('')
-            .trim();
-          if (!text) return null;
-
-          const jsonText = this.tryExtractJson(text);
-          const parsed = JSON.parse(jsonText);
-          const rawTags = Array.isArray(parsed?.tags) ? parsed.tags : [];
-          const normalized = rawTags
-            .map((t: any) => this.normalizeYoutubeTag(String(t ?? '')))
-            .filter(Boolean) as string[];
-
-          const unique = this.uniqCaseInsensitive(normalized);
-          return unique.length ? unique : null;
-        };
-
-        // If Claude already returned JSON tags, use them.
-        const direct = extractTagsFromMessage(msg);
-        if (direct && direct.length >= 3) return direct.slice(0, 5);
-
-        // Web search is a *server tool*; the first response may contain only tool-result blocks.
-        // If so, do a follow-up call that consumes the tool results and asks for the final JSON.
-        const blocks = Array.isArray(msg?.content) ? msg.content : [];
-        const hasWebToolResults = blocks.some(
-          (b: any) =>
-            b &&
-            (b.type === 'web_search_tool_result' ||
-              b.type === 'server_tool_use' ||
-              b.type === 'web_search_result'),
-        );
-
-        const stopReason = String(msg?.stop_reason ?? '').trim();
-        if (hasWebToolResults || stopReason === 'tool_use') {
-          const followUp: any = await anthropic.messages.create({
-            model,
-            max_tokens: 500,
-            temperature: 0.2,
-            system,
-            messages: [
-              { role: 'assistant', content: blocks },
-              {
-                role: 'user',
-                content:
-                  'Using the web search results above, return ONLY valid JSON as {"tags": string[]}. ' +
-                  `Language rule: tags MUST be in ${languageDesc} (code: ${languageCode}). ` +
-                  'Constraints: 3-5 tags, no leading #, each <= 30 chars, only relevant to the script topic.',
-              },
-            ],
-          } as any);
-
-          const fromFollowUp = extractTagsFromMessage(followUp);
-          if (fromFollowUp && fromFollowUp.length >= 5)
-            return fromFollowUp.slice(0, 5);
-        }
-      } catch (err: any) {
-        const status = Number(err?.status ?? err?.response?.status ?? NaN);
-        const message = String(
-          err?.message ?? 'Anthropic web_search call failed',
-        );
-        // Keep behavior: fallback to non-web tags, but log enough to debug.
+    if (!result.parsed) {
+      if (result.error) {
         console.warn('[ai] web_search tags failed', {
-          status: Number.isFinite(status) ? status : undefined,
-          message,
+          status: result.error.status,
+          message: result.error.message,
         });
-        return [];
       }
+      return [];
     }
 
-    return [];
+    const rawTags = Array.isArray(result.parsed.tags) ? result.parsed.tags : [];
+    const normalized = rawTags
+      .map((tag: any) => this.normalizeYoutubeTag(String(tag ?? '')))
+      .filter(Boolean) as string[];
+    const unique = this.uniqCaseInsensitive(normalized);
+    return unique.length >= 3 ? unique.slice(0, 5) : [];
   }
 
   private async buildFinalYoutubeTags(options: {

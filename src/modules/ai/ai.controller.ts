@@ -80,7 +80,10 @@ export class AiController {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Transfer-Encoding', 'chunked');
 
-    const stream = await this.aiService.createScriptStream(body);
+    const { stream, warning } = await this.aiService.createScriptStream(body);
+    if (warning) {
+      res.setHeader('X-AI-Web-Search-Warning', warning);
+    }
 
     try {
       for await (const chunk of stream) {

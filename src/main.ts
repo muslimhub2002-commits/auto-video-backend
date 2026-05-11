@@ -79,7 +79,7 @@ async function bootstrap() {
       );
       res.setHeader(
         'Access-Control-Expose-Headers',
-        'Content-Length, Content-Range, Accept-Ranges',
+        'Content-Length, Content-Range, Accept-Ranges, X-AI-Web-Search-Warning',
       );
       res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
     }
@@ -103,7 +103,12 @@ async function bootstrap() {
     credentials: true,
     // Don't hardcode allowed headers; reflect what's requested so browser preflights don't fail
     // when additional headers are introduced (e.g., by auth libs, proxies, or fetch wrappers).
-    exposedHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges'],
+    exposedHeaders: [
+      'Content-Length',
+      'Content-Range',
+      'Accept-Ranges',
+      'X-AI-Web-Search-Warning',
+    ],
   });
 
   app.useStaticAssets(join(process.cwd(), 'storage'), {

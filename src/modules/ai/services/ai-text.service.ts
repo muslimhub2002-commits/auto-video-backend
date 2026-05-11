@@ -14,6 +14,7 @@ import { GenerateMediaSearchTermDto } from '../dto/generate-media-search-term.dt
 import { TranslateDto } from '../dto/translate.dto';
 import type { LlmMessage } from '../llm/llm-types';
 import { AiRuntimeService } from './ai-runtime.service';
+import { AiWebSearchService } from './ai-web-search.service';
 // translate-google is a CommonJS export. This project compiles to CommonJS without
 // `esModuleInterop`, so we must import it via `require` to avoid `.default` being undefined.
 import translateGoogle = require('translate-google');
@@ -22,6 +23,7 @@ import translateGoogle = require('translate-google');
 export class AiTextService {
   // Narration pacing assumption (words per minute) used to derive strict word-count targets.
   private readonly narrationWpm = 150;
+  private readonly trendingWebSearchModel = 'claude-sonnet-4-6';
   private readonly visualEffectOptions = [
     'colorGrading',
     'animatedLighting',
@@ -41,7 +43,10 @@ export class AiTextService {
     'rotationDrift',
   ] as const;
 
-  constructor(private readonly runtime: AiRuntimeService) { }
+  constructor(
+    private readonly runtime: AiRuntimeService,
+    private readonly webSearch: AiWebSearchService,
+  ) {}
 
   private get llm() {
     return this.runtime.llm;
@@ -168,6 +173,174 @@ export class AiTextService {
       seen.add(signature);
       return true;
     });
+  }
+
+  private getWebSearchFallbackWarning(
+    action: 'script ideas' | 'script generation',
+  ): string {
+    return action === 'script ideas'
+      ? 'Trending web search failed, so standard AI script idea generation was used instead.'
+      : 'Trending web search failed, so standard AI script generation was used instead.';
+  }
+
+  private async tryGetTrendingScriptIdeasViaClaudeWebSearch(params: {
+    subject: string;
+    subjectContent?: string | null;
+    length: string;
+    technique?: string | null;
+    languageCode: string;
+    count: number;
+  }): Promise<{
+    ideas: Array<{
+      title: string;
+    }>;
+    warning?: string;
+  }> {
+    const warning = this.getWebSearchFallbackWarning('script ideas');
+    const languageDesc = this.getLanguageDescription(params.languageCode);
+    const wordRange = this.getStrictWordRange(params.length);
+
+    const result = await this.webSearch.completeJson<{
+      ideas?: Array<{
+        title?: unknown;
+      }>;
+    }>({
+      model: this.trendingWebSearchModel,
+      maxTokens: 1200,
+      followUpMaxTokens: 700,
+      temperature: 0.2,
+      retries: 2,
+      system:
+        'You are an expert video topic strategist and trend researcher.\n' +
+        'You have access to a web search tool. Use it first to identify what is currently trending in the requested niche.\n' +
+        'Return ONLY valid JSON with this exact shape: {"ideas": [{"title": string}]}.\n' +
+        `CRITICAL language rule: Return all idea titles in ${languageDesc} using language code "${params.languageCode}". Do NOT switch languages.\n` +
+        'Rules:\n' +
+        `- Return exactly ${params.count} ideas\n` +
+        '- Every title must be current, trending, and highly clickable while staying inside the requested subject.\n' +
+        '- Every title must feel meaningfully different from the others.\n' +
+        `- Every idea must support a final script of approximately ${wordRange.minWords}-${wordRange.maxWords} words.\n` +
+        '- Do not include explanations, bullet points, markdown, or extra keys.\n' +
+        (params.subject === 'religious (Islam)'
+          ? '- Keep ideas respectful, authentic, and away from controversial framing.\n'
+          : ''),
+      user:
+        `Find ${params.count} currently trending script ideas.\n` +
+        `Language: ${languageDesc}.\n` +
+        `Subject: ${params.subject}.\n` +
+        (params.subjectContent
+          ? `Subject content focus: ${params.subjectContent}.\n`
+          : '') +
+        `Target duration: ${params.length}.\n` +
+        (params.technique
+          ? `Narrative technique to support later: ${params.technique}.\n`
+          : '') +
+        'Use web search before deciding. Return only the final JSON.',
+      followUpUser:
+        'Using the web search results above, return ONLY valid JSON as {"ideas": [{"title": string}]}. ' +
+        `Language rule: titles MUST be in ${languageDesc} (code: ${params.languageCode}). ` +
+        `Return exactly ${params.count} distinct titles and no extra keys.`,
+    });
+
+    if (!result.parsed) {
+      if (result.error) {
+        console.warn('[ai] web_search script ideas failed', {
+          status: result.error.status,
+          message: result.error.message,
+        });
+      }
+      return { ideas: [], warning };
+    }
+
+    const normalized = Array.isArray(result.parsed.ideas)
+      ? result.parsed.ideas
+          .map((idea) => ({
+            title: this.normalizeIdeaText(idea?.title),
+          }))
+          .filter((idea) => idea.title)
+      : [];
+
+    const deduped = this.dedupeScriptIdeas(normalized).slice(0, params.count);
+    if (deduped.length !== params.count) {
+      console.warn('[ai] web_search script ideas returned insufficient ideas', {
+        requested: params.count,
+        received: deduped.length,
+      });
+      return { ideas: [], warning };
+    }
+
+    return { ideas: deduped };
+  }
+
+  private async tryResolveTrendingSubjectContentViaClaudeWebSearch(params: {
+    subject: string;
+    subjectContent?: string | null;
+    length: string;
+    technique?: string | null;
+    languageCode: string;
+  }): Promise<{
+    subjectContent: string | null;
+    warning?: string;
+  }> {
+    const warning = this.getWebSearchFallbackWarning('script generation');
+    const languageDesc = this.getLanguageDescription(params.languageCode);
+
+    const result = await this.webSearch.completeJson<{
+      subjectContent?: unknown;
+    }>({
+      model: this.trendingWebSearchModel,
+      maxTokens: 500,
+      followUpMaxTokens: 300,
+      temperature: 0.2,
+      retries: 2,
+      system:
+        'You are an expert trend researcher for narrated video scripting.\n' +
+        'You have access to a web search tool. Use it first to identify the single most currently trending focus inside the requested subject.\n' +
+        'Return ONLY valid JSON with this exact shape: {"subjectContent": string}.\n' +
+        `CRITICAL language rule: Return subjectContent in ${languageDesc} using language code "${params.languageCode}". Do NOT switch languages.\n` +
+        'Rules:\n' +
+        '- Return exactly one concise subjectContent string.\n' +
+        '- Do not return a paragraph, title list, explanation, or extra keys.\n' +
+        '- Stay inside the requested subject.\n' +
+        '- If a subject-content preference is provided, stay within that scope but make it more timely and specific.\n' +
+        (params.subject === 'religious (Islam)'
+          ? '- Keep the result respectful, authentic, and away from controversial framing.\n'
+          : ''),
+      user:
+        'Find the single best currently trending script focus.\n' +
+        `Language: ${languageDesc}.\n` +
+        `Subject: ${params.subject}.\n` +
+        (params.subjectContent
+          ? `Current subject content preference: ${params.subjectContent}.\n`
+          : '') +
+        `Target duration: ${params.length}.\n` +
+        (params.technique
+          ? `Narrative technique to support later: ${params.technique}.\n`
+          : '') +
+        'Use web search before deciding. Return only the final JSON.',
+      followUpUser:
+        'Using the web search results above, return ONLY valid JSON as {"subjectContent": string}. ' +
+        `Language rule: subjectContent MUST be in ${languageDesc} (code: ${params.languageCode}). ` +
+        'Return exactly one concise focus string and no extra keys.',
+    });
+
+    if (!result.parsed) {
+      if (result.error) {
+        console.warn('[ai] web_search script focus failed', {
+          status: result.error.status,
+          message: result.error.message,
+        });
+      }
+      return { subjectContent: null, warning };
+    }
+
+    const subjectContent = this.normalizeIdeaText(result.parsed.subjectContent);
+    if (!subjectContent) {
+      console.warn('[ai] web_search script focus returned empty subjectContent');
+      return { subjectContent: null, warning };
+    }
+
+    return { subjectContent };
   }
 
   private getTechniquePromptBlock(techniqueRaw?: string | null): string | null {
@@ -703,7 +876,10 @@ export class AiTextService {
     }
   }
 
-  async createScriptStream(options: GenerateScriptDto) {
+  async createScriptStream(options: GenerateScriptDto): Promise<{
+    stream: AsyncIterable<string>;
+    warning?: string;
+  }> {
     const subject = options.subject?.trim() || 'religious (Islam)';
     const subjectContent = options.subjectContent?.trim();
     const length = options.length?.trim() || '1 minute';
@@ -721,9 +897,30 @@ export class AiTextService {
     const selectedIdeaTitle = this.normalizeIdeaText(
       options.selectedIdea?.title,
     );
+    const useWebSearch = Boolean(options.useWebSearch);
 
     const haveReferences = referenceScripts.length > 0;
     const techniqueBlock = this.getTechniquePromptBlock(technique);
+    let warning: string | undefined;
+    let effectiveSubjectContent = subjectContent;
+
+    if (useWebSearch && !selectedIdeaTitle) {
+      const trendingFocus = await this.tryResolveTrendingSubjectContentViaClaudeWebSearch(
+        {
+          subject,
+          subjectContent,
+          length,
+          technique,
+          languageCode,
+        },
+      );
+
+      if (trendingFocus.subjectContent) {
+        effectiveSubjectContent = trendingFocus.subjectContent;
+      } else if (trendingFocus.warning) {
+        warning = trendingFocus.warning;
+      }
+    }
 
     try {
       const messages: LlmMessage[] = [
@@ -766,8 +963,8 @@ export class AiTextService {
             ? 'SELECTED IDEA: The user explicitly chose this direction, so the full script must be about this exact idea rather than a different interpretation of the subject.\n' +
             `Idea title: ${selectedIdeaTitle}.\n`
             : '') +
-          (subjectContent
-            ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${subjectContent}.\n`
+          (effectiveSubjectContent
+            ? `Specific focus on a single story/subject & be creative & not expected in choosing the story/subject within the subject: ${effectiveSubjectContent}.\n`
             : '') +
           (haveReferences
             ? 'Write the NEW script in the same narrative style as the reference scripts above.\n'
@@ -779,7 +976,10 @@ export class AiTextService {
           'Do not include scene directions, only spoken narration.',
       });
 
-      return this.llm.streamText({ model, messages, maxTokens: 2500 });
+      return {
+        stream: this.llm.streamText({ model, messages, maxTokens: 2500 }),
+        ...(warning ? { warning } : {}),
+      };
     } catch {
       throw new InternalServerErrorException('Failed to generate script');
     }
@@ -790,6 +990,7 @@ export class AiTextService {
       id: string;
       title: string;
     }>;
+    warning?: string;
   }> {
     const subject = String(dto.subject ?? '').trim() || 'religious (Islam)';
     const subjectContent = String(dto.subjectContent ?? '').trim();
@@ -806,6 +1007,32 @@ export class AiTextService {
       dto.referenceScripts,
     );
     const techniqueBlock = this.getTechniquePromptBlock(technique);
+    const useWebSearch = Boolean(dto.useWebSearch);
+    let warning: string | undefined;
+
+    if (useWebSearch) {
+      const trendingIdeas = await this.tryGetTrendingScriptIdeasViaClaudeWebSearch(
+        {
+          subject,
+          subjectContent,
+          length,
+          technique,
+          languageCode,
+          count,
+        },
+      );
+
+      if (trendingIdeas.ideas.length === count) {
+        return {
+          ideas: trendingIdeas.ideas.map((idea) => ({
+            id: randomUUID(),
+            ...idea,
+          })),
+        };
+      }
+
+      warning = trendingIdeas.warning;
+    }
 
     const messages: LlmMessage[] = [
       {
@@ -897,6 +1124,7 @@ export class AiTextService {
           id: randomUUID(),
           ...idea,
         })),
+        ...(warning ? { warning } : {}),
       };
     } catch (error) {
       if (error instanceof BadRequestException) {
