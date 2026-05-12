@@ -10,6 +10,10 @@ export const CTA_SENTENCES_BY_LANGUAGE: Record<
     subscribe: 'يرجى الاشتراك ومساعدتنا في الوصول إلى المزيد من الناس',
     shorts: 'يمكنك مشاهدة الفيديو الكامل من الرابط في أول تعليق',
   },
+  'ar-eg': {
+    subscribe: 'اعملوا اشتراك وساعدونا نوصل لناس أكتر.',
+    shorts: 'تقدروا تشوفوا الفيديو الكامل من اللينك اللي في أول كومنت.',
+  },
   es: {
     subscribe: 'Suscríbete y ayúdanos a llegar a más personas.',
     shorts: 'Puedes ver el video completo en el enlace del primer comentario.',
@@ -74,12 +78,27 @@ export const CTA_SENTENCES_BY_LANGUAGE: Record<
   },
 };
 
+const normalizeCtaLanguage = (language: string) => {
+  const raw = String(language ?? '').trim();
+  const normalized = raw.toLowerCase();
+
+  if (normalized === 'zh' || normalized === 'zh-cn') {
+    return 'zh-CN';
+  }
+
+  if (normalized === 'ar-eg' || normalized === 'arz') {
+    return 'ar-eg';
+  }
+
+  return raw;
+};
+
 export const getSubscribeSentence = (language: string) =>
-  CTA_SENTENCES_BY_LANGUAGE[language]?.subscribe ??
+  CTA_SENTENCES_BY_LANGUAGE[normalizeCtaLanguage(language)]?.subscribe ??
   CTA_SENTENCES_BY_LANGUAGE.en.subscribe;
 
 export const getShortsCtaSentence = (language: string) =>
-  CTA_SENTENCES_BY_LANGUAGE[language]?.shorts ??
+  CTA_SENTENCES_BY_LANGUAGE[normalizeCtaLanguage(language)]?.shorts ??
   CTA_SENTENCES_BY_LANGUAGE.en.shorts;
 
 // Backwards-compatible exports (default to English)

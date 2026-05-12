@@ -70,6 +70,9 @@ export class AiTextService {
         return 'English (en)';
       case 'ar':
         return 'Arabic (ar)';
+      case 'ar-eg':
+      case 'arz':
+        return 'Egyptian Arabic, colloquial Egyptian dialect (ar-eg)';
       case 'fr':
         return 'French (fr)';
       case 'es':
@@ -2819,8 +2822,20 @@ export class AiTextService {
     };
 
     const normalizedTargetLanguage = normalizeLanguageCode(targetLanguage);
+    const isLlmOnlyTargetLanguage =
+      normalizedTargetLanguage === 'ar-eg' || normalizedTargetLanguage === 'arz';
+    const targetLanguageDescription = this.getLanguageDescription(
+      normalizedTargetLanguage,
+    );
 
-    const method: 'google' | 'llm' = dto?.method ?? 'google';
+    const method: 'google' | 'llm' =
+      dto?.method ?? (isLlmOnlyTargetLanguage ? 'llm' : 'google');
+
+    if (isLlmOnlyTargetLanguage && method !== 'llm') {
+      throw new BadRequestException(
+        'Egyptian Arabic translation is available only with the LLM method',
+      );
+    }
 
     const scriptRaw = dto?.script;
     const script = typeof scriptRaw === 'string' ? scriptRaw.trim() : '';
@@ -2878,12 +2893,15 @@ export class AiTextService {
         const systemPrompt =
           'You are a professional translator for short narration scripts.\n' +
           'Translate every input string into the requested target language.\n' +
+          (isLlmOnlyTargetLanguage
+            ? 'If the target language is Egyptian Arabic, write in natural everyday Egyptian colloquial Arabic used in Egypt, not Modern Standard Arabic.\n'
+            : '') +
           'IMPORTANT: You must preserve the number of items and their order.\n' +
           'Return ONLY valid JSON in this exact shape: {"translations": string[]}.\n' +
           'Do not add explanations or extra keys.';
 
         const userPrompt =
-          `Target language: ${targetLanguage} (code: ${normalizedTargetLanguage})\n` +
+          `Target language: ${targetLanguageDescription}.\n` +
           'Translate these items. Preserve meaning and natural tone for narration.\n\n' +
           'Input JSON:\n' +
           JSON.stringify({ items: chunk });
