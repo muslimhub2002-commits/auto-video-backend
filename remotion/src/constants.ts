@@ -75,7 +75,7 @@ export const TILT_SNAP_MAX_BLUR_PX = 8;
 export const DEFAULT_BACKGROUND_MUSIC_SRC = 'audio/background_3.mp3';
 export const DEFAULT_GLITCH_FX_URL = 'sfx/glitch.mp3';
 export const DEFAULT_WHOOSH_SFX_URL = 'sfx/whoosh.mp3';
-export const DEFAULT_WHOOSH_END_SFX_URL = 'sfx/whoosh-end.mp3';
+export const DEFAULT_WHOOSH_END_SFX_URL = 'sfx/deep-whoosh.mp3';
 export const DEFAULT_AIR_WHOOSH_SFX_URL = 'sfx/whoosh-end.mp3';
 export const DEFAULT_CAMERA_CLICK_SFX_URL = 'sfx/camera_click.mp3';
 // There is no dedicated chroma leak SFX file in `remotion/public/sfx` right now,

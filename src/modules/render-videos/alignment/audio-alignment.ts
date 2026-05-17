@@ -16,6 +16,7 @@ import {
   alignWithReplicateWhisperX,
   isReplicateWhisperXEnabled,
 } from './replicate-whisperx-alignment';
+import { runFfmpeg } from '../../../common/runtime/ffmpeg.utils';
 
 const readHeaderBytes = (filePath: string, length: number): Buffer => {
   const fd = fs.openSync(filePath, 'r');
@@ -145,7 +146,6 @@ const detectAudioKind = (buffer: Buffer): AudioKind => {
 };
 
 const transcodeToWavForTranscription = async (inputPath: string) => {
-  const renderer: any = await import('@remotion/renderer');
   const outPath = path.join(
     os.tmpdir(),
     `transcribe-${randomUUID()}-transcoded.wav`,
@@ -154,12 +154,7 @@ const transcodeToWavForTranscription = async (inputPath: string) => {
   // ffmpeg invocation:
   // - single channel and 16kHz is a safe speech-friendly choice
   // - output PCM wav
-  const task = renderer?.RenderInternals?.callFf?.({
-    bin: 'ffmpeg',
-    indent: false,
-    logLevel: 'warn',
-    binariesDirectory: null,
-    cancelSignal: undefined,
+  await runFfmpeg({
     args: [
       '-y',
       '-i',
@@ -173,13 +168,9 @@ const transcodeToWavForTranscription = async (inputPath: string) => {
       'wav',
       outPath,
     ],
+    allowRemotionFallback: true,
+    remotionLogLevel: 'warn',
   });
-
-  if (!task || typeof task.then !== 'function') {
-    throw new Error('Remotion ffmpeg helper not available');
-  }
-
-  await task;
 
   return outPath;
 };

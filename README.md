@@ -31,6 +31,23 @@
 $ npm install
 ```
 
+## Audio binaries
+
+Advanced backend audio flows require a full `ffmpeg` / `ffprobe` installation.
+
+- Binary resolution order is: `FFMPEG_PATH` / `FFPROBE_PATH`, then `ffmpeg` / `ffprobe` on `PATH`.
+- Remotion's bundled binaries are only used as an explicit fallback for flows that allow it.
+- `POST /sound-effects/merge` and `POST /sound-effects/merge-preview` do not fall back to Remotion, because their filter graph uses advanced audio filters that the bundled Windows build does not support.
+
+If the backend host does not already expose `ffmpeg` and `ffprobe` on `PATH`, configure both environment variables explicitly.
+
+Windows example:
+
+```powershell
+$env:FFMPEG_PATH = 'C:\ffmpeg\bin\ffmpeg.exe'
+$env:FFPROBE_PATH = 'C:\ffmpeg\bin\ffprobe.exe'
+```
+
 ## Compile and run the project
 
 ```bash

@@ -10,6 +10,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { AiRuntimeService } from './ai-runtime.service';
 import { withTimeout } from '../../render-videos/utils/promise.utils';
+import { runFfmpeg } from '../../../common/runtime/ffmpeg.utils';
 
 type VoiceProvider = 'google' | 'elevenlabs';
 type ElevenLabsModel = 'eleven_multilingual_v2' | 'eleven_v3';
@@ -324,21 +325,11 @@ export class AiVoiceService {
   }
 
   private async callFfmpeg(args: string[]): Promise<void> {
-    const renderer: any = await import('@remotion/renderer');
-    const task = renderer?.RenderInternals?.callFf?.({
-      bin: 'ffmpeg',
-      indent: false,
-      logLevel: 'warn',
-      binariesDirectory: null,
-      cancelSignal: undefined,
+    await runFfmpeg({
       args,
+      allowRemotionFallback: true,
+      remotionLogLevel: 'warn',
     });
-
-    if (!task || typeof task.then !== 'function') {
-      throw new Error('Remotion ffmpeg helper not available');
-    }
-
-    await task;
   }
 
   private get geminiApiKey() {

@@ -12,7 +12,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { RenderInternals } from '@remotion/renderer';
 import { SoundEffect } from './entities/sound-effect.entity';
 import { downloadUrlToBuffer } from '../render-videos/utils/net.utils';
 import type { MergeSoundEffectItemDto } from './dto/merge-sound-effects.dto';
@@ -23,6 +22,11 @@ import {
 } from './audio-settings.types';
 import { UploadsService } from '../uploads/uploads.service';
 import { shouldRunStartupTasks } from '../../common/runtime/runtime.utils';
+import {
+  MediaBinaryUnavailableError,
+  runFfmpeg,
+  runFfprobe,
+} from '../../common/runtime/ffmpeg.utils';
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const clampPercent = (v: number) => Math.max(0, Math.min(300, v));
@@ -507,8 +511,7 @@ export class SoundEffectsService implements OnModuleInit {
     filePath: string,
   ): Promise<number | null> {
     try {
-      const command: any = RenderInternals.callFf({
-        bin: 'ffprobe',
+      const result = await runFfprobe({
         args: [
           '-v',
           'error',
@@ -518,14 +521,11 @@ export class SoundEffectsService implements OnModuleInit {
           'default=noprint_wrappers=1:nokey=1',
           filePath,
         ],
-        indent: false,
-        logLevel: 'error',
-        binariesDirectory: null,
-        cancelSignal: undefined,
+        allowRemotionFallback: true,
+        remotionLogLevel: 'error',
       });
 
-      const result = await command;
-      const raw = String(result?.stdout ?? '').trim();
+      const raw = String(result.stdout ?? '').trim();
       const duration = Number(raw);
       if (!Number.isFinite(duration) || duration <= 0) return null;
       return duration;
@@ -980,21 +980,17 @@ export class SoundEffectsService implements OnModuleInit {
   }
 
   private async callFfmpeg(args: string[]): Promise<void> {
-    const renderer: any = await import('@remotion/renderer');
-    const task = renderer?.RenderInternals?.callFf?.({
-      bin: 'ffmpeg',
-      indent: false,
-      logLevel: 'warn',
-      binariesDirectory: null,
-      cancelSignal: undefined,
+    await runFfmpeg({
       args,
+      allowRemotionFallback: false,
+      remotionLogLevel: 'warn',
     });
+  }
 
-    if (!task || typeof task.then !== 'function') {
-      throw new Error('Remotion ffmpeg helper not available');
-    }
-
-    await task;
+  private createMissingFfmpegException(error: MediaBinaryUnavailableError) {
+    return new InternalServerErrorException(
+      `Sound effects merge requires a full ffmpeg/ffprobe installation. ${error.message}`,
+    );
   }
 
   private buildFilterGraph(params: {
@@ -1122,18 +1118,30 @@ export class SoundEffectsService implements OnModuleInit {
           '4',
           outMp3,
         ]);
-      } catch {
-        await this.callFfmpeg([
-          ...baseArgs,
-          '-vn',
-          '-ar',
-          '44100',
-          '-ac',
-          '2',
-          '-c:a',
-          'pcm_s16le',
-          outWav,
-        ]);
+      } catch (error) {
+        if (error instanceof MediaBinaryUnavailableError) {
+          throw this.createMissingFfmpegException(error);
+        }
+
+        try {
+          await this.callFfmpeg([
+            ...baseArgs,
+            '-vn',
+            '-ar',
+            '44100',
+            '-ac',
+            '2',
+            '-c:a',
+            'pcm_s16le',
+            outWav,
+          ]);
+        } catch (fallbackError) {
+          if (fallbackError instanceof MediaBinaryUnavailableError) {
+            throw this.createMissingFfmpegException(fallbackError);
+          }
+
+          throw fallbackError;
+        }
       }
 
       const outPath = fs.existsSync(outMp3) ? outMp3 : outWav;
