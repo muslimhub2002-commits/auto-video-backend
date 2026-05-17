@@ -202,6 +202,10 @@ class UpdateSentenceInput {
   @IsOptional()
   eleven_labs_settings?: ElevenLabsVoiceSettingsInput | null;
 
+  @IsIn(['eleven_multilingual_v2', 'eleven_v3'])
+  @IsOptional()
+  eleven_labs_model?: 'eleven_multilingual_v2' | 'eleven_v3' | null;
+
   @IsBoolean()
   @IsOptional()
   align_sound_effects_to_scene_end?: boolean;
@@ -479,6 +483,14 @@ class VoiceGenerationConfigInput {
   @Type(() => ElevenLabsVoiceSettingsInput)
   @IsOptional()
   elevenLabsSettings?: ElevenLabsVoiceSettingsInput | null;
+
+  @IsIn(['oneTake', 'chunks'])
+  @IsOptional()
+  elevenLabsAutoGenerationStrategy?: 'oneTake' | 'chunks' | null;
+
+  @IsIn(['eleven_multilingual_v2', 'eleven_v3'])
+  @IsOptional()
+  elevenLabsModel?: 'eleven_multilingual_v2' | 'eleven_v3' | null;
 }
 
 class ShortScriptInput {

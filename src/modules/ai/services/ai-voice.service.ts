@@ -12,6 +12,7 @@ import { AiRuntimeService } from './ai-runtime.service';
 import { withTimeout } from '../../render-videos/utils/promise.utils';
 
 type VoiceProvider = 'google' | 'elevenlabs';
+type ElevenLabsModel = 'eleven_multilingual_v2' | 'eleven_v3';
 
 type ElevenLabsVoiceSettings = {
   stability?: number;
@@ -170,6 +171,14 @@ export class AiVoiceService {
     }
 
     return Object.keys(payload).length > 0 ? payload : undefined;
+  }
+
+  private resolveElevenLabsModel(
+    value?: ElevenLabsModel | null,
+  ): ElevenLabsModel {
+    return value === 'eleven_multilingual_v2'
+      ? 'eleven_multilingual_v2'
+      : 'eleven_v3';
   }
 
   private async runWithAbortableTimeout<T>(params: {
@@ -363,6 +372,7 @@ export class AiVoiceService {
     voiceId?: string,
     styleInstructions?: string,
     elevenLabsSettings?: ElevenLabsVoiceSettings,
+    elevenLabsModel?: ElevenLabsModel,
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     const merged = this.mergeSentenceTexts(sentences);
     return this.generateVoiceForScript(
@@ -370,6 +380,7 @@ export class AiVoiceService {
       voiceId,
       styleInstructions,
       elevenLabsSettings,
+      elevenLabsModel,
     );
   }
 
@@ -378,6 +389,7 @@ export class AiVoiceService {
     voiceId?: string,
     styleInstructions?: string,
     elevenLabsSettings?: ElevenLabsVoiceSettings,
+    elevenLabsModel?: ElevenLabsModel,
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     const text = script?.trim();
     if (!text) {
@@ -439,6 +451,7 @@ export class AiVoiceService {
       text,
       voiceId: elevenVoiceId,
       settings: elevenLabsSettings,
+      model: this.resolveElevenLabsModel(elevenLabsModel),
     });
     return { buffer, mimeType: 'audio/mpeg', filename: 'voice-over.mp3' };
   }
@@ -577,6 +590,7 @@ export class AiVoiceService {
     text: string;
     voiceId: string;
     settings?: ElevenLabsVoiceSettings;
+    model?: ElevenLabsModel;
   }): Promise<Buffer> {
     if (!this.elevenApiKey) {
       throw new InternalServerErrorException(
@@ -605,7 +619,7 @@ export class AiVoiceService {
         );
         const requestBody = {
           text: params.text,
-          model_id: 'eleven_multilingual_v2',
+          model_id: this.resolveElevenLabsModel(params.model),
           ...(voiceSettings ? { voice_settings: voiceSettings } : {}),
         };
 

@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -67,4 +68,9 @@ export class GenerateVoiceDto {
   @Type(() => ElevenLabsVoiceSettingsInput)
   @IsOptional()
   elevenLabsSettings?: ElevenLabsVoiceSettingsInput;
+
+  @IsString()
+  @IsIn(['eleven_multilingual_v2', 'eleven_v3'])
+  @IsOptional()
+  elevenLabsModel?: 'eleven_multilingual_v2' | 'eleven_v3';
 }

@@ -148,6 +148,10 @@ export class SavedSequenceSceneInput {
   @IsOptional()
   text_animation_effect?: (typeof SAVED_SEQUENCE_TEXT_ANIMATION_EFFECTS)[number] | null;
 
+  @IsString()
+  @IsOptional()
+  text_animation_text?: string | null;
+
   @IsObject()
   @IsOptional()
   text_animation_settings?: Record<string, unknown> | null;

@@ -107,6 +107,8 @@ export class Script {
     mode: 'auto' | 'perSentence';
     provider: 'google' | 'elevenlabs' | null;
     providerVoiceId: string | null;
+    elevenLabsAutoGenerationStrategy?: 'oneTake' | 'chunks' | null;
+    elevenLabsModel?: 'eleven_multilingual_v2' | 'eleven_v3' | null;
     styleInstructions?: string | null;
     elevenLabsSettings?: {
       stability?: number | null;

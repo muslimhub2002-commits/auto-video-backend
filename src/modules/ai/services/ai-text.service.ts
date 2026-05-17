@@ -7,7 +7,9 @@ import { createHash, randomUUID } from 'crypto';
 import { GenerateScriptDto } from '../dto/generate-script.dto';
 import { GenerateScriptIdeasDto } from '../dto/generate-script-ideas.dto';
 import { EnhanceScriptDto } from '../dto/enhance-script.dto';
+import { EnhanceImagePromptDto } from '../dto/enhance-image-prompt.dto';
 import { EnhanceSentenceDto } from '../dto/enhance-sentence.dto';
+import { GenerateBulkFeelingCuesDto } from '../dto/generate-bulk-feeling-cues.dto';
 import { GenerateBulkLookEffectsDto } from '../dto/generate-bulk-look-effects.dto';
 import { GenerateBulkMotionEffectsDto } from '../dto/generate-bulk-motion-effects.dto';
 import { GenerateMediaSearchTermDto } from '../dto/generate-media-search-term.dto';
@@ -494,6 +496,22 @@ export class AiTextService {
     return chunks;
   }
 
+  private normalizeFeelingCue(raw: unknown): string | null {
+    const normalized = String(raw ?? '')
+      .toLowerCase()
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/[^a-z\s-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) {
+      return null;
+    }
+
+    const words = normalized.split(' ').filter(Boolean).slice(0, 3);
+    return words.length > 0 ? words.join(' ') : null;
+  }
+
   private normalizeLookSettings(
     value: Record<string, unknown> | null | undefined,
     blurFallback = 0,
@@ -555,6 +573,143 @@ export class AiTextService {
       rotateEndNoLimit: toBoolean(value?.rotateEndNoLimit, true),
       originX: this.clampNumber(value?.originX, 0, 100, 50),
       originY: this.clampNumber(value?.originY, 0, 100, 50),
+    };
+  }
+
+  async generateBulkFeelingCues(dto: GenerateBulkFeelingCuesDto): Promise<{
+    items: Array<{
+      sentenceId: string;
+      index: number;
+      feeling: string;
+    }>;
+  }> {
+    const sentences = Array.isArray(dto?.sentences)
+      ? dto.sentences
+        .map((item) => ({
+          index: Number(item?.index),
+          sentenceId: String(item?.sentenceId ?? '').trim(),
+          text: String(item?.text ?? '').trim(),
+        }))
+        .filter(
+          (item) =>
+            Number.isFinite(item.index) &&
+            item.sentenceId.length > 0 &&
+            item.text.length > 0,
+        )
+        .sort((left, right) => left.index - right.index)
+      : [];
+
+    if (!sentences.length) {
+      throw new BadRequestException(
+        'At least one eligible sentence is required',
+      );
+    }
+
+    const sentencesWithContext = sentences.map((item, index) => ({
+      ...item,
+      previousSentences: sentences
+        .slice(Math.max(0, index - 3), index)
+        .map((previousItem) => previousItem.text),
+    }));
+
+    const model = dto.model?.trim() || this.cheapModel;
+    const customSystemPrompt = dto.systemPrompt?.trim();
+    const chunks = this.chunkItemsByBudget(
+      sentencesWithContext,
+      (item) =>
+        `${item.index}|${item.sentenceId}|${item.previousSentences.join(' ')}|${item.text}`,
+      12000,
+      24,
+    );
+
+    const systemPrompt = [
+      customSystemPrompt,
+      'You assign one short performance feeling cue to each narration sentence for text-to-speech.',
+      'Always respond with pure JSON as an OBJECT with exactly this shape: {"items": [{"sentenceId": string, "index": number, "feeling": string}]}',
+      'Rules:',
+      '- Return exactly one item for each provided sentence.',
+      '- feeling must be a short lowercase English cue of 1 to 3 words.',
+      '- Use only letters, spaces, or hyphens. No brackets. No punctuation. No emojis.',
+      '- The cue should fit inside square brackets before the sentence, for example: [calm], [excited], [urgent], [hopeful], [serious], [curious], [warm], [dramatic].',
+      '- If the sentence already starts with a bracket cue, ignore that existing cue and choose the best cue from the underlying sentence meaning.',
+      '- Each item may include up to the last 3 previous sentences as context. Use them only to understand how the target sentence should feel.',
+      '- The feeling must describe the TARGET sentence, not the earlier context sentences.',
+      '- Do not rewrite the sentence. Only choose the cue.',
+      '- Keep cues safe, natural, and useful for voice performance.',
+      '- No prose. No markdown. JSON only.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const chunkResults = await Promise.all(
+      chunks.map(async (chunk) => {
+        try {
+          const parsed = await this.llm.completeJson<{
+            items?: Array<{
+              sentenceId?: unknown;
+              index?: unknown;
+              feeling?: unknown;
+            }>;
+          }>({
+            model,
+            retries: 2,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              {
+                role: 'user',
+                content:
+                  'Return ONLY valid JSON in this exact shape: {"items":[{"sentenceId":"...","index":0,"feeling":"calm"}]}\n\n' +
+                  'TARGET SENTENCES:\n' +
+                  chunk
+                    .map(
+                      (item) =>
+                        `- index=${item.index}; sentenceId=${item.sentenceId}; previousSentences=${JSON.stringify(item.previousSentences)}; text=${JSON.stringify(item.text)}`,
+                    )
+                    .join('\n'),
+              },
+            ],
+          });
+
+          const parsedItems = Array.isArray(parsed?.items) ? parsed.items : [];
+          const resultByKey = new Map<string, { sentenceId: string; index: number; feeling: string }>();
+
+          for (const item of parsedItems) {
+            const sentenceId = String(item?.sentenceId ?? '').trim();
+            const index = Number(item?.index);
+            const feeling = this.normalizeFeelingCue(item?.feeling);
+            if (!sentenceId || !Number.isFinite(index) || !feeling) {
+              continue;
+            }
+            resultByKey.set(`${sentenceId}:${index}`, {
+              sentenceId,
+              index,
+              feeling,
+            });
+          }
+
+          return chunk.map((item) => {
+            const result = resultByKey.get(`${item.sentenceId}:${item.index}`);
+            return (
+              result ?? {
+                sentenceId: item.sentenceId,
+                index: item.index,
+                feeling: 'neutral',
+              }
+            );
+          });
+        } catch (error) {
+          console.error('Failed to generate bulk feeling cues chunk', error);
+          return chunk.map((item) => ({
+            sentenceId: item.sentenceId,
+            index: item.index,
+            feeling: 'neutral',
+          }));
+        }
+      }),
+    );
+
+    return {
+      items: chunkResults.flat(),
     };
   }
 
@@ -2593,6 +2748,44 @@ export class AiTextService {
       });
     } catch {
       throw new InternalServerErrorException('Failed to enhance sentence');
+    }
+  }
+
+  createEnhanceImagePromptStream(dto: EnhanceImagePromptDto) {
+    const basePrompt = dto.prompt?.trim();
+    if (!basePrompt) {
+      throw new BadRequestException('Prompt is required for enhancement');
+    }
+
+    const requiredRoleLine =
+      'You are an expert editor for AI image generation prompts.';
+    const requiredOutputOnlyLine =
+      'You ONLY respond with the improved prompt text. No quotes, no markdown, no headings, no explanations.';
+
+    const systemPrompt = [
+      requiredRoleLine,
+      'You rewrite image prompts to make them more vivid, specific, and visually descriptive while strictly preserving the original subject, action, identity, and intent.',
+      'Add fitting detail about environment, mood, lighting, color, composition, texture, materials, camera framing, and style only when it strengthens the same prompt.',
+      'Do not introduce unrelated people, objects, events, or a different artistic direction unless the original prompt already implies them.',
+      'Return one polished image-generation prompt as a single paragraph.',
+      requiredOutputOnlyLine,
+    ].join('\n');
+
+    const userContent =
+      'Make this image prompt more descriptive for image generation while keeping the same core meaning and direction:\n\n' +
+      basePrompt;
+
+    try {
+      return this.llm.streamText({
+        model: this.cheapModel,
+        maxTokens: 900,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+      });
+    } catch {
+      throw new InternalServerErrorException('Failed to enhance image prompt');
     }
   }
 

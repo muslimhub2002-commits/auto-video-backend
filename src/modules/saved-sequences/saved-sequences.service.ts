@@ -293,6 +293,7 @@ export class SavedSequencesService {
         videoGenerationMode as SavedSequenceSceneSnapshot['video_generation_mode'],
       text_animation_effect:
         textAnimationEffect as SavedSequenceSceneSnapshot['text_animation_effect'],
+      text_animation_text: this.normalizeString(scene.text_animation_text),
       text_animation_settings: this.normalizeSettingsObject(
         scene.text_animation_settings,
       ),

@@ -27,7 +27,9 @@ import { GenerateVoiceDto } from './dto/generate-voice.dto';
 import { GenerateVoiceStyleDto } from './dto/generate-voice-style.dto';
 import { GenerateMediaSearchTermDto } from './dto/generate-media-search-term.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
+import { EnhanceImagePromptDto } from './dto/enhance-image-prompt.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
+import { GenerateBulkFeelingCuesDto } from './dto/generate-bulk-feeling-cues.dto';
 import { GenerateBulkLookEffectsDto } from './dto/generate-bulk-look-effects.dto';
 import { GenerateBulkMotionEffectsDto } from './dto/generate-bulk-motion-effects.dto';
 import { TranslateDto } from './dto/translate.dto';
@@ -186,11 +188,47 @@ export class AiController {
     }
   }
 
+  /**
+   * Expands an existing image prompt into a richer, more descriptive prompt.
+   * Streams plain text in small chunks.
+   */
+  @Post('enhance-image-prompt')
+  @HttpCode(HttpStatus.OK)
+  async enhanceImagePrompt(
+    @Body() body: EnhanceImagePromptDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
+    const stream = await this.aiService.createEnhanceImagePromptStream(body);
+
+    try {
+      for await (const chunk of stream) {
+        if (chunk) res.write(chunk);
+      }
+      res.end();
+    } catch (error) {
+      console.error('Error streaming /ai/enhance-image-prompt:', error);
+      if (!res.headersSent) {
+        res.status(HttpStatus.INTERNAL_SERVER_ERROR);
+      }
+      res.end('\n[Error] Failed to stream enhanced image prompt.');
+    }
+  }
+
   @Post('generate-bulk-look-effects')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   async generateBulkLookEffects(@Body() body: GenerateBulkLookEffectsDto) {
     return this.aiService.generateBulkLookEffects(body);
+  }
+
+  @Post('generate-bulk-feeling-cues')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async generateBulkFeelingCues(@Body() body: GenerateBulkFeelingCuesDto) {
+    return this.aiService.generateBulkFeelingCues(body);
   }
 
   @Post('generate-bulk-motion-effects')
@@ -360,12 +398,14 @@ export class AiController {
           body.voiceId,
           body.styleInstructions,
           body.elevenLabsSettings,
+          body.elevenLabsModel,
         )
       : await this.aiService.generateVoiceForScript(
           body.script,
           body.voiceId,
           body.styleInstructions,
           body.elevenLabsSettings,
+          body.elevenLabsModel,
         );
 
     res.setHeader('Content-Type', result.mimeType);

@@ -2,7 +2,9 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { GenerateScriptDto } from './dto/generate-script.dto';
 import { GenerateScriptIdeasDto } from './dto/generate-script-ideas.dto';
 import { EnhanceScriptDto } from './dto/enhance-script.dto';
+import { EnhanceImagePromptDto } from './dto/enhance-image-prompt.dto';
 import { EnhanceSentenceDto } from './dto/enhance-sentence.dto';
+import { GenerateBulkFeelingCuesDto } from './dto/generate-bulk-feeling-cues.dto';
 import { GenerateBulkLookEffectsDto } from './dto/generate-bulk-look-effects.dto';
 import { GenerateBulkMotionEffectsDto } from './dto/generate-bulk-motion-effects.dto';
 import { GenerateMediaSearchTermDto } from './dto/generate-media-search-term.dto';
@@ -148,6 +150,10 @@ export class AiService {
     return this.textService.createEnhanceSentenceStream(dto);
   }
 
+  createEnhanceImagePromptStream(dto: EnhanceImagePromptDto) {
+    return this.textService.createEnhanceImagePromptStream(dto);
+  }
+
   generateBulkLookEffects(dto: GenerateBulkLookEffectsDto): Promise<{
     items: Array<{
       sentenceId: string;
@@ -162,6 +168,16 @@ export class AiService {
     }>;
   }> {
     return this.textService.generateBulkLookEffects(dto);
+  }
+
+  generateBulkFeelingCues(dto: GenerateBulkFeelingCuesDto): Promise<{
+    items: Array<{
+      sentenceId: string;
+      index: number;
+      feeling: string;
+    }>;
+  }> {
+    return this.textService.generateBulkFeelingCues(dto);
   }
 
   generateBulkMotionEffects(dto: GenerateBulkMotionEffectsDto): Promise<{
@@ -324,12 +340,14 @@ export class AiService {
       speed?: number;
       useSpeakerBoost?: boolean;
     },
+    elevenLabsModel?: 'eleven_multilingual_v2' | 'eleven_v3',
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     return this.voiceService.generateVoiceForSentences(
       sentences,
       voiceId,
       styleInstructions,
       elevenLabsSettings,
+      elevenLabsModel,
     );
   }
 
@@ -344,12 +362,14 @@ export class AiService {
       speed?: number;
       useSpeakerBoost?: boolean;
     },
+    elevenLabsModel?: 'eleven_multilingual_v2' | 'eleven_v3',
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     return this.voiceService.generateVoiceForScript(
       script,
       voiceId,
       styleInstructions,
       elevenLabsSettings,
+      elevenLabsModel,
     );
   }
 

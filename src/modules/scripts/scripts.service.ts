@@ -119,6 +119,8 @@ type NormalizedVoiceGenerationConfig = {
   mode: 'auto' | 'perSentence';
   provider: 'google' | 'elevenlabs' | null;
   providerVoiceId: string | null;
+  elevenLabsAutoGenerationStrategy: 'oneTake' | 'chunks' | null;
+  elevenLabsModel: 'eleven_multilingual_v2' | 'eleven_v3' | null;
   styleInstructions: string | null;
   elevenLabsSettings: NormalizedElevenLabsVoiceSettings | null;
 };
@@ -607,6 +609,15 @@ export class ScriptsService implements OnModuleInit {
       provider,
       providerVoiceId:
         String((value as any).providerVoiceId ?? '').trim() || null,
+      elevenLabsAutoGenerationStrategy:
+        provider === 'elevenlabs'
+          ? this.normalizeElevenLabsAutoGenerationStrategyInput(
+            (value as any).elevenLabsAutoGenerationStrategy,
+          ) ?? 'oneTake'
+          : null,
+      elevenLabsModel:
+        this.normalizeElevenLabsModelInput((value as any).elevenLabsModel) ??
+        null,
       styleInstructions:
         String((value as any).styleInstructions ?? '').trim() || null,
       elevenLabsSettings:
@@ -614,6 +625,32 @@ export class ScriptsService implements OnModuleInit {
           (value as any).elevenLabsSettings,
         ) ?? null,
     };
+  }
+
+  private normalizeElevenLabsModelInput(
+    value: unknown,
+  ): 'eleven_multilingual_v2' | 'eleven_v3' | null | undefined {
+    if (value === undefined) return undefined;
+
+    const normalized = String(value ?? '').trim();
+    if (!normalized) return null;
+
+    return normalized === 'eleven_multilingual_v2' || normalized === 'eleven_v3'
+      ? normalized
+      : null;
+  }
+
+  private normalizeElevenLabsAutoGenerationStrategyInput(
+    value: unknown,
+  ): 'oneTake' | 'chunks' | null | undefined {
+    if (value === undefined) return undefined;
+
+    const normalized = String(value ?? '').trim();
+    if (!normalized) return null;
+
+    return normalized === 'oneTake' || normalized === 'chunks'
+      ? normalized
+      : null;
   }
 
   private normalizeElevenLabsVoiceSettingsInput(
@@ -1601,6 +1638,9 @@ export class ScriptsService implements OnModuleInit {
       await tryAlterSentences(
         'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS eleven_labs_settings JSONB NULL',
       );
+      await tryAlterSentences(
+        'ALTER TABLE sentences ADD COLUMN IF NOT EXISTS eleven_labs_model TEXT NULL',
+      );
     }
 
     try {
@@ -2128,6 +2168,9 @@ export class ScriptsService implements OnModuleInit {
                   this.normalizeElevenLabsVoiceSettingsInput(
                     s.eleven_labs_settings,
                   ) ?? null,
+                eleven_labs_model:
+                  this.normalizeElevenLabsModelInput(s.eleven_labs_model) ??
+                  null,
                 video_prompt: String(s.video_prompt ?? '').trim() || null,
                 transition_to_next: s.transition_to_next ?? null,
                 visual_effect: s.visual_effect ?? null,
@@ -2800,6 +2843,8 @@ export class ScriptsService implements OnModuleInit {
               this.normalizeElevenLabsVoiceSettingsInput(
                 s.eleven_labs_settings,
               ) ?? null,
+            eleven_labs_model:
+              this.normalizeElevenLabsModelInput(s.eleven_labs_model) ?? null,
             video_prompt: String(s.video_prompt ?? '').trim() || null,
             transition_to_next: s.transition_to_next ?? null,
             visual_effect: s.visual_effect ?? null,
@@ -2982,6 +3027,8 @@ export class ScriptsService implements OnModuleInit {
             this.normalizeElevenLabsVoiceSettingsInput(
               s.eleven_labs_settings,
             ) ?? null,
+          eleven_labs_model:
+            this.normalizeElevenLabsModelInput(s.eleven_labs_model) ?? null,
           video_prompt: String(s.video_prompt ?? '').trim() || null,
           transition_to_next: s.transition_to_next ?? null,
           visual_effect: s.visual_effect ?? null,
@@ -3768,6 +3815,8 @@ export class ScriptsService implements OnModuleInit {
               this.normalizeElevenLabsVoiceSettingsInput(
                 s.eleven_labs_settings,
               ) ?? null,
+            eleven_labs_model:
+              this.normalizeElevenLabsModelInput(s.eleven_labs_model) ?? null,
             video_prompt: String(s.video_prompt ?? '').trim() || null,
             transition_to_next: s.transition_to_next ?? null,
             visual_effect: s.visual_effect ?? null,

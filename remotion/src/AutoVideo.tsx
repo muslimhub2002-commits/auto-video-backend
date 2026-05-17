@@ -404,7 +404,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`glitch-sfx-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio src={resolveMediaSrc(glitchSfxSrc)} volume={0.9} />
+            <Audio src={resolveMediaSrc(glitchSfxSrc)} />
           </Sequence>
         );
       })}
@@ -450,7 +450,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`whoosh-sfx-${transition}-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio src={resolveMediaSrc(defaultTransitionSfxSrc)} volume={0.85} />
+            <Audio src={resolveMediaSrc(defaultTransitionSfxSrc)} />
           </Sequence>
         );
       })}
@@ -473,7 +473,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
             key={`flash-sfx-${prevIndex}-${next.index}`}
             from={from}
           >
-            <Audio src={resolveMediaSrc(cameraClickSfxSrc)} volume={0.9} />
+            <Audio src={resolveMediaSrc(cameraClickSfxSrc)} />
           </Sequence>
         );
       })}
@@ -492,7 +492,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
 
         return (
           <Sequence key={`chroma-sfx-${prevIndex}-${next.index}`} from={from}>
-            <Audio src={resolveMediaSrc(chromaLeakSfxSrc)} volume={0.9} />
+            <Audio src={resolveMediaSrc(chromaLeakSfxSrc)} />
           </Sequence>
         );
       })}

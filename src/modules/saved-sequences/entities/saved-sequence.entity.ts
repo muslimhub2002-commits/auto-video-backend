@@ -70,6 +70,7 @@ export type SavedSequenceSceneSnapshot = {
   image_motion_speed?: number | null;
   video_generation_mode?: SavedSequenceVideoGenerationMode | null;
   text_animation_effect?: SavedSequenceTextAnimationEffect | null;
+  text_animation_text?: string | null;
   text_animation_settings?: Record<string, unknown> | null;
   text_animation_sound_effects?: SavedSequenceSoundEffectSnapshot[] | null;
   overlay_url?: string | null;

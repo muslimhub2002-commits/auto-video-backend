@@ -80,6 +80,9 @@ export class Sentence {
     useSpeakerBoost?: boolean | null;
   } | null;
 
+  @Column({ type: 'text', nullable: true })
+  eleven_labs_model: 'eleven_multilingual_v2' | 'eleven_v3' | null;
+
   // Optional per-sentence video prompt (used for AI video generation modes).
   @Column({ type: 'text', nullable: true })
   video_prompt: string | null;
