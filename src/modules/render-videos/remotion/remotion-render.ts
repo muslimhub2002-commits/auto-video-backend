@@ -1,3 +1,4 @@
+import { existsSync } from 'fs';
 import { join } from 'path';
 import * as os from 'os';
 
@@ -16,6 +17,50 @@ const getPositiveIntOrNull = (value: unknown) => {
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
+
+const resolveChromeMode = () => {
+  const configured = (process.env.REMOTION_CHROME_MODE ?? '').trim();
+  if (
+    configured === 'chrome-for-testing' ||
+    configured === 'headless-shell'
+  ) {
+    return configured;
+  }
+
+  return process.platform === 'win32' ? 'chrome-for-testing' : 'headless-shell';
+};
+
+const resolveBrowserExecutable = () => {
+  const candidate =
+    process.env.REMOTION_BROWSER_EXECUTABLE ??
+    process.env.CHROME_EXECUTABLE ??
+    process.env.PUPPETEER_EXECUTABLE_PATH ??
+    null;
+
+  if (candidate) {
+    const trimmed = candidate.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (process.platform !== 'win32') {
+    return null;
+  }
+
+  const localAppData = process.env.LOCALAPPDATA ?? '';
+  const programFiles = process.env.ProgramFiles ?? '';
+  const programFilesX86 = process.env['ProgramFiles(x86)'] ?? '';
+
+  const commonWindowsPaths = [
+    join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    join(programFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+  ].filter(Boolean);
+
+  return commonWindowsPaths.find((path) => existsSync(path)) ?? null;
+};
 
 export const resolveRemotionRenderTimeoutMs = (timeline: any) => {
   const explicitMs = getPositiveIntOrNull(
@@ -169,6 +214,8 @@ export const renderWithRemotionLocal = async (params: {
   const renderer: any = await import('@remotion/renderer');
 
   const entryPoint = join(process.cwd(), 'remotion', 'src', 'index.tsx');
+  const browserExecutable = resolveBrowserExecutable();
+  const chromeMode = resolveChromeMode();
 
   const concurrencyRaw = Number(process.env.REMOTION_CONCURRENCY ?? '');
   const defaultConcurrency = Math.min(2, Math.max(1, os.cpus().length));
@@ -191,8 +238,15 @@ export const renderWithRemotionLocal = async (params: {
     publicDir: params.publicDir,
   });
 
+  await renderer.ensureBrowser({
+    browserExecutable,
+    chromeMode,
+  });
+
   const compositions = await renderer.getCompositions(serveUrl, {
     inputProps: { timeline: params.timeline },
+    browserExecutable,
+    chromeMode,
     chromiumOptions,
   });
 
@@ -216,6 +270,8 @@ export const renderWithRemotionLocal = async (params: {
     codec: 'h264',
     outputLocation: params.outputFsPath,
     inputProps: { timeline: params.timeline },
+    browserExecutable,
+    chromeMode,
     chromiumOptions,
     concurrency,
     timeoutInMilliseconds:

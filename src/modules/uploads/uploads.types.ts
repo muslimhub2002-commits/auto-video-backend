@@ -12,6 +12,7 @@ export type UploadBufferParams = {
   mimeType?: string | null;
   folder: string;
   resourceType: UploadResourceType;
+  excludedProviders?: UploadProviderName[];
 };
 
 export type UploadFromUrlParams = {
@@ -20,6 +21,7 @@ export type UploadFromUrlParams = {
   mimeType?: string | null;
   folder: string;
   resourceType: UploadResourceType;
+  excludedProviders?: UploadProviderName[];
 };
 
 export type UploadResult = {

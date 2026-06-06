@@ -1158,7 +1158,7 @@ export class AiTextService {
     const languageCode = String(dto.language ?? '').trim() || 'en';
     const languageDesc = this.getLanguageDescription(languageCode);
     const model = String(dto.model ?? '').trim() || this.model;
-    const count = this.clampNumber(dto.count, 5, 5, 5);
+    const count = this.clampNumber(dto.count, 6, 6, 6);
     const wordRange = this.getStrictWordRange(length);
     const customSystemPrompt = String(dto.systemPrompt ?? '').trim();
     const referenceScripts = this.normalizeReferenceScripts(
@@ -1207,9 +1207,9 @@ export class AiTextService {
           'JSON schema:\n' +
           '{"ideas":[{"title":"string"}]}\n' +
           'Rules:\n' +
-          '- Return exactly 5 ideas.\n' +
+          '- Return exactly 6 ideas.\n' +
           '- `title` must be concise, specific, and strong enough for the user to choose from on its own.\n' +
-          '- Every title must imply a different script direction, not five phrasings of one topic.\n' +
+          '- Every title must imply a different script direction, not six phrasings of one topic.\n' +
           '- Every idea must be suitable for a final script constrained to approximately ' +
           `${wordRange.minWords}-${wordRange.maxWords} words.`,
       },
@@ -1943,12 +1943,12 @@ export class AiTextService {
         'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
         '{"characters": [{"key": string, "name": string, "description": string, "isSahaba": boolean, "isProphet": boolean, "isWoman": boolean}]}\n\n' +
         'Rules:\n' +
-        '- Include ONLY people/human characters that could be visually depicted.\n' +
+        '- Include ONLY people/human or group of characters that could be visually depicted.\n' +
         '- If the script includes a battle/fight/combat scene, represent each SIDE as a SINGLE GROUP character entry (e.g., "Muslim army", "Opposing army", "Enemy army"). The group description MUST clearly depict a large crowd (many people) to sell the battle scale: formation, density, mixed armor/clothing, banners, dust, movement, silhouettes.\n' +
         '- If the army is the Muslim Army make sure to make their faces covered with cloth (e.g. keffiyeh) to avoid any depiction of facial features for the soldiers, to keep it respectful and in line with common Islamic art conventions.\n' +
         '- Do NOT include Allah/God as a character.\n' +
         '- If the script mentions Sahaba (companions of Prophet Muhammad), still extract them but set the boolean flags accordingly.\n' +
-        '- Each character.description MUST be only two lines max & include detailed facial + physical + clothing attributes.\n' +
+        '- Each character(s).description MUST be only two lines max & include detailed facial + physical + clothing attributes.\n' +
         '- DO NOT INCLUDE ANYTHING BESIDE FACIAL, PHYSICAL & CLOTHING ATTRIBUTES';
       '- For any character with isProphet=true or isSahaba=true: DO NOT describe face details.\n' +
         '- Character keys must be short like C1, C2, C3... in first-appearance order.\n' +

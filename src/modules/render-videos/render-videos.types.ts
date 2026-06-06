@@ -1,4 +1,5 @@
 export const TEXT_ANIMATION_EFFECT_VALUES = [
+  'none',
   'popInBounceHook',
   'slideCutFast',
   'typewriter',
@@ -34,9 +35,30 @@ export type TextBackgroundMode = (typeof TEXT_BACKGROUND_MODE_VALUES)[number];
 export type OverlayBackgroundMode =
   (typeof OVERLAY_BACKGROUND_MODE_VALUES)[number];
 export type OverlayTextLayer = (typeof OVERLAY_TEXT_LAYER_VALUES)[number];
+export type TextAnimationEditMode = 'fullText' | 'perWord';
+
+export type TextAnimationWordStyle = {
+  effect?: TextAnimationEffect | null;
+  offsetX?: number;
+  offsetY?: number;
+  speed?: number;
+  fontSizePercent?: number;
+  fontWeight?: number;
+  letterSpacingEm?: number;
+  lineHeight?: number;
+  textColor?: string;
+  accentColor?: string;
+  strokeEnabled?: boolean;
+  strokeColor?: string;
+  strokeWidthPx?: number;
+  animationIntensity?: number;
+  startDelaySeconds?: number;
+  textCase?: 'original' | 'uppercase';
+};
 
 export type TextAnimationSettings = {
   presetKey?: TextAnimationEffect | 'custom';
+  editMode?: TextAnimationEditMode;
   speed?: number;
   horizontalAlign?: 'left' | 'center' | 'right';
   contentAlign?: 'left' | 'center' | 'right';
@@ -53,8 +75,6 @@ export type TextAnimationSettings = {
   strokeEnabled?: boolean;
   strokeColor?: string;
   strokeWidthPx?: number;
-  shadowOpacity?: number;
-  shadowBlurPx?: number;
   backgroundMode?: TextBackgroundMode;
   backgroundColor?: string;
   gradientFrom?: string;
@@ -70,6 +90,7 @@ export type TextAnimationSettings = {
   textBoxPaddingPx?: number;
   textBoxRadiusPx?: number;
   textBoxColor?: string;
+  wordStyles?: TextAnimationWordStyle[] | null;
 };
 
 export type OverlaySettings = {

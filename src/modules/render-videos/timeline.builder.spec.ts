@@ -45,6 +45,33 @@ describe('buildTimeline', () => {
     ]);
   });
 
+  it('omits subtitle words when subtitles are disabled', () => {
+    const timeline = buildTimeline({
+      language: 'en',
+      sentences: [{ text: 'Hello world' }],
+      imagePaths: ['one.png'],
+      scriptLength: '30 seconds',
+      audioDurationSeconds: 1,
+      audioSrc: '',
+      addSubtitles: false,
+      sentenceTimings: [
+        {
+          index: 0,
+          text: 'Hello world',
+          startSeconds: 0,
+          endSeconds: 1,
+          words: [
+            { text: 'Hello', startSeconds: 0, endSeconds: 0.45 },
+            { text: 'world', startSeconds: 0.45, endSeconds: 1 },
+          ],
+        },
+      ],
+    });
+
+    expect(timeline.addSubtitles).toBe(false);
+    expect(timeline.scenes[0].subtitleWords).toBeUndefined();
+  });
+
   it('preserves text scene metadata and only binds a primary image when needed', () => {
     const timeline = buildTimeline({
       language: 'en',
@@ -91,8 +118,6 @@ describe('buildTimeline', () => {
           textAnimationEffect: 'slideCutFast',
           textAnimationSettings: {
             backgroundMode: 'inheritVideo',
-            shadowOpacity: 0.58,
-            shadowBlurPx: 30,
           },
           textBackgroundVideoUrl: 'looping-hook.mp4',
           visualEffect: 'glassReflections',
@@ -151,8 +176,6 @@ describe('buildTimeline', () => {
       textAnimationEffect: 'slideCutFast',
       textAnimationSettings: {
         backgroundMode: 'inheritVideo',
-        shadowOpacity: 0.58,
-        shadowBlurPx: 30,
       },
       visualEffect: 'glassReflections',
       imageFilterSettings: {
@@ -191,8 +214,6 @@ describe('buildTimeline', () => {
             offsetY: -8,
             textColor: '#f8fafc',
             accentColor: '#22d3ee',
-            shadowOpacity: 0.44,
-            shadowBlurPx: 20,
             textBoxEnabled: true,
             textBoxPaddingPx: 14,
             textBoxRadiusPx: 10,
@@ -248,8 +269,6 @@ describe('buildTimeline', () => {
         offsetY: -8,
         textColor: '#f8fafc',
         accentColor: '#22d3ee',
-        shadowOpacity: 0.44,
-        shadowBlurPx: 20,
         textBoxEnabled: true,
         textBoxPaddingPx: 14,
         textBoxRadiusPx: 10,

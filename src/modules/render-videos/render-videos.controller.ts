@@ -49,6 +49,15 @@ const LOCAL_RENDER_ASSET_MAX_BYTES = Math.max(
 export class RenderVideosController {
   constructor(private readonly renderVideosService: RenderVideosService) {}
 
+  private isAcceptedRenderUrl(url: string) {
+    return (
+      url.startsWith('http://') ||
+      url.startsWith('https://') ||
+      url.startsWith('/static/') ||
+      url === '/subscribe.mp4'
+    );
+  }
+
   private parseMultipartSentences(body: {
     sentences: string;
   }): SentenceInput[] {
@@ -86,6 +95,8 @@ export class RenderVideosController {
         String((sentence as any).overlayMimeType).trim().length > 0
           ? String((sentence as any).overlayMimeType).trim()
           : undefined;
+      const hasSecondaryImageUpload =
+        (sentence as any).hasSecondaryImageUpload === true;
       const mediaType =
         sentence.mediaType === 'image' ||
         sentence.mediaType === 'video' ||
@@ -123,6 +134,7 @@ export class RenderVideosController {
         textBackgroundVideoUrl: _textBackgroundVideoUrl,
         overlayUrl: _overlayUrl,
         overlayMimeType: _overlayMimeType,
+        hasSecondaryImageUpload: _hasSecondaryImageUpload,
         mediaType: _mediaType,
         textAnimationEffect: _textAnimationEffect,
         textAnimationText: _textAnimationText,
@@ -133,6 +145,7 @@ export class RenderVideosController {
 
       return {
         ...(rest as SentenceInput),
+        ...(hasSecondaryImageUpload ? { hasSecondaryImageUpload } : {}),
         ...(mediaType ? { mediaType } : {}),
         ...(secondaryImageUrl ? { secondaryImageUrl } : {}),
         ...(videoUrl ? { videoUrl } : {}),
@@ -336,22 +349,18 @@ export class RenderVideosController {
 
       if (mediaType === 'video') {
         const url = String(s.videoUrl ?? '').trim();
-        const ok =
-          url.startsWith('http://') ||
-          url.startsWith('https://') ||
-          url === '/subscribe.mp4';
-        if (!ok) {
+        if (url && !this.isAcceptedRenderUrl(url)) {
           throw new BadRequestException(
-            `Missing or invalid videoUrl for sentence ${idx + 1} on video tab.`,
+            `Invalid videoUrl for sentence ${idx + 1} on video tab.`,
           );
         }
       }
 
       if (mediaType === 'overlay') {
         const overlayUrl = String((s as any).overlayUrl ?? '').trim();
-        if (!overlayUrl) {
+        if (overlayUrl && !this.isAcceptedRenderUrl(overlayUrl)) {
           throw new BadRequestException(
-            `Missing overlayUrl for sentence ${idx + 1} on overlay tab.`,
+            `Invalid overlayUrl for sentence ${idx + 1} on overlay tab.`,
           );
         }
 
@@ -360,13 +369,9 @@ export class RenderVideosController {
         );
         if (backgroundMode === 'video') {
           const url = String(s.videoUrl ?? '').trim();
-          const ok =
-            url.startsWith('http://') ||
-            url.startsWith('https://') ||
-            url === '/subscribe.mp4';
-          if (!ok) {
+          if (url && !this.isAcceptedRenderUrl(url)) {
             throw new BadRequestException(
-              `Missing or invalid videoUrl for sentence ${idx + 1} on overlay tab when using video background.`,
+              `Invalid videoUrl for sentence ${idx + 1} on overlay tab when using video background.`,
             );
           }
         }
@@ -486,12 +491,20 @@ export class RenderVideosController {
   private alignUploadedImages(
     sentences: SentenceInput[],
     images: Multer.File[],
+    imageUrls?: Array<string | null> | null,
   ) {
     const alignedImages: Array<Multer.File | null> = [];
     let imageCursor = 0;
-    for (const s of sentences) {
+    for (const [index, s] of sentences.entries()) {
       const isSubscribe = isSubscribeLikeSentence(s.text || '');
-      if (isSubscribe || !sentenceUsesPrimaryImageTransport(s)) {
+      const hasProvidedImageUrl = Boolean(
+        String(imageUrls?.[index] ?? '').trim(),
+      );
+      if (
+        isSubscribe ||
+        !sentenceUsesPrimaryImageTransport(s) ||
+        hasProvidedImageUrl
+      ) {
         alignedImages.push(null);
       } else {
         alignedImages.push(images[imageCursor] ?? null);
@@ -518,7 +531,7 @@ export class RenderVideosController {
 
       if (
         sentence?.mediaType !== 'text' ||
-        backgroundMode !== 'video' ||
+        (backgroundMode !== 'video' && backgroundMode !== 'inheritVideo') ||
         hasRemoteVideo
       ) {
         alignedVideos.push(null);
@@ -530,6 +543,286 @@ export class RenderVideosController {
     }
 
     return alignedVideos;
+  }
+
+  private alignUploadedSecondaryImages(
+    sentences: SentenceInput[],
+    images: Multer.File[],
+  ) {
+    const alignedImages: Array<Multer.File | null> = [];
+    let imageCursor = 0;
+
+    for (const sentence of sentences) {
+      const hasSecondaryImageUpload =
+        (sentence as any).hasSecondaryImageUpload === true;
+      const hasRemoteSecondaryImage = Boolean(
+        String((sentence as any)?.secondaryImageUrl ?? '').trim(),
+      );
+
+      if (
+        sentence?.mediaType !== 'image' ||
+        !hasSecondaryImageUpload ||
+        hasRemoteSecondaryImage
+      ) {
+        alignedImages.push(null);
+        continue;
+      }
+
+      alignedImages.push(images[imageCursor] ?? null);
+      imageCursor += 1;
+    }
+
+    return alignedImages;
+  }
+
+  private alignUploadedOverlayAssets(
+    sentences: SentenceInput[],
+    files: Multer.File[],
+  ) {
+    const alignedFiles: Array<Multer.File | null> = [];
+    let fileCursor = 0;
+
+    for (const sentence of sentences) {
+      const hasRemoteOverlayUrl = Boolean(
+        String((sentence as any)?.overlayUrl ?? '').trim(),
+      );
+
+      if (sentence?.mediaType !== 'overlay' || hasRemoteOverlayUrl) {
+        alignedFiles.push(null);
+        continue;
+      }
+
+      alignedFiles.push(files[fileCursor] ?? null);
+      fileCursor += 1;
+    }
+
+    return alignedFiles;
+  }
+
+  private alignUploadedSceneVideos(
+    sentences: SentenceInput[],
+    videos: Multer.File[],
+  ) {
+    const alignedVideos: Array<Multer.File | null> = [];
+    let videoCursor = 0;
+
+    for (const sentence of sentences) {
+      const mediaType = sentence?.mediaType;
+      const backgroundMode = resolveOverlaySceneBackgroundMode(
+        sentence?.overlaySettings,
+      );
+      const requiresSceneVideo =
+        mediaType === 'video' ||
+        (mediaType === 'overlay' && backgroundMode === 'video');
+      const hasRemoteVideo = Boolean(String(sentence?.videoUrl ?? '').trim());
+
+      if (!requiresSceneVideo || hasRemoteVideo) {
+        alignedVideos.push(null);
+        continue;
+      }
+
+      alignedVideos.push(videos[videoCursor] ?? null);
+      videoCursor += 1;
+    }
+
+    return alignedVideos;
+  }
+
+  private parseMultipartImageUrls(
+    body: Pick<CreateRenderVideoDto, 'imageUrls'>,
+    sentenceCount: number,
+  ) {
+    const raw = String(body.imageUrls ?? '').trim();
+    if (!raw) return null;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new BadRequestException('Invalid `imageUrls` JSON');
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new BadRequestException(
+        '`imageUrls` must be an array when provided',
+      );
+    }
+
+    const imageUrls = parsed.map((item) => {
+      const normalized = String(item ?? '').trim();
+      return normalized || null;
+    });
+
+    if (imageUrls.length !== sentenceCount) {
+      throw new BadRequestException(
+        '`imageUrls` must have the same length as `sentences` when provided',
+      );
+    }
+
+    return imageUrls;
+  }
+
+  private validateUrlBackedRenderAssets(
+    sentences: SentenceInput[],
+    imageUrls: Array<string | null>,
+  ) {
+    for (const [index, sentence] of sentences.entries()) {
+      const text = String(sentence?.text ?? '').trim();
+      if (isSubscribeLikeSentence(text)) continue;
+
+      if (
+        sentenceUsesPrimaryImageTransport(sentence) &&
+        !String(imageUrls[index] ?? '').trim()
+      ) {
+        throw new BadRequestException(
+          `Missing imageUrl for sentence ${index + 1}.`,
+        );
+      }
+
+      if (
+        sentence?.mediaType === 'video' &&
+        !String(sentence.videoUrl ?? '').trim()
+      ) {
+        throw new BadRequestException(
+          `Missing videoUrl for sentence ${index + 1} on video tab.`,
+        );
+      }
+
+      if (sentence?.mediaType === 'overlay') {
+        if (!String((sentence as any).overlayUrl ?? '').trim()) {
+          throw new BadRequestException(
+            `Missing overlayUrl for sentence ${index + 1} on overlay tab.`,
+          );
+        }
+
+        if (
+          resolveOverlaySceneBackgroundMode(
+            (sentence as any).overlaySettings,
+          ) === 'video' &&
+          !String(sentence.videoUrl ?? '').trim()
+        ) {
+          throw new BadRequestException(
+            `Missing videoUrl for sentence ${index + 1} on overlay tab when using video background.`,
+          );
+        }
+      }
+
+      const textBackgroundMode = resolveTextSceneBackgroundMode(
+        sentence.textAnimationSettings,
+      );
+      if (
+        sentence?.mediaType === 'text' &&
+        (textBackgroundMode === 'video' ||
+          textBackgroundMode === 'inheritVideo') &&
+        !String(sentence.textBackgroundVideoUrl ?? '').trim()
+      ) {
+        throw new BadRequestException(
+          `Missing textBackgroundVideoUrl for sentence ${index + 1}.`,
+        );
+      }
+    }
+  }
+
+  private validateMultipartRenderAssets(params: {
+    sentences: SentenceInput[];
+    imageFiles: Array<Multer.File | null>;
+    imageUrls: Array<string | null> | null;
+    textBackgroundVideoFiles: Array<Multer.File | null>;
+    secondaryImageFiles: Array<Multer.File | null>;
+    sceneVideoFiles: Array<Multer.File | null>;
+    overlayFiles: Array<Multer.File | null>;
+  }) {
+    for (const [index, sentence] of params.sentences.entries()) {
+      const text = String(sentence?.text ?? '').trim();
+      if (isSubscribeLikeSentence(text)) continue;
+
+      if (sentenceUsesPrimaryImageTransport(sentence)) {
+        const hasImageUrl = Boolean(
+          String(params.imageUrls?.[index] ?? '').trim(),
+        );
+        const hasImageFile = Boolean(params.imageFiles[index]?.buffer?.length);
+        if (!hasImageUrl && !hasImageFile) {
+          throw new BadRequestException(
+            `Missing image source for sentence ${index + 1}.`,
+          );
+        }
+      }
+
+      const textBackgroundMode = resolveTextSceneBackgroundMode(
+        sentence.textAnimationSettings,
+      );
+      if (
+        sentence?.mediaType === 'text' &&
+        (textBackgroundMode === 'video' ||
+          textBackgroundMode === 'inheritVideo')
+      ) {
+        const hasVideoUrl = Boolean(
+          String(sentence.textBackgroundVideoUrl ?? '').trim(),
+        );
+        const hasVideoFile = Boolean(
+          params.textBackgroundVideoFiles[index]?.buffer?.length,
+        );
+        if (!hasVideoUrl && !hasVideoFile) {
+          throw new BadRequestException(
+            `Missing text background video for sentence ${index + 1}.`,
+          );
+        }
+      }
+
+      if (sentence?.mediaType === 'video') {
+        const hasVideoUrl = Boolean(String(sentence.videoUrl ?? '').trim());
+        const hasVideoFile = Boolean(
+          params.sceneVideoFiles[index]?.buffer?.length,
+        );
+        if (!hasVideoUrl && !hasVideoFile) {
+          throw new BadRequestException(
+            `Missing video source for sentence ${index + 1} on video tab.`,
+          );
+        }
+      }
+
+      if (sentence?.mediaType === 'overlay') {
+        const hasOverlayUrl = Boolean(
+          String((sentence as any).overlayUrl ?? '').trim(),
+        );
+        const hasOverlayFile = Boolean(
+          params.overlayFiles[index]?.buffer?.length,
+        );
+        if (!hasOverlayUrl && !hasOverlayFile) {
+          throw new BadRequestException(
+            `Missing overlay asset for sentence ${index + 1}.`,
+          );
+        }
+
+        if (
+          resolveOverlaySceneBackgroundMode(
+            (sentence as any).overlaySettings,
+          ) === 'video'
+        ) {
+          const hasVideoUrl = Boolean(String(sentence.videoUrl ?? '').trim());
+          const hasVideoFile = Boolean(
+            params.sceneVideoFiles[index]?.buffer?.length,
+          );
+          if (!hasVideoUrl && !hasVideoFile) {
+            throw new BadRequestException(
+              `Missing overlay background video for sentence ${index + 1}.`,
+            );
+          }
+        }
+      }
+
+      const hasSecondaryImageUpload =
+        (sentence as any).hasSecondaryImageUpload === true;
+      if (
+        hasSecondaryImageUpload &&
+        !String((sentence as any).secondaryImageUrl ?? '').trim() &&
+        !params.secondaryImageFiles[index]?.buffer?.length
+      ) {
+        throw new BadRequestException(
+          `Missing secondary image source for sentence ${index + 1}.`,
+        );
+      }
+    }
   }
 
   private parseMultipartRenderOptions(
@@ -600,6 +893,10 @@ export class RenderVideosController {
             'voiceOver (file)',
             'audioUrl (string, optional when voiceOver is omitted)',
             'images (files)',
+            'imageUrls (json string, optional saved primary-image urls)',
+            'secondaryImages (files)',
+            'sceneVideos (files)',
+            'overlayAssets (files)',
             'textBackgroundVideos (files)',
             'sentences (json string)',
             'scriptLength',
@@ -619,6 +916,10 @@ export class RenderVideosController {
             'voiceOver (file, optional when isSilent=true)',
             'audioUrl (string, optional when voiceOver is omitted)',
             'images (files)',
+            'imageUrls (json string, optional saved primary-image urls)',
+            'secondaryImages (files)',
+            'sceneVideos (files)',
+            'overlayAssets (files)',
             'textBackgroundVideos (files)',
             'sentences (json string)',
             'scriptLength',
@@ -890,6 +1191,7 @@ export class RenderVideosController {
       },
     );
     this.validateMultipartSentences(hydratedSentences, 1);
+    this.validateUrlBackedRenderAssets(hydratedSentences, imageUrls);
 
     const backgroundMusicVolume =
       typeof body.backgroundMusicVolume === 'number'
@@ -915,6 +1217,9 @@ export class RenderVideosController {
       audioUrl: body.audioUrl,
       sentences: hydratedSentences,
       imageFiles: new Array(sentences.length).fill(null),
+      secondaryImageFiles: new Array(sentences.length).fill(null),
+      sceneVideoFiles: new Array(sentences.length).fill(null),
+      overlayFiles: new Array(sentences.length).fill(null),
       textBackgroundVideoFiles: new Array(sentences.length).fill(null),
       imageUrls,
       scriptLength: body.scriptLength,
@@ -939,13 +1244,16 @@ export class RenderVideosController {
         { name: 'voiceOver', maxCount: 1 },
         { name: 'backgroundMusicFile', maxCount: 1 },
         { name: 'images', maxCount: 200 },
+        { name: 'secondaryImages', maxCount: 200 },
+        { name: 'sceneVideos', maxCount: 200 },
+        { name: 'overlayAssets', maxCount: 200 },
         { name: 'textBackgroundVideos', maxCount: 200 },
       ],
       {
         // Intentionally use memory storage (no local disk writes).
         // Limits help avoid OOM/timeouts (especially on serverless platforms).
         limits: {
-          files: 402,
+          files: 1002,
           // Per-file size limit (bytes). Tune as needed for your typical inputs.
           fileSize: 50 * 1024 * 1024,
           fields: 70,
@@ -960,6 +1268,9 @@ export class RenderVideosController {
       voiceOver?: Multer.File[];
       backgroundMusicFile?: Multer.File[];
       images?: Multer.File[];
+      secondaryImages?: Multer.File[];
+      sceneVideos?: Multer.File[];
+      overlayAssets?: Multer.File[];
       textBackgroundVideos?: Multer.File[];
     },
   ) {
@@ -972,138 +1283,52 @@ export class RenderVideosController {
     const voice = files.voiceOver?.[0];
     const backgroundMusicFile = files.backgroundMusicFile?.[0];
     const images = files.images ?? [];
+    const secondaryImages = files.secondaryImages ?? [];
+    const sceneVideos = files.sceneVideos ?? [];
+    const overlayAssets = files.overlayAssets ?? [];
     const textBackgroundVideos = files.textBackgroundVideos ?? [];
     const sentences = this.parseMultipartSentences(body);
     this.validateMultipartSentences(sentences, 1);
-    const audioUrl = String(body.audioUrl ?? '').trim() || null;
-
-    if (!voice?.buffer?.length && !audioUrl) {
-      throw new BadRequestException('Missing `voiceOver` upload or `audioUrl`');
-    }
-
-    const alignedImages = this.alignUploadedImages(sentences, images);
-    const alignedTextBackgroundVideos = this.alignUploadedTextBackgroundVideos(
-      sentences,
-      textBackgroundVideos,
-    );
-    const {
-      audioDurationSeconds,
-      useLowerFps,
-      useLowerResolution,
-      enableGlitchTransitions,
-      enableLongFormSubscribeOverlay,
-      addSubtitles,
-      isShort,
-      backgroundMusicSrc,
-      backgroundMusicVolume,
-    } = this.parseMultipartRenderOptions(body);
-
-    const job = await this.renderVideosService.createJob({
-      language:
-        typeof body.language === 'string' ? body.language.trim() : undefined,
-      audioFile: voice
-        ? {
-            buffer: voice.buffer,
-            originalName: voice.originalname,
-            mimeType: voice.mimetype,
-          }
-        : null,
-      audioUrl,
-      sentences,
-      imageFiles: alignedImages.map((f) =>
-        f
-          ? {
-              buffer: f.buffer,
-              originalName: f.originalname,
-              mimeType: f.mimetype,
-            }
-          : null,
-      ),
-      textBackgroundVideoFiles: alignedTextBackgroundVideos.map((file) =>
-        file
-          ? {
-              buffer: file.buffer,
-              originalName: file.originalname,
-              mimeType: file.mimetype,
-            }
-          : null,
-      ),
-      scriptLength: body.scriptLength,
-      audioDurationSeconds,
-      isShort,
-      useLowerFps,
-      useLowerResolution,
-      addSubtitles,
-      enableGlitchTransitions,
-      enableLongFormSubscribeOverlay,
-      backgroundMusicFile: backgroundMusicFile
-        ? {
-            buffer: backgroundMusicFile.buffer,
-            originalName: backgroundMusicFile.originalname,
-            mimeType: backgroundMusicFile.mimetype,
-          }
-        : null,
-      backgroundMusicSrc,
-      backgroundMusicVolume,
-    });
-
-    return { id: job.id, status: job.status, isShort: isShort ?? null };
-  }
-
-  @Post('test')
-  @UseInterceptors(
-    FileFieldsInterceptor(
-      [
-        { name: 'voiceOver', maxCount: 1 },
-        { name: 'backgroundMusicFile', maxCount: 1 },
-        { name: 'images', maxCount: 200 },
-        { name: 'textBackgroundVideos', maxCount: 200 },
-      ],
-      {
-        limits: {
-          files: 402,
-          fileSize: 50 * 1024 * 1024,
-          fields: 80,
-        },
-      },
-    ),
-  )
-  async createTestRender(
-    @Body() body: CreateTestRenderVideoDto,
-    @UploadedFiles()
-    files: {
-      voiceOver?: Multer.File[];
-      backgroundMusicFile?: Multer.File[];
-      images?: Multer.File[];
-      textBackgroundVideos?: Multer.File[];
-    },
-  ) {
-    // if (this.renderVideosService.isServerlessRuntime()) {
-    //   throw new ServiceUnavailableException(
-    //     'Video rendering jobs cannot run reliably on serverless runtimes when Cloudinary video uploads are disabled. Deploy the backend to a long-running server (Render/Railway/Fly).',
-    //   );
-    // }
-
-    const voice = files.voiceOver?.[0];
-    const backgroundMusicFile = files.backgroundMusicFile?.[0];
-    const images = files.images ?? [];
-    const textBackgroundVideos = files.textBackgroundVideos ?? [];
-    const sentences = this.parseMultipartSentences(body);
-    this.validateMultipartSentences(sentences, 2);
-
+    const imageUrls = this.parseMultipartImageUrls(body, sentences.length);
     const isSilent = body.isSilent === 'true';
     const audioUrl = String(body.audioUrl ?? '').trim() || null;
+
     if (!isSilent && !voice?.buffer?.length && !audioUrl) {
       throw new BadRequestException(
-        'Missing `voiceOver` upload or `audioUrl` for non-silent test render',
+        'Missing `voiceOver` upload or `audioUrl` for non-silent render',
       );
     }
 
-    const alignedImages = this.alignUploadedImages(sentences, images);
+    const alignedImages = this.alignUploadedImages(
+      sentences,
+      images,
+      imageUrls,
+    );
+    const alignedSecondaryImages = this.alignUploadedSecondaryImages(
+      sentences,
+      secondaryImages,
+    );
+    const alignedSceneVideos = this.alignUploadedSceneVideos(
+      sentences,
+      sceneVideos,
+    );
+    const alignedOverlayAssets = this.alignUploadedOverlayAssets(
+      sentences,
+      overlayAssets,
+    );
     const alignedTextBackgroundVideos = this.alignUploadedTextBackgroundVideos(
       sentences,
       textBackgroundVideos,
     );
+    this.validateMultipartRenderAssets({
+      sentences,
+      imageFiles: alignedImages,
+      imageUrls,
+      textBackgroundVideoFiles: alignedTextBackgroundVideos,
+      secondaryImageFiles: alignedSecondaryImages,
+      sceneVideoFiles: alignedSceneVideos,
+      overlayFiles: alignedOverlayAssets,
+    });
     const {
       audioDurationSeconds,
       useLowerFps,
@@ -1138,6 +1363,33 @@ export class RenderVideosController {
             }
           : null,
       ),
+      secondaryImageFiles: alignedSecondaryImages.map((file) =>
+        file
+          ? {
+              buffer: file.buffer,
+              originalName: file.originalname,
+              mimeType: file.mimetype,
+            }
+          : null,
+      ),
+      sceneVideoFiles: alignedSceneVideos.map((file) =>
+        file
+          ? {
+              buffer: file.buffer,
+              originalName: file.originalname,
+              mimeType: file.mimetype,
+            }
+          : null,
+      ),
+      overlayFiles: alignedOverlayAssets.map((file) =>
+        file
+          ? {
+              buffer: file.buffer,
+              originalName: file.originalname,
+              mimeType: file.mimetype,
+            }
+          : null,
+      ),
       textBackgroundVideoFiles: alignedTextBackgroundVideos.map((file) =>
         file
           ? {
@@ -1147,6 +1399,189 @@ export class RenderVideosController {
             }
           : null,
       ),
+      imageUrls,
+      scriptLength: body.scriptLength,
+      audioDurationSeconds,
+      isShort,
+      useLowerFps,
+      useLowerResolution,
+      addSubtitles,
+      enableGlitchTransitions,
+      enableLongFormSubscribeOverlay,
+      backgroundMusicFile: backgroundMusicFile
+        ? {
+            buffer: backgroundMusicFile.buffer,
+            originalName: backgroundMusicFile.originalname,
+            mimeType: backgroundMusicFile.mimetype,
+          }
+        : null,
+      backgroundMusicSrc,
+      backgroundMusicVolume,
+    });
+
+    return { id: job.id, status: job.status, isShort: isShort ?? null };
+  }
+
+  @Post('test')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'voiceOver', maxCount: 1 },
+        { name: 'backgroundMusicFile', maxCount: 1 },
+        { name: 'images', maxCount: 200 },
+        { name: 'secondaryImages', maxCount: 200 },
+        { name: 'sceneVideos', maxCount: 200 },
+        { name: 'overlayAssets', maxCount: 200 },
+        { name: 'textBackgroundVideos', maxCount: 200 },
+      ],
+      {
+        limits: {
+          files: 1002,
+          fileSize: 50 * 1024 * 1024,
+          fields: 80,
+        },
+      },
+    ),
+  )
+  async createTestRender(
+    @Body() body: CreateTestRenderVideoDto,
+    @UploadedFiles()
+    files: {
+      voiceOver?: Multer.File[];
+      backgroundMusicFile?: Multer.File[];
+      images?: Multer.File[];
+      secondaryImages?: Multer.File[];
+      sceneVideos?: Multer.File[];
+      overlayAssets?: Multer.File[];
+      textBackgroundVideos?: Multer.File[];
+    },
+  ) {
+    // if (this.renderVideosService.isServerlessRuntime()) {
+    //   throw new ServiceUnavailableException(
+    //     'Video rendering jobs cannot run reliably on serverless runtimes when Cloudinary video uploads are disabled. Deploy the backend to a long-running server (Render/Railway/Fly).',
+    //   );
+    // }
+
+    const voice = files.voiceOver?.[0];
+    const backgroundMusicFile = files.backgroundMusicFile?.[0];
+    const images = files.images ?? [];
+    const secondaryImages = files.secondaryImages ?? [];
+    const sceneVideos = files.sceneVideos ?? [];
+    const overlayAssets = files.overlayAssets ?? [];
+    const textBackgroundVideos = files.textBackgroundVideos ?? [];
+    const sentences = this.parseMultipartSentences(body);
+    this.validateMultipartSentences(sentences, 2);
+    const imageUrls = this.parseMultipartImageUrls(body, sentences.length);
+
+    const isSilent = body.isSilent === 'true';
+    const audioUrl = String(body.audioUrl ?? '').trim() || null;
+    if (!isSilent && !voice?.buffer?.length && !audioUrl) {
+      throw new BadRequestException(
+        'Missing `voiceOver` upload or `audioUrl` for non-silent test render',
+      );
+    }
+
+    const alignedImages = this.alignUploadedImages(
+      sentences,
+      images,
+      imageUrls,
+    );
+    const alignedSecondaryImages = this.alignUploadedSecondaryImages(
+      sentences,
+      secondaryImages,
+    );
+    const alignedSceneVideos = this.alignUploadedSceneVideos(
+      sentences,
+      sceneVideos,
+    );
+    const alignedOverlayAssets = this.alignUploadedOverlayAssets(
+      sentences,
+      overlayAssets,
+    );
+    const alignedTextBackgroundVideos = this.alignUploadedTextBackgroundVideos(
+      sentences,
+      textBackgroundVideos,
+    );
+    this.validateMultipartRenderAssets({
+      sentences,
+      imageFiles: alignedImages,
+      imageUrls,
+      textBackgroundVideoFiles: alignedTextBackgroundVideos,
+      secondaryImageFiles: alignedSecondaryImages,
+      sceneVideoFiles: alignedSceneVideos,
+      overlayFiles: alignedOverlayAssets,
+    });
+    const {
+      audioDurationSeconds,
+      useLowerFps,
+      useLowerResolution,
+      enableGlitchTransitions,
+      enableLongFormSubscribeOverlay,
+      addSubtitles,
+      isShort,
+      backgroundMusicSrc,
+      backgroundMusicVolume,
+    } = this.parseMultipartRenderOptions(body);
+
+    const job = await this.renderVideosService.createJob({
+      language:
+        typeof body.language === 'string' ? body.language.trim() : undefined,
+      audioFile: voice
+        ? {
+            buffer: voice.buffer,
+            originalName: voice.originalname,
+            mimeType: voice.mimetype,
+          }
+        : null,
+      audioUrl,
+      allowSilentAudio: isSilent,
+      sentences,
+      imageFiles: alignedImages.map((f) =>
+        f
+          ? {
+              buffer: f.buffer,
+              originalName: f.originalname,
+              mimeType: f.mimetype,
+            }
+          : null,
+      ),
+      secondaryImageFiles: alignedSecondaryImages.map((file) =>
+        file
+          ? {
+              buffer: file.buffer,
+              originalName: file.originalname,
+              mimeType: file.mimetype,
+            }
+          : null,
+      ),
+      sceneVideoFiles: alignedSceneVideos.map((file) =>
+        file
+          ? {
+              buffer: file.buffer,
+              originalName: file.originalname,
+              mimeType: file.mimetype,
+            }
+          : null,
+      ),
+      overlayFiles: alignedOverlayAssets.map((file) =>
+        file
+          ? {
+              buffer: file.buffer,
+              originalName: file.originalname,
+              mimeType: file.mimetype,
+            }
+          : null,
+      ),
+      textBackgroundVideoFiles: alignedTextBackgroundVideos.map((file) =>
+        file
+          ? {
+              buffer: file.buffer,
+              originalName: file.originalname,
+              mimeType: file.mimetype,
+            }
+          : null,
+      ),
+      imageUrls,
       scriptLength: body.scriptLength,
       audioDurationSeconds,
       isShort,

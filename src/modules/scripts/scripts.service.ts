@@ -134,6 +134,7 @@ type NormalizedElevenLabsVoiceSettings = {
 };
 
 const ALLOWED_TEXT_ANIMATION_EFFECTS = new Set([
+  'none',
   'popInBounceHook',
   'slideCutFast',
   'typewriter',
@@ -144,6 +145,43 @@ const ALLOWED_TEXT_ANIMATION_EFFECTS = new Set([
   'softRiseFade',
   'centerWipeReveal',
   'trackingSnapHook',
+] as const);
+
+const ALLOWED_TEXT_ANIMATION_SETTING_KEYS = new Set([
+  'presetKey',
+  'editMode',
+  'speed',
+  'horizontalAlign',
+  'contentAlign',
+  'verticalAlign',
+  'offsetX',
+  'offsetY',
+  'fontSizePercent',
+  'maxWidthPercent',
+  'fontWeight',
+  'letterSpacingEm',
+  'lineHeight',
+  'textColor',
+  'accentColor',
+  'strokeEnabled',
+  'strokeColor',
+  'strokeWidthPx',
+  'backgroundMode',
+  'backgroundColor',
+  'gradientFrom',
+  'gradientTo',
+  'gradientAngleDeg',
+  'backgroundDim',
+  'animationIntensity',
+  'startDelaySeconds',
+  'animatePerWord',
+  'wordDelaySeconds',
+  'textCase',
+  'textBoxEnabled',
+  'textBoxPaddingPx',
+  'textBoxRadiusPx',
+  'textBoxColor',
+  'wordStyles',
 ] as const);
 
 @Injectable()
@@ -205,7 +243,13 @@ export class ScriptsService implements OnModuleInit {
       return null;
     }
 
-    const next: Record<string, unknown> = { ...normalized };
+    const next: Record<string, unknown> = {};
+    for (const [key, entryValue] of Object.entries(normalized)) {
+      if (ALLOWED_TEXT_ANIMATION_SETTING_KEYS.has(key as never)) {
+        next[key] = entryValue;
+      }
+    }
+
     const presetKey = this.normalizeTextAnimationEffect(next.presetKey);
     if (presetKey) {
       next.presetKey = presetKey;
@@ -239,13 +283,6 @@ export class ScriptsService implements OnModuleInit {
       next.wordDelaySeconds = Math.min(0.4, Math.max(0.03, wordDelaySeconds));
     }
 
-    const shadowOpacity = this.normalizeOptionalNumber(next.shadowOpacity);
-    if (shadowOpacity === null) {
-      delete next.shadowOpacity;
-    } else {
-      next.shadowOpacity = Math.min(1, Math.max(0, shadowOpacity));
-    }
-
     if (next.strokeEnabled === true) {
       next.strokeEnabled = true;
     } else if (next.strokeEnabled === false) {
@@ -266,13 +303,6 @@ export class ScriptsService implements OnModuleInit {
       delete next.strokeColor;
     } else {
       next.strokeColor = strokeColor;
-    }
-
-    const shadowBlurPx = this.normalizeOptionalNumber(next.shadowBlurPx);
-    if (shadowBlurPx === null) {
-      delete next.shadowBlurPx;
-    } else {
-      next.shadowBlurPx = Math.min(48, Math.max(0, shadowBlurPx));
     }
 
     const textBoxPaddingPx = this.normalizeOptionalNumber(next.textBoxPaddingPx);

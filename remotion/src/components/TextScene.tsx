@@ -2,6 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Easing, Img, OffthreadVideo, interpolate } from 'remotion';
 import type {
   TextAnimationEffect,
+  TextAnimationWordStyle,
   TextAnimationSettings,
   TimelineScene,
 } from '../types';
@@ -15,6 +16,7 @@ const LoopingOffthreadVideo =
   >;
 
 const TEXT_ANIMATION_EFFECT_VALUES: readonly TextAnimationEffect[] = [
+  'none',
   'popInBounceHook',
   'slideCutFast',
   'typewriter',
@@ -87,6 +89,10 @@ const getWords = (value: string) =>
     .trim()
     .split(/\s+/u)
     .filter(Boolean);
+
+const getResolvedTextAnimationWords = (sampleText?: string | null) => {
+  return getWords(String(sampleText ?? '').trim());
+};
 
 const getGraphemes = (value: string) => {
   const text = String(value ?? '');
@@ -173,6 +179,281 @@ const isTextAnimationEffect = (value: unknown): value is TextAnimationEffect => 
   return TEXT_ANIMATION_EFFECT_VALUES.includes(value as TextAnimationEffect);
 };
 
+const resolveTextAnimationEditMode = (
+  settings: TimelineScene['textAnimationSettings'],
+) => {
+  return settings?.editMode === 'perWord' ? 'perWord' : 'fullText';
+};
+
+const buildTextAnimationWordStyleSeed = (
+  effect: TextAnimationEffect,
+  settings: TextAnimationSettings,
+): TextAnimationWordStyle => {
+  return {
+    effect,
+    speed: settings.speed,
+    fontSizePercent: settings.fontSizePercent,
+    fontWeight: settings.fontWeight,
+    letterSpacingEm: settings.letterSpacingEm,
+    lineHeight: settings.lineHeight,
+    textColor: settings.textColor,
+    accentColor: settings.accentColor,
+    strokeEnabled: settings.strokeEnabled,
+    strokeColor: settings.strokeColor,
+    strokeWidthPx: settings.strokeWidthPx,
+    animationIntensity: settings.animationIntensity,
+    startDelaySeconds: settings.startDelaySeconds,
+    textCase: settings.textCase,
+  };
+};
+
+const createTextAnimationWordStyleSeed = (
+  effect: TextAnimationEffect,
+  settings: TimelineScene['textAnimationSettings'],
+  isShortVideo: boolean,
+  sampleText?: string | null,
+) => {
+  const normalizedSeedInput =
+    settings && typeof settings === 'object' && !Array.isArray(settings)
+      ? {
+          ...settings,
+          editMode: 'fullText' as const,
+          wordStyles: null,
+        }
+      : settings;
+  const resolvedSettings = normalizeTextAnimationSettings(
+    normalizedSeedInput,
+    effect,
+    isShortVideo,
+    sampleText,
+  );
+
+  return buildTextAnimationWordStyleSeed(effect, resolvedSettings);
+};
+
+const normalizeOptionalTextAnimationWordOffset = (value: unknown) => {
+  if (value == null || value === '') {
+    return undefined;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+
+  return clampNumber(numeric, -35, 35);
+};
+
+const normalizeTextAnimationWordStyle = (
+  value: unknown,
+  fallbackEffect: TextAnimationEffect,
+  fallbackSettings: TimelineScene['textAnimationSettings'] | TextAnimationSettings,
+  isShortVideo: boolean,
+  sampleText?: string | null,
+): TextAnimationWordStyle => {
+  const normalizedSeedInput =
+    fallbackSettings &&
+    typeof fallbackSettings === 'object' &&
+    !Array.isArray(fallbackSettings)
+      ? {
+          ...fallbackSettings,
+          editMode: 'fullText' as const,
+          wordStyles: null,
+        }
+      : fallbackSettings;
+  const resolvedSettings = normalizeTextAnimationSettings(
+    normalizedSeedInput,
+    fallbackEffect,
+    isShortVideo,
+    sampleText,
+  );
+  const seed = buildTextAnimationWordStyleSeed(
+    fallbackEffect,
+    resolvedSettings,
+  );
+  const input =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as TextAnimationWordStyle)
+      : null;
+  const hasOffsetX = Boolean(
+    input && Object.prototype.hasOwnProperty.call(input, 'offsetX'),
+  );
+  const hasOffsetY = Boolean(
+    input && Object.prototype.hasOwnProperty.call(input, 'offsetY'),
+  );
+
+  return {
+    effect: resolveLegacyTextAnimationEffect(input?.effect) ?? seed.effect,
+    offsetX: hasOffsetX
+      ? normalizeOptionalTextAnimationWordOffset(input?.offsetX)
+      : undefined,
+    offsetY: hasOffsetY
+      ? normalizeOptionalTextAnimationWordOffset(input?.offsetY)
+      : undefined,
+    speed: getNumeric(
+      input?.speed,
+      seed.speed ?? DEFAULT_TEXT_ANIMATION_SPEED,
+      TEXT_ANIMATION_SPEED_MIN,
+      TEXT_ANIMATION_SPEED_MAX,
+    ),
+    fontSizePercent: getNumeric(
+      input?.fontSizePercent,
+      seed.fontSizePercent ?? resolvedSettings.fontSizePercent ?? 12,
+      5,
+      24,
+    ),
+    fontWeight: getNumeric(
+      input?.fontWeight,
+      seed.fontWeight ?? resolvedSettings.fontWeight ?? 800,
+      300,
+      900,
+    ),
+    letterSpacingEm: getNumeric(
+      input?.letterSpacingEm,
+      seed.letterSpacingEm ?? resolvedSettings.letterSpacingEm ?? 0.02,
+      -0.08,
+      0.24,
+    ),
+    lineHeight: isLegacyArabicDefaultLineHeight(input?.lineHeight, sampleText)
+      ? seed.lineHeight
+      : getNumeric(
+          input?.lineHeight,
+          seed.lineHeight ?? resolvedSettings.lineHeight ?? 1,
+          TEXT_ANIMATION_LINE_HEIGHT_MIN,
+          TEXT_ANIMATION_LINE_HEIGHT_MAX,
+        ),
+    textColor: getColor(
+      input?.textColor,
+      seed.textColor ?? resolvedSettings.textColor ?? '#ffffff',
+    ),
+    accentColor: getColor(
+      input?.accentColor,
+      seed.accentColor ?? resolvedSettings.accentColor ?? '#ffd60a',
+    ),
+    strokeEnabled:
+      input?.strokeEnabled === true
+        ? true
+        : input?.strokeEnabled === false
+          ? false
+          : seed.strokeEnabled,
+    strokeColor: getColor(
+      input?.strokeColor,
+      seed.strokeColor ?? resolvedSettings.strokeColor ?? '#0f172a',
+    ),
+    strokeWidthPx: getNumeric(
+      input?.strokeWidthPx,
+      seed.strokeWidthPx ?? resolvedSettings.strokeWidthPx ?? 0,
+      0,
+      4,
+    ),
+    animationIntensity: getNumeric(
+      input?.animationIntensity,
+      seed.animationIntensity ?? resolvedSettings.animationIntensity ?? 0.82,
+      0,
+      1.2,
+    ),
+    startDelaySeconds: getNumeric(
+      input?.startDelaySeconds,
+      seed.startDelaySeconds ?? resolvedSettings.startDelaySeconds ?? 0,
+      TEXT_ANIMATION_START_DELAY_MIN,
+      TEXT_ANIMATION_START_DELAY_MAX,
+    ),
+    textCase: getEnumValue(
+      input?.textCase,
+      ['original', 'uppercase'] as const,
+      seed.textCase ?? resolvedSettings.textCase ?? 'uppercase',
+    ),
+  };
+};
+
+const normalizeTextAnimationWordStyles = (
+  value: unknown,
+  fallbackEffect: TextAnimationEffect,
+  fallbackSettings: TimelineScene['textAnimationSettings'] | TextAnimationSettings,
+  isShortVideo: boolean,
+  sampleText?: string | null,
+) => {
+  const input = Array.isArray(value) ? value : [];
+  const resolvedWords = getResolvedTextAnimationWords(sampleText);
+  const targetLength = resolvedWords.length > 0 ? resolvedWords.length : input.length;
+  const seed = createTextAnimationWordStyleSeed(
+    fallbackEffect,
+    fallbackSettings,
+    isShortVideo,
+    sampleText,
+  );
+
+  return Array.from({ length: Math.max(0, targetLength) }, (_, index) =>
+    index < input.length
+      ? normalizeTextAnimationWordStyle(
+          input[index],
+          fallbackEffect,
+          fallbackSettings,
+          isShortVideo,
+          sampleText,
+        )
+      : { ...seed },
+  );
+};
+
+const resolveTextAnimationWordPresentation = (
+  sharedSettings: TimelineScene['textAnimationSettings'] | TextAnimationSettings | null | undefined,
+  fallbackEffect: TextAnimationEffect,
+  wordIndex: number,
+  isShortVideo: boolean,
+  sampleText?: string | null,
+): {
+  effect: TextAnimationEffect;
+  settings: TextAnimationSettings;
+} => {
+  const resolvedEffect =
+    resolveLegacyTextAnimationEffect(sharedSettings?.presetKey) ??
+    resolveLegacyTextAnimationEffect(fallbackEffect) ??
+    'slideCutFast';
+  const resolvedSettings = normalizeTextAnimationSettings(
+    sharedSettings,
+    resolvedEffect,
+    isShortVideo,
+    sampleText,
+  );
+  const wordStyles = normalizeTextAnimationWordStyles(
+    resolvedSettings.wordStyles,
+    resolvedEffect,
+    resolvedSettings,
+    isShortVideo,
+    sampleText,
+  );
+  const wordStyle =
+    wordStyles[wordIndex] ??
+    buildTextAnimationWordStyleSeed(resolvedEffect, resolvedSettings);
+
+  return {
+    effect: resolveLegacyTextAnimationEffect(wordStyle.effect) ?? resolvedEffect,
+    settings: {
+      ...resolvedSettings,
+      presetKey:
+        resolveLegacyTextAnimationEffect(wordStyle.effect) ?? resolvedSettings.presetKey,
+      editMode: 'fullText',
+      offsetX: wordStyle.offsetX ?? resolvedSettings.offsetX,
+      offsetY: wordStyle.offsetY ?? resolvedSettings.offsetY,
+      speed: wordStyle.speed ?? resolvedSettings.speed,
+      fontSizePercent: wordStyle.fontSizePercent ?? resolvedSettings.fontSizePercent,
+      fontWeight: wordStyle.fontWeight ?? resolvedSettings.fontWeight,
+      letterSpacingEm: wordStyle.letterSpacingEm ?? resolvedSettings.letterSpacingEm,
+      lineHeight: wordStyle.lineHeight ?? resolvedSettings.lineHeight,
+      textColor: wordStyle.textColor ?? resolvedSettings.textColor,
+      accentColor: wordStyle.accentColor ?? resolvedSettings.accentColor,
+      strokeEnabled: wordStyle.strokeEnabled ?? resolvedSettings.strokeEnabled,
+      strokeColor: wordStyle.strokeColor ?? resolvedSettings.strokeColor,
+      strokeWidthPx: wordStyle.strokeWidthPx ?? resolvedSettings.strokeWidthPx,
+      animationIntensity: wordStyle.animationIntensity ?? resolvedSettings.animationIntensity,
+      startDelaySeconds: wordStyle.startDelaySeconds ?? resolvedSettings.startDelaySeconds,
+      textCase: wordStyle.textCase ?? resolvedSettings.textCase,
+      wordStyles: null,
+    },
+  };
+};
+
 const getDefaultTextAnimationSettings = (
   effect: TextAnimationEffect,
   isShortVideo: boolean,
@@ -198,8 +479,6 @@ const getDefaultTextAnimationSettings = (
     strokeEnabled: false,
     strokeColor: '#0f172a',
     strokeWidthPx: 0,
-    shadowOpacity: 0.34,
-    shadowBlurPx: 18,
     backgroundMode: 'inheritImage',
     backgroundColor: '#0f172a',
     gradientFrom: '#0f172a',
@@ -223,7 +502,6 @@ const getDefaultTextAnimationSettings = (
       speed: 1,
       offsetY: -10,
       animationIntensity: 1.02,
-      shadowOpacity: 0.4,
     };
   }
 
@@ -245,7 +523,6 @@ const getDefaultTextAnimationSettings = (
       fontWeight: 860,
       letterSpacingEm: 0.01,
       animationIntensity: 1.08,
-      shadowOpacity: 0.42,
     };
   }
 
@@ -264,8 +541,6 @@ const getDefaultTextAnimationSettings = (
       ...defaults,
       speed: 1.35,
       animationIntensity: 1.12,
-      shadowOpacity: 0.46,
-      shadowBlurPx: 22,
     };
   }
 
@@ -285,8 +560,6 @@ const getDefaultTextAnimationSettings = (
       ...defaults,
       speed: 0.9,
       animationIntensity: 0.72,
-      shadowOpacity: 0.26,
-      shadowBlurPx: 24,
     };
   }
 
@@ -328,8 +601,11 @@ const normalizeTextAnimationSettings = (
   );
   const resolvedPresetKey =
     resolveLegacyTextAnimationEffect(settings?.presetKey) ?? defaults.presetKey;
+  const editMode = resolveTextAnimationEditMode(settings);
   const animatePerWord =
-    resolvedPresetKey !== 'typewriter' && settings?.animatePerWord === true;
+    resolvedPresetKey !== 'typewriter' &&
+    resolvedPresetKey !== 'none' &&
+    settings?.animatePerWord === true;
   const textBoxEnabled =
     resolvedPresetKey !== 'typewriter' && settings?.textBoxEnabled === true;
   const strokeWidthPx = getNumeric(settings?.strokeWidthPx, defaults.strokeWidthPx ?? 0, 0, 4);
@@ -347,8 +623,9 @@ const normalizeTextAnimationSettings = (
         TEXT_ANIMATION_LINE_HEIGHT_MAX,
       );
 
-  return {
+  const normalizedSettings: TextAnimationSettings = {
     presetKey: resolvedPresetKey,
+    editMode,
     speed: getNumeric(settings?.speed, defaults.speed ?? DEFAULT_TEXT_ANIMATION_SPEED, 0.4, 2.4),
     horizontalAlign: getEnumValue(
       settings?.horizontalAlign,
@@ -392,8 +669,6 @@ const normalizeTextAnimationSettings = (
     strokeEnabled,
     strokeColor: getColor(settings?.strokeColor, defaults.strokeColor ?? '#0f172a'),
     strokeWidthPx,
-    shadowOpacity: getNumeric(settings?.shadowOpacity, defaults.shadowOpacity ?? 0.34, 0, 1),
-    shadowBlurPx: getNumeric(settings?.shadowBlurPx, defaults.shadowBlurPx ?? 18, 0, 48),
     backgroundMode: getEnumValue(
       settings?.backgroundMode,
       ['inheritImage', 'image', 'inheritVideo', 'video', 'solid', 'gradient'] as const,
@@ -447,7 +722,21 @@ const normalizeTextAnimationSettings = (
       ['original', 'uppercase'] as const,
       defaults.textCase ?? 'uppercase',
     ),
+    wordStyles: null,
   };
+
+  normalizedSettings.wordStyles =
+    editMode === 'perWord'
+      ? normalizeTextAnimationWordStyles(
+          settings?.wordStyles,
+          resolvedPresetKey,
+          normalizedSettings,
+          isShortVideo,
+          sampleText,
+        )
+      : null;
+
+  return normalizedSettings;
 };
 
 const resolveJustifyContent = (
@@ -570,6 +859,35 @@ const buildTextBoxStyle = (
   };
 };
 
+const mergeTextAnimationOffsetStyle = (
+  offsetX: number | undefined,
+  offsetY: number | undefined,
+  referenceWidthPx: number,
+  referenceHeightPx: number,
+  animatedStyle: React.CSSProperties | null | undefined,
+): React.CSSProperties | null => {
+  const hasOffset =
+    Math.abs(offsetX ?? 0) > 0.001 || Math.abs(offsetY ?? 0) > 0.001;
+  const offsetTransform = hasOffset
+    ? `translate(${((referenceWidthPx * (offsetX ?? 0)) / 100).toFixed(2)}px, ${((referenceHeightPx * (offsetY ?? 0)) / 100).toFixed(2)}px)`
+    : '';
+  const animatedTransform =
+    typeof animatedStyle?.transform === 'string' ? animatedStyle.transform : '';
+  const mergedTransform =
+    offsetTransform && animatedTransform
+      ? `${offsetTransform} ${animatedTransform}`
+      : offsetTransform || animatedTransform || undefined;
+
+  if (!animatedStyle) {
+    return mergedTransform ? { transform: mergedTransform } : null;
+  }
+
+  return {
+    ...animatedStyle,
+    transform: mergedTransform,
+  };
+};
+
 const buildStrokeShadowLayers = (
   strokeWidthPx: number,
   strokeColor: string | undefined,
@@ -612,6 +930,10 @@ const buildStrokeShadowLayers = (
         `${(x * ringRadius).toFixed(2)}px ${(y * ringRadius).toFixed(2)}px 0 ${color}`,
     ),
   );
+};
+
+const buildBaseTextDropShadow = (animationIntensity?: number) => {
+  return `0 ${(6 + (animationIntensity ?? 0.82) * 6).toFixed(1)}px 18.0px rgba(2, 6, 23, 0.340)`;
 };
 
 const renderAccentText = (
@@ -812,6 +1134,12 @@ const getAnimatedBlockStyle = (params: {
   introFrames: number;
   animationIntensity: number;
 }): React.CSSProperties => {
+  if (params.effect === 'none') {
+    return {
+      opacity: 1,
+    };
+  }
+
   const progress = clampNumber(params.frame / params.introFrames, 0, 1);
   const easedProgress = interpolate(progress, [0, 1], [0, 1], {
     extrapolateLeft: 'clamp',
@@ -1112,10 +1440,59 @@ export const TextScene: React.FC<{
     resolvedTextValue,
     resolvedSettings.textCase ?? 'uppercase',
   );
+  const sourceWords = getResolvedTextAnimationWords(resolvedTextValue);
+  const isPerWordMode =
+    resolvedSettings.editMode === 'perWord' && sourceWords.length > 0;
   const textDirection = resolveTextDirection(resolvedText);
-  const words = getWords(resolvedText);
+  const wordDelayFrames = getWordDelayFrames(fps, resolvedSettings);
+  const perWordItems = isPerWordMode
+    ? sourceWords.map((word, index) => {
+        const wordPresentation = resolveTextAnimationWordPresentation(
+          resolvedSettings,
+          resolvedEffect,
+          index,
+          isShort,
+          resolvedTextValue,
+        );
+        const displayText = formatDisplayText(
+          word,
+          wordPresentation.settings.textCase ?? 'uppercase',
+        );
+
+        return {
+          key: `${word}-${index}`,
+          displayText,
+          effect: wordPresentation.effect,
+          settings: wordPresentation.settings,
+          introFrames: getAnimationFrames(
+            fps,
+            wordPresentation.settings.speed ?? DEFAULT_TEXT_ANIMATION_SPEED,
+          ),
+          startDelayFrames: Math.max(
+            0,
+            Math.round(
+              getNumeric(
+                wordPresentation.settings.startDelaySeconds,
+                DEFAULT_TEXT_ANIMATION_START_DELAY,
+                TEXT_ANIMATION_START_DELAY_MIN,
+                TEXT_ANIMATION_START_DELAY_MAX,
+              ) * fps,
+            ),
+          ) + (resolvedSettings.animatePerWord === true ? index * wordDelayFrames : 0),
+          typewriterGraphemes:
+            wordPresentation.effect === 'typewriter'
+              ? getGraphemes(displayText)
+              : [],
+        };
+      })
+    : [];
+  const words = isPerWordMode
+    ? perWordItems.map((item) => item.displayText)
+    : getWords(resolvedText);
   const animatePerWord =
+    !isPerWordMode &&
     resolvedEffect !== 'typewriter' &&
+    resolvedEffect !== 'none' &&
     resolvedSettings.animatePerWord === true &&
     words.length > 1;
   const introFrames = getAnimationFrames(
@@ -1134,7 +1511,6 @@ export const TextScene: React.FC<{
     ),
   );
   const delayedAnimationFrame = Math.max(0, frame - startDelayFrames);
-  const wordDelayFrames = getWordDelayFrames(fps, resolvedSettings);
   const animationIntensity = resolvedSettings.animationIntensity ?? 0.82;
   const renderBackgroundImage =
     Boolean(String(scene.imageSrc ?? '').trim()) &&
@@ -1214,7 +1590,7 @@ export const TextScene: React.FC<{
         : undefined,
     paintOrder: 'stroke fill',
   };
-  const baseDropShadow = `0 ${(6 + animationIntensity * 6).toFixed(1)}px ${(resolvedSettings.shadowBlurPx ?? 18).toFixed(1)}px rgba(2, 6, 23, ${(resolvedSettings.shadowOpacity ?? 0.34).toFixed(3)})`;
+  const baseDropShadow = buildBaseTextDropShadow(animationIntensity);
   const strokeShadowLayers = strokeEnabled
     ? buildStrokeShadowLayers(strokeWidthPx, resolvedSettings.strokeColor)
     : [];
@@ -1253,7 +1629,7 @@ export const TextScene: React.FC<{
     boxSizing: 'content-box',
     position: resolvedEffect === 'typewriter' ? 'relative' : undefined,
     ...(textBoxStyle ?? null),
-    ...(animatePerWord ? null : animatedBlockStyle),
+    ...((animatePerWord || isPerWordMode) ? null : animatedBlockStyle),
   };
 
   return (
@@ -1325,14 +1701,129 @@ export const TextScene: React.FC<{
             resolvedSettings.verticalAlign ?? 'middle',
           ),
           padding: containerPadding,
-          transform: `translate(${(resolvedSettings.offsetX ?? 0).toFixed(1)}%, ${(resolvedSettings.offsetY ?? 0).toFixed(1)}%)`,
+          transform: isPerWordMode
+            ? undefined
+            : `translate(${(resolvedSettings.offsetX ?? 0).toFixed(1)}%, ${(resolvedSettings.offsetY ?? 0).toFixed(1)}%)`,
         }}
       >
         <div
           dir={textDirection}
           style={textBlockWrapperStyle}
         >
-          {animatePerWord
+          {isPerWordMode
+            ? (
+              <div style={perWordTextStyle}>
+                {perWordItems.map((item) => {
+                  const wordStrokeWidthPx = item.settings.strokeWidthPx ?? 0;
+                  const wordStrokeEnabled =
+                    item.settings.strokeEnabled === true &&
+                    wordStrokeWidthPx > 0;
+                  const wordTextPaintStyle: React.CSSProperties = {
+                    WebkitTextStroke: wordStrokeEnabled
+                      ? `${wordStrokeWidthPx.toFixed(2)}px ${item.settings.strokeColor}`
+                      : undefined,
+                    paintOrder: 'stroke fill',
+                  };
+                  const wordBaseDropShadow = buildBaseTextDropShadow(
+                    item.settings.animationIntensity,
+                  );
+                  const wordStrokeShadowLayers = wordStrokeEnabled
+                    ? buildStrokeShadowLayers(
+                        wordStrokeWidthPx,
+                        item.settings.strokeColor,
+                      )
+                    : [];
+                  const wordFontSizePx =
+                    Math.min(width, height) *
+                    ((item.settings.fontSizePercent ?? 12) / 100);
+                  const wordTextStyle: React.CSSProperties = {
+                    display: 'inline-block',
+                    color: item.settings.textColor,
+                    fontWeight: item.settings.fontWeight,
+                    fontSize: `${wordFontSizePx.toFixed(2)}px`,
+                    lineHeight: String(
+                      resolveDisplayLineHeight(item.settings, textDirection),
+                    ),
+                    letterSpacing: `${(item.settings.letterSpacingEm ?? 0.02).toFixed(3)}em`,
+                    textAlign: contentAlign,
+                    direction: textDirection,
+                    unicodeBidi: 'plaintext',
+                    maxWidth: '100%',
+                    fontFamily,
+                    textShadow: [...wordStrokeShadowLayers, wordBaseDropShadow].join(', '),
+                    ...wordTextPaintStyle,
+                    whiteSpace: 'pre-wrap',
+                  };
+                  const delayedWordFrame = Math.max(
+                    0,
+                    frame - item.startDelayFrames,
+                  );
+                  const animatedWordStyle = getAnimatedBlockStyle({
+                    effect: item.effect,
+                    frame: delayedWordFrame,
+                    introFrames: item.introFrames,
+                    animationIntensity: item.settings.animationIntensity ?? 0.82,
+                  });
+                  const wordAnimatedStyle = mergeTextAnimationOffsetStyle(
+                    item.settings.offsetX,
+                    item.settings.offsetY,
+                    width,
+                    height,
+                    animatedWordStyle,
+                  );
+
+                  if (item.effect === 'typewriter') {
+                    const visibleText = item.typewriterGraphemes
+                      .slice(
+                        0,
+                        getTypewriterVisibleGraphemeCount(
+                          delayedWordFrame,
+                          item.introFrames,
+                          item.typewriterGraphemes.length,
+                        ),
+                      )
+                      .join('');
+
+                    return (
+                      <span
+                        key={item.key}
+                        style={{
+                          display: 'inline-block',
+                          position: 'relative',
+                        }}
+                      >
+                        <span style={{ ...wordTextStyle, opacity: 0 }}>
+                          {item.displayText}
+                        </span>
+                        <span
+                          style={{
+                            ...wordTextStyle,
+                            ...(wordAnimatedStyle ?? null),
+                            position: 'absolute',
+                            inset: 0,
+                          }}
+                        >
+                          {visibleText}
+                        </span>
+                      </span>
+                    );
+                  }
+
+                  return (
+                    <span
+                      key={item.key}
+                      style={{
+                        ...wordTextStyle,
+                        ...(wordAnimatedStyle ?? null),
+                      }}
+                    >
+                      {item.displayText}
+                    </span>
+                  );
+                })}
+              </div>
+            )
+            : animatePerWord
             ? (
               <div style={perWordTextStyle}>
                 {words.map((word, sourceIndex) => {

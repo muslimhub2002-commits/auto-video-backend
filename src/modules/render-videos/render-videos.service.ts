@@ -20,11 +20,11 @@ import type {
   UploadedAsset,
 } from './render-videos.types';
 import {
+  resolveOverlaySceneBackgroundMode,
   resolveTextSceneBackgroundMode,
   sentenceUsesPrimaryImageTransport,
 } from './render-videos.types';
 import {
-  CHROMA_LEAK_SFX_CLOUDINARY_URL,
   SUBSCRIBE_VIDEO_CLOUDINARY_URL,
   isSubscribeLikeSentence,
 } from './render-videos.constants';
@@ -35,10 +35,7 @@ import {
 import { alignAudioToSentences as alignAudioToSentencesExternal } from './alignment/audio-alignment';
 import { downloadUrlToBuffer as downloadUrlToBufferExternal } from './utils/net.utils';
 import { inferExt as inferExtExternal } from './utils/mime.utils';
-import {
-  isCloudinaryUrl as isCloudinaryUrlExternal,
-  isServerlessRuntime,
-} from './utils/runtime.utils';
+import { isServerlessRuntime } from './utils/runtime.utils';
 import { withTimeout as withTimeoutExternal } from './utils/promise.utils';
 import {
   ensureDir as ensureDirExternal,
@@ -46,7 +43,6 @@ import {
   safeCopyFile as safeCopyFileExternal,
   safeRmDir as safeRmDirExternal,
 } from './utils/fs.utils';
-import { uploadBufferToCloudinary as uploadBufferToCloudinaryExternal } from './utils/cloudinary.utils';
 import {
   REMOTION_BACKGROUND_REL,
   REMOTION_CAMERA_CLICK_SFX_REL,
@@ -64,6 +60,7 @@ import {
   renderWithRemotionOnLambda as renderWithRemotionOnLambdaExternal,
   resolveRemotionRenderTimeoutMs,
 } from './remotion/remotion-render';
+import { UploadsService } from '../uploads/uploads.service';
 
 @Injectable()
 export class RenderVideosService implements OnModuleInit {
@@ -75,6 +72,7 @@ export class RenderVideosService implements OnModuleInit {
     private readonly dataSource: DataSource,
     @InjectRepository(RenderJob)
     private readonly jobsRepo: Repository<RenderJob>,
+    private readonly uploadsService: UploadsService,
   ) {
     const apiKey = process.env.OPENAI_API_KEY;
     this.openai = apiKey ? new OpenAI({ apiKey }) : null;
@@ -161,10 +159,6 @@ export class RenderVideosService implements OnModuleInit {
     }
   }
 
-  private isCloudinaryUrl(url: string): boolean {
-    return isCloudinaryUrlExternal(url);
-  }
-
   private isSubscribeLikeSentence(text: string): boolean {
     return isSubscribeLikeSentence(text);
   }
@@ -181,6 +175,9 @@ export class RenderVideosService implements OnModuleInit {
     allowSilentAudio?: boolean;
     sentences: SentenceInput[];
     imageFiles: Array<UploadedAsset | null>;
+    secondaryImageFiles: Array<UploadedAsset | null>;
+    sceneVideoFiles: Array<UploadedAsset | null>;
+    overlayFiles: Array<UploadedAsset | null>;
     textBackgroundVideoFiles: Array<UploadedAsset | null>;
     imageUrls?: Array<string | null> | null;
     scriptLength: string;
@@ -416,10 +413,21 @@ export class RenderVideosService implements OnModuleInit {
 
   private async uploadBufferToCloudinary(params: {
     buffer: Buffer;
+    filename: string;
+    mimeType?: string | null;
     folder: string;
-    resource_type: 'image' | 'video';
-  }): Promise<{ secure_url: string; public_id: string }> {
-    return uploadBufferToCloudinaryExternal(params);
+    resourceType: 'image' | 'video' | 'audio';
+  }): Promise<string> {
+    const uploaded = await this.uploadsService.uploadBuffer({
+      buffer: params.buffer,
+      filename: params.filename,
+      mimeType: params.mimeType,
+      folder: params.folder,
+      resourceType: params.resourceType,
+      excludedProviders: ['cloudinary'],
+    });
+
+    return uploaded.url;
   }
 
   private createTempDir(prefix: string) {
@@ -642,6 +650,9 @@ export class RenderVideosService implements OnModuleInit {
       allowSilentAudio?: boolean;
       sentences: SentenceInput[];
       imageFiles: Array<UploadedAsset | null>;
+      secondaryImageFiles: Array<UploadedAsset | null>;
+      sceneVideoFiles: Array<UploadedAsset | null>;
+      overlayFiles: Array<UploadedAsset | null>;
       textBackgroundVideoFiles: Array<UploadedAsset | null>;
       imageUrls?: Array<string | null> | null;
       scriptLength: string;
@@ -659,7 +670,6 @@ export class RenderVideosService implements OnModuleInit {
   ) {
     const tempDir = this.createTempDir('auto-video-generator-');
     let publicDirToClean: string | null = null;
-    let transientBackgroundMusicFsPath: string | null = null;
     let stopHeartbeat: (() => void) | null = null;
     try {
       const job = await this.getJob(jobId);
@@ -673,6 +683,9 @@ export class RenderVideosService implements OnModuleInit {
       const normalizedAudioUrl = String(params.audioUrl ?? '').trim();
       const hasAudioUrl = normalizedAudioUrl.length > 0;
       const allowSilentAudio = params.allowSilentAudio === true;
+      const isSilentRender =
+        allowSilentAudio && !hasAudioBuffer && !hasAudioUrl;
+      const useLambdaTestMode = this.useLambdaTestMode();
       if (!hasAudioBuffer && !hasAudioUrl && !allowSilentAudio) {
         throw new Error('Missing voiceOver audio file');
       }
@@ -686,12 +699,20 @@ export class RenderVideosService implements OnModuleInit {
         audioName = params.audioFile.originalName || 'audio.mp3';
         audioMimeType = params.audioFile.mimeType;
 
-        // Persist voiceover audio locally so Lambda-mode can fetch it via public URL.
-        // (Cloudinary uploads are disabled.)
-        const ext = extname(audioName || '') || '.mp3';
-        const audioFsPath = this.getAudioFsPath({ jobId, ext });
-        fs.writeFileSync(audioFsPath, audioBuffer);
-        job.audioPath = this.getPublicAudioUrl({ jobId, ext });
+        if (useLambdaTestMode) {
+          job.audioPath = await this.uploadBufferToCloudinary({
+            buffer: audioBuffer,
+            filename: audioName,
+            mimeType: audioMimeType,
+            folder: 'auto-video-generator/render-inputs/audio',
+            resourceType: 'audio',
+          });
+        } else {
+          const ext = extname(audioName || '') || '.mp3';
+          const audioFsPath = this.getAudioFsPath({ jobId, ext });
+          fs.writeFileSync(audioFsPath, audioBuffer);
+          job.audioPath = this.getPublicAudioUrl({ jobId, ext });
+        }
         await this.jobsRepo.save(job);
       } else if (hasAudioUrl) {
         const localAudio = this.readLocalStaticFileToBuffer(normalizedAudioUrl);
@@ -732,8 +753,10 @@ export class RenderVideosService implements OnModuleInit {
         params.audioDurationSeconds && params.audioDurationSeconds > 0
           ? params.audioDurationSeconds
           : this.estimateDurationSecondsForSilentRender(params.sentences);
+      const effectiveAddSubtitles = isSilentRender
+        ? false
+        : params.addSubtitles;
 
-      const useLambdaTestMode = this.useLambdaTestMode();
       const wantsLongFormSubscribeOverlay =
         params.enableLongFormSubscribeOverlay !== false &&
         !this.isShort(params.scriptLength);
@@ -773,6 +796,40 @@ export class RenderVideosService implements OnModuleInit {
         );
       }
 
+      const providedSecondaryImageFiles = Array.isArray(
+        params.secondaryImageFiles,
+      )
+        ? params.secondaryImageFiles
+        : null;
+      if (
+        !providedSecondaryImageFiles ||
+        providedSecondaryImageFiles.length !== params.sentences.length
+      ) {
+        throw new Error(
+          'secondaryImageFiles length must match sentences length',
+        );
+      }
+
+      const providedSceneVideoFiles = Array.isArray(params.sceneVideoFiles)
+        ? params.sceneVideoFiles
+        : null;
+      if (
+        !providedSceneVideoFiles ||
+        providedSceneVideoFiles.length !== params.sentences.length
+      ) {
+        throw new Error('sceneVideoFiles length must match sentences length');
+      }
+
+      const providedOverlayFiles = Array.isArray(params.overlayFiles)
+        ? params.overlayFiles
+        : null;
+      if (
+        !providedOverlayFiles ||
+        providedOverlayFiles.length !== params.sentences.length
+      ) {
+        throw new Error('overlayFiles length must match sentences length');
+      }
+
       const stageSecondaryImageForSentence = async (
         index: number,
         localJobDir?: string,
@@ -782,24 +839,42 @@ export class RenderVideosService implements OnModuleInit {
         const current = String(
           params.sentences[index]?.secondaryImageUrl ?? '',
         ).trim();
-        if (!current) return;
+        const uploadedFile = providedSecondaryImageFiles[index];
 
         if (useLambdaTestMode) {
-          if (this.isCloudinaryUrl(current)) return;
+          if (current) return;
 
-          const downloaded = await this.downloadUrlToBuffer({
-            url: current,
-            maxBytes: 12 * 1024 * 1024,
-            label: `secondary image for sentence ${index + 1}`,
+          if (!uploadedFile?.buffer) return;
+
+          params.sentences[index].secondaryImageUrl =
+            await this.uploadBufferToCloudinary({
+              buffer: uploadedFile.buffer,
+              filename: uploadedFile.originalName,
+              mimeType: uploadedFile.mimeType,
+              folder: 'auto-video-generator/render-inputs/images',
+              resourceType: 'image',
+            });
+          return;
+        }
+
+        if (!localJobDir) {
+          throw new Error(
+            'Missing local job directory for staging secondary images',
+          );
+        }
+
+        if (!current) {
+          if (!uploadedFile?.buffer) return;
+
+          const ext = this.inferExt({
+            originalName: uploadedFile.originalName,
+            mimeType: uploadedFile.mimeType,
+            fallback: '.png',
           });
 
-          const uploaded = await this.uploadBufferToCloudinary({
-            buffer: downloaded.buffer,
-            folder: 'auto-video-generator/render-inputs/images',
-            resource_type: 'image',
-          });
-
-          params.sentences[index].secondaryImageUrl = uploaded.secure_url;
+          const rel = `images/scene-${String(index + 1).padStart(3, '0')}-secondary${ext}`;
+          fs.writeFileSync(join(localJobDir, rel), uploadedFile.buffer);
+          params.sentences[index].secondaryImageUrl = rel;
           return;
         }
 
@@ -816,12 +891,6 @@ export class RenderVideosService implements OnModuleInit {
         });
 
         const rel = `images/scene-${String(index + 1).padStart(3, '0')}-secondary${ext}`;
-        if (!localJobDir) {
-          throw new Error(
-            'Missing local job directory for staging secondary images',
-          );
-        }
-
         fs.writeFileSync(join(localJobDir, rel), downloaded.buffer);
         params.sentences[index].secondaryImageUrl = rel;
       };
@@ -853,13 +922,14 @@ export class RenderVideosService implements OnModuleInit {
             );
           }
 
-          const uploaded = await this.uploadBufferToCloudinary({
-            buffer: uploadedFile.buffer,
-            folder: 'auto-video-generator/render-inputs/videos',
-            resource_type: 'video',
-          });
-
-          params.sentences[index].textBackgroundVideoUrl = uploaded.secure_url;
+          params.sentences[index].textBackgroundVideoUrl =
+            await this.uploadBufferToCloudinary({
+              buffer: uploadedFile.buffer,
+              filename: uploadedFile.originalName,
+              mimeType: uploadedFile.mimeType,
+              folder: 'auto-video-generator/render-inputs/videos',
+              resourceType: 'video',
+            });
           return;
         }
 
@@ -909,6 +979,98 @@ export class RenderVideosService implements OnModuleInit {
         params.sentences[index].textBackgroundVideoUrl = stagedRel;
       };
 
+      const stageSceneVideoForSentence = async (
+        index: number,
+        localJobDir?: string,
+      ) => {
+        const sentence = params.sentences[index];
+        const requiresSceneVideo =
+          sentence?.mediaType === 'video' ||
+          (sentence?.mediaType === 'overlay' &&
+            resolveOverlaySceneBackgroundMode(sentence.overlaySettings) ===
+              'video');
+        if (!requiresSceneVideo) return;
+
+        const current = String(sentence.videoUrl ?? '').trim();
+        const uploadedFile = providedSceneVideoFiles[index];
+        const rel =
+          sentence?.mediaType === 'overlay'
+            ? `videos/scene-${String(index + 1).padStart(3, '0')}-overlay-background`
+            : `videos/scene-${String(index + 1).padStart(3, '0')}-video`;
+
+        if (useLambdaTestMode) {
+          if (current) return;
+
+          if (!uploadedFile?.buffer) {
+            throw new Error(
+              sentence?.mediaType === 'overlay'
+                ? `Missing overlay background video for sentence ${index + 1}.`
+                : `Missing video for sentence ${index + 1}.`,
+            );
+          }
+
+          params.sentences[index].videoUrl =
+            await this.uploadBufferToCloudinary({
+              buffer: uploadedFile.buffer,
+              filename: uploadedFile.originalName,
+              mimeType: uploadedFile.mimeType,
+              folder: 'auto-video-generator/render-inputs/videos',
+              resourceType: 'video',
+            });
+          return;
+        }
+
+        if (!localJobDir) {
+          throw new Error(
+            'Missing local job directory for staging scene videos',
+          );
+        }
+
+        if (current) {
+          const localStatic = this.readLocalStaticFileToBuffer(current);
+          const downloaded =
+            localStatic ??
+            (await this.downloadUrlToBuffer({
+              url: current,
+              maxBytes: 100 * 1024 * 1024,
+              label:
+                sentence?.mediaType === 'overlay'
+                  ? `overlay background video for sentence ${index + 1}`
+                  : `video for sentence ${index + 1}`,
+            }));
+
+          const ext = this.inferExt({
+            originalName: localStatic?.fileName ?? current,
+            mimeType:
+              'mimeType' in downloaded ? downloaded.mimeType : undefined,
+            fallback: '.mp4',
+          });
+
+          const stagedRel = `${rel}${ext}`;
+          fs.writeFileSync(join(localJobDir, stagedRel), downloaded.buffer);
+          params.sentences[index].videoUrl = stagedRel;
+          return;
+        }
+
+        if (!uploadedFile?.buffer) {
+          throw new Error(
+            sentence?.mediaType === 'overlay'
+              ? `Missing overlay background video for sentence ${index + 1}.`
+              : `Missing video for sentence ${index + 1}.`,
+          );
+        }
+
+        const ext = this.inferExt({
+          originalName: uploadedFile.originalName,
+          mimeType: uploadedFile.mimeType,
+          fallback: '.mp4',
+        });
+
+        const stagedRel = `${rel}${ext}`;
+        fs.writeFileSync(join(localJobDir, stagedRel), uploadedFile.buffer);
+        params.sentences[index].videoUrl = stagedRel;
+      };
+
       const stageOverlayAssetForSentence = async (
         index: number,
         localJobDir?: string,
@@ -917,43 +1079,39 @@ export class RenderVideosService implements OnModuleInit {
         if (sentence?.mediaType !== 'overlay') return;
 
         const current = String(sentence.overlayUrl ?? '').trim();
-        if (!current) {
-          throw new Error(`Missing overlay asset for scene ${index + 1}.`);
-        }
+        const uploadedFile = providedOverlayFiles[index];
 
         const overlayMimeType =
           String(sentence.overlayMimeType ?? '').trim() || undefined;
 
         if (useLambdaTestMode) {
-          if (this.isCloudinaryUrl(current)) return;
+          if (current) {
+            if (!params.sentences[index].overlayMimeType && overlayMimeType) {
+              params.sentences[index].overlayMimeType = overlayMimeType;
+            }
+            return;
+          }
 
-          const localStatic = this.readLocalStaticFileToBuffer(current);
-          const downloaded =
-            localStatic ??
-            (await this.downloadUrlToBuffer({
-              url: current,
-              maxBytes: 100 * 1024 * 1024,
-              label: `overlay asset for sentence ${index + 1}`,
-            }));
+          if (!uploadedFile?.buffer) {
+            throw new Error(`Missing overlay asset for scene ${index + 1}.`);
+          }
 
-          const mimeType =
-            overlayMimeType ??
-            ('mimeType' in downloaded ? downloaded.mimeType : undefined);
+          const mimeType = overlayMimeType ?? uploadedFile.mimeType;
           const resourceType = this.isLikelyVideoAsset({
             mimeType,
-            originalName: localStatic?.fileName ?? current,
-            url: current,
+            originalName: uploadedFile.originalName,
           })
             ? 'video'
             : 'image';
 
-          const uploaded = await this.uploadBufferToCloudinary({
-            buffer: downloaded.buffer,
-            folder: `auto-video-generator/render-inputs/${resourceType === 'video' ? 'videos' : 'images'}`,
-            resource_type: resourceType,
-          });
-
-          params.sentences[index].overlayUrl = uploaded.secure_url;
+          params.sentences[index].overlayUrl =
+            await this.uploadBufferToCloudinary({
+              buffer: uploadedFile.buffer,
+              filename: uploadedFile.originalName,
+              mimeType,
+              folder: `auto-video-generator/render-inputs/${resourceType === 'video' ? 'videos' : 'images'}`,
+              resourceType,
+            });
           if (!params.sentences[index].overlayMimeType && mimeType) {
             params.sentences[index].overlayMimeType = mimeType;
           }
@@ -964,6 +1122,31 @@ export class RenderVideosService implements OnModuleInit {
           throw new Error(
             'Missing local job directory for staging overlay assets',
           );
+        }
+
+        if (!current) {
+          if (!uploadedFile?.buffer) {
+            throw new Error(`Missing overlay asset for scene ${index + 1}.`);
+          }
+
+          const mimeType = overlayMimeType ?? uploadedFile.mimeType;
+          const isVideo = this.isLikelyVideoAsset({
+            mimeType,
+            originalName: uploadedFile.originalName,
+          });
+          const ext = this.inferExt({
+            originalName: uploadedFile.originalName,
+            mimeType,
+            fallback: isVideo ? '.mp4' : '.png',
+          });
+
+          const stagedRel = `overlays/scene-${String(index + 1).padStart(3, '0')}-overlay${ext}`;
+          fs.writeFileSync(join(localJobDir, stagedRel), uploadedFile.buffer);
+          params.sentences[index].overlayUrl = stagedRel;
+          if (!params.sentences[index].overlayMimeType && mimeType) {
+            params.sentences[index].overlayMimeType = mimeType;
+          }
+          return;
         }
 
         const localStatic = this.readLocalStaticFileToBuffer(current);
@@ -1002,23 +1185,12 @@ export class RenderVideosService implements OnModuleInit {
       );
 
       if (useLambdaTestMode && params.backgroundMusicFile?.buffer?.length) {
-        const backgroundMusicExt = this.inferExt({
-          originalName: params.backgroundMusicFile.originalName,
+        params.backgroundMusicSrc = await this.uploadBufferToCloudinary({
+          buffer: params.backgroundMusicFile.buffer,
+          filename: params.backgroundMusicFile.originalName,
           mimeType: params.backgroundMusicFile.mimeType,
-          fallback: '.mp3',
-        });
-
-        transientBackgroundMusicFsPath = this.getBackgroundMusicFsPath({
-          jobId,
-          ext: backgroundMusicExt,
-        });
-        fs.writeFileSync(
-          transientBackgroundMusicFsPath,
-          params.backgroundMusicFile.buffer,
-        );
-        params.backgroundMusicSrc = this.getPublicBackgroundMusicUrl({
-          jobId,
-          ext: backgroundMusicExt,
+          folder: 'auto-video-generator/render-inputs/audio',
+          resourceType: 'audio',
         });
       }
 
@@ -1039,6 +1211,7 @@ export class RenderVideosService implements OnModuleInit {
             continue;
           }
 
+          await stageSceneVideoForSentence(i);
           await stageOverlayAssetForSentence(i);
           await stageTextBackgroundVideoForSentence(i);
 
@@ -1051,26 +1224,7 @@ export class RenderVideosService implements OnModuleInit {
 
           const url = providedUrls ? providedUrls[i] : null;
           if (url) {
-            const urlString = String(url);
-            if (this.isCloudinaryUrl(urlString)) {
-              imageSrcs.push(urlString);
-              continue;
-            }
-
-            // Re-host non-Cloudinary URLs to reduce risk of hotlinking issues during Lambda render.
-            const downloaded = await this.downloadUrlToBuffer({
-              url: urlString,
-              maxBytes: 12 * 1024 * 1024,
-              label: `imageUrl for sentence ${i + 1}`,
-            });
-
-            const uploaded = await this.uploadBufferToCloudinary({
-              buffer: downloaded.buffer,
-              folder: 'auto-video-generator/render-inputs/images',
-              resource_type: 'image',
-            });
-
-            imageSrcs.push(uploaded.secure_url);
+            imageSrcs.push(String(url));
             continue;
           }
 
@@ -1079,13 +1233,15 @@ export class RenderVideosService implements OnModuleInit {
             throw new Error(`Missing image upload for scene ${i + 1}.`);
           }
 
-          const uploaded = await this.uploadBufferToCloudinary({
-            buffer: file.buffer,
-            folder: 'auto-video-generator/render-inputs/images',
-            resource_type: 'image',
-          });
-
-          imageSrcs.push(uploaded.secure_url);
+          imageSrcs.push(
+            await this.uploadBufferToCloudinary({
+              buffer: file.buffer,
+              filename: file.originalName,
+              mimeType: file.mimeType,
+              folder: 'auto-video-generator/render-inputs/images',
+              resourceType: 'image',
+            }),
+          );
         }
       } else {
         const prepared = this.prepareRemotionPublicDir(jobId);
@@ -1164,7 +1320,10 @@ export class RenderVideosService implements OnModuleInit {
           });
           const rel = `audio/background_custom${backgroundMusicExt}`;
           this.ensureDir(join(jobDir, 'audio'));
-          fs.writeFileSync(join(jobDir, rel), params.backgroundMusicFile.buffer);
+          fs.writeFileSync(
+            join(jobDir, rel),
+            params.backgroundMusicFile.buffer,
+          );
           effectiveBackgroundMusicSrc = rel;
         } else if (
           typeof params.backgroundMusicSrc === 'string' &&
@@ -1278,6 +1437,7 @@ export class RenderVideosService implements OnModuleInit {
             continue;
           }
 
+          await stageSceneVideoForSentence(i, jobDir);
           await stageOverlayAssetForSentence(i, jobDir);
           await stageTextBackgroundVideoForSentence(i, jobDir);
 
@@ -1337,7 +1497,11 @@ export class RenderVideosService implements OnModuleInit {
             params.sentences,
             durationSeconds,
           )
-        : this.buildSyntheticSentenceTimings(params.sentences, durationSeconds);
+        : this.buildSyntheticSentenceTimings(
+            params.sentences,
+            durationSeconds,
+            effectiveAddSubtitles !== false,
+          );
 
       const timeline = this.buildTimeline({
         language: params.language,
@@ -1351,7 +1515,7 @@ export class RenderVideosService implements OnModuleInit {
         isShort: params.isShort,
         useLowerFps: params.useLowerFps,
         useLowerResolution: params.useLowerResolution,
-        addSubtitles: params.addSubtitles,
+        addSubtitles: effectiveAddSubtitles,
         enableGlitchTransitions: params.enableGlitchTransitions,
         enableLongFormSubscribeOverlay: params.enableLongFormSubscribeOverlay,
         backgroundMusicSrc: params.backgroundMusicSrc,
@@ -1405,13 +1569,6 @@ export class RenderVideosService implements OnModuleInit {
     } finally {
       if (stopHeartbeat) stopHeartbeat();
       this.safeRmDir(tempDir);
-      if (transientBackgroundMusicFsPath) {
-        try {
-          fs.rmSync(transientBackgroundMusicFsPath, { force: true });
-        } catch {
-          // ignore cleanup failures for transient background music
-        }
-      }
       if (publicDirToClean) {
         this.safeRmDir(publicDirToClean);
       }
@@ -1459,12 +1616,15 @@ export class RenderVideosService implements OnModuleInit {
   private buildSyntheticSentenceTimings(
     sentences: SentenceInput[],
     audioDurationSeconds: number,
+    includeWordTimings = true,
   ): SentenceTiming[] {
     const buildSyntheticWords = (
       text: string,
       startSeconds: number,
       endSeconds: number,
     ) => {
+      if (!includeWordTimings) return [];
+
       const words = String(text ?? '')
         .trim()
         .split(/\s+/u)

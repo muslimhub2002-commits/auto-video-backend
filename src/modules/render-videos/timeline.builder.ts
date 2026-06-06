@@ -212,7 +212,8 @@ export const buildTimeline = (params: {
     const sceneDurationSeconds = durationFrames / fps;
     cursor = endFrame;
     const sceneTiming = params.sentenceTimings?.[index];
-    const subtitleWords = Array.isArray(sceneTiming?.words)
+    const subtitleWords =
+      params.addSubtitles !== false && Array.isArray(sceneTiming?.words)
       ? sceneTiming.words
           .map((word) => {
             if (!word || !String(word.text ?? '').trim()) return null;

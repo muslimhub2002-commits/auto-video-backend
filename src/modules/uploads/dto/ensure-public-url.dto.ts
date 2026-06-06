@@ -15,4 +15,8 @@ export class EnsurePublicUrlDto {
   @IsOptional()
   @IsString()
   filename?: string;
+
+  @IsOptional()
+  @IsString()
+  excludedProviders?: string;
 }

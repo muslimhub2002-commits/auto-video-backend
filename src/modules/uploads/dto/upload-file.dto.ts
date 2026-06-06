@@ -8,4 +8,8 @@ export class UploadFileDto {
   @IsOptional()
   @IsIn(['image', 'video', 'audio'])
   resourceType?: 'image' | 'video' | 'audio';
+
+  @IsOptional()
+  @IsString()
+  excludedProviders?: string;
 }

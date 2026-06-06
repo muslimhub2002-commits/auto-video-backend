@@ -64,6 +64,11 @@ export class UploadsService {
     const errors: string[] = [];
 
     for (const provider of this.orderedProviders) {
+      if (normalizedParams.excludedProviders?.includes(provider.name)) {
+        errors.push(`${provider.name}:excluded`);
+        continue;
+      }
+
       if (!provider.isConfigured()) {
         errors.push(`${provider.name}:not-configured`);
         continue;
@@ -98,6 +103,11 @@ export class UploadsService {
     const errors: string[] = [];
 
     for (const provider of this.orderedProviders) {
+      if (normalizedParams.excludedProviders?.includes(provider.name)) {
+        errors.push(`${provider.name}:excluded`);
+        continue;
+      }
+
       if (!provider.isConfigured()) {
         errors.push(`${provider.name}:not-configured`);
         continue;
@@ -145,6 +155,7 @@ export class UploadsService {
       mimeType: normalizedParams.mimeType ?? downloaded.mimeType,
       folder: normalizedParams.folder,
       resourceType: normalizedParams.resourceType,
+      excludedProviders: normalizedParams.excludedProviders,
     });
   }
 

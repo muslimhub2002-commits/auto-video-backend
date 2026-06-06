@@ -54,6 +54,7 @@ const ALLOWED_IMAGE_MOTION_EFFECTS = [
 const ALLOWED_IMAGE_EFFECTS_MODES = ['quick', 'detailed'] as const;
 const ALLOWED_SCENE_TABS = ['image', 'video', 'text', 'overlay'] as const;
 const ALLOWED_TEXT_ANIMATION_EFFECTS = [
+  'none',
   'popInBounceHook',
   'slideCutFast',
   'typewriter',

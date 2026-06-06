@@ -12,7 +12,15 @@ export class CreateRenderVideoDto {
 
   @IsOptional()
   @IsString()
+  imageUrls?: string;
+
+  @IsOptional()
+  @IsString()
   audioUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  isSilent?: string;
 
   @IsString()
   @IsNotEmpty()

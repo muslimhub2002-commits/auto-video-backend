@@ -159,7 +159,7 @@ describe('ScriptsService.translateToDraft', () => {
 });
 
 describe('ScriptsService', () => {
-  it('normalizes text shadow settings for draft sentence animation saves', () => {
+  it('normalizes supported text animation settings for draft sentence animation saves', () => {
     const service = new ScriptsService(
       {} as never,
       {} as never,
@@ -180,14 +180,14 @@ describe('ScriptsService', () => {
       }
     ).normalizeTextAnimationSettingsObject({
       presetKey: 'slideCutFast',
-      shadowOpacity: 1.7,
-      shadowBlurPx: -4,
+      wordDelaySeconds: 0.9,
+      strokeWidthPx: -4,
     });
 
     expect(normalized).toMatchObject({
       presetKey: 'slideCutFast',
-      shadowOpacity: 1,
-      shadowBlurPx: 0,
+      wordDelaySeconds: 0.4,
+      strokeWidthPx: 0,
     });
   });
 });
