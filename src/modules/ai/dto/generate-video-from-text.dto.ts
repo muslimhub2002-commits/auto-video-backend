@@ -1,4 +1,13 @@
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class GenerateVideoFromTextDto {
   @IsString()
@@ -20,4 +29,15 @@ export class GenerateVideoFromTextDto {
   @IsString()
   @MaxLength(20)
   aspectRatio?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.round(numeric) : value;
+  })
+  @IsInt()
+  @Min(3)
+  @Max(15)
+  durationSeconds?: number;
 }

@@ -34,6 +34,7 @@ export class AiService {
   generateVideoFromFrames(params: {
     prompt: string;
     model?: string;
+    durationSeconds?: number;
     resolution?: string;
     aspectRatio?: string;
     isLooping?: boolean;

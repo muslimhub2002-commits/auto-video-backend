@@ -19,6 +19,8 @@ export class AiRuntimeService {
   public readonly geminiTtsModel: string;
 
   public readonly grokApiKey?: string;
+  public readonly klingApiKey?: string;
+  public readonly klingSecretKey?: string;
 
   public readonly elevenApiKey?: string;
   public readonly elevenDefaultVoiceId: string;
@@ -31,6 +33,8 @@ export class AiRuntimeService {
     const openaiKey = process.env.OPENAI_API_KEY;
     const deepseekKey = process.env.DEEPSEEK_API_KEY;
     const grokKey = process.env.GROK_API_KEY;
+    const klingKey = process.env.KLING_API_KEY;
+    const klingSecretKey = process.env.KLING_SECRET_KEY;
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
 
@@ -40,6 +44,8 @@ export class AiRuntimeService {
       'gemini-2.5-flash-preview-tts';
 
     this.grokApiKey = (grokKey || '').trim() || undefined;
+    this.klingApiKey = (klingKey || '').trim() || undefined;
+    this.klingSecretKey = (klingSecretKey || '').trim() || undefined;
 
     this.openai = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
     this.deepseek = deepseekKey
@@ -59,11 +65,12 @@ export class AiRuntimeService {
       !this.openai &&
       !this.deepseek &&
       !this.grok &&
+      !(klingKey || '').trim() &&
       !this.anthropic &&
       !(geminiKey || '').trim()
     ) {
       throw new Error(
-        'Set OPENAI_API_KEY, DEEPSEEK_API_KEY, GROK_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY in the environment.',
+        'Set OPENAI_API_KEY, DEEPSEEK_API_KEY, GROK_API_KEY, KLING_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY in the environment.',
       );
     }
 

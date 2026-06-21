@@ -1,9 +1,12 @@
 import {
   IsBoolean,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
@@ -39,4 +42,15 @@ export class GenerateVideoFromReferenceImageDto {
     return Boolean(value);
   })
   isLooping?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.round(numeric) : value;
+  })
+  @IsInt()
+  @Min(3)
+  @Max(15)
+  durationSeconds?: number;
 }

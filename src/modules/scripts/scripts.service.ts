@@ -2503,6 +2503,7 @@ export class ScriptsService implements OnModuleInit {
     const generated = await this.aiService.generateVideoFromFrames({
       prompt,
       model: dto?.model,
+      durationSeconds: dto?.durationSeconds,
       resolution: dto?.resolution,
       aspectRatio: dto?.aspectRatio,
       isLooping,
@@ -2548,10 +2549,19 @@ export class ScriptsService implements OnModuleInit {
       finalVideoUrl = this.toStaticUrl(relPath);
     }
 
+    const normalizedModel = String(dto?.model ?? '')
+      .trim()
+      .toLowerCase();
+    const generatedVideoType = normalizedModel.startsWith('kling-')
+      ? 'kling'
+      : normalizedModel.startsWith('grok-') || normalizedModel === 'grok-imagine-video'
+        ? 'grok'
+        : 'gemini';
+
     const videoEntity = this.videoRepository.create({
       video: finalVideoUrl,
       user_id: userId,
-      video_type: 'gemini',
+      video_type: generatedVideoType,
       video_size: VideoSize.PORTRAIT,
     });
     const savedVideo = await this.videoRepository.save(videoEntity);

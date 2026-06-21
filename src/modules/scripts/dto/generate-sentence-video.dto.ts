@@ -1,4 +1,12 @@
-import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Max,
+  Min,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class GenerateSentenceVideoDto {
@@ -33,4 +41,15 @@ export class GenerateSentenceVideoDto {
     return Boolean(value);
   })
   isLooping?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.round(numeric) : value;
+  })
+  @IsInt()
+  @Min(3)
+  @Max(15)
+  durationSeconds?: number;
 }

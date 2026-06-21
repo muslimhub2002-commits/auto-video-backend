@@ -5,9 +5,11 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
+import * as jwt from 'jsonwebtoken';
 import { extname, join, sep } from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { GenerateVideoFromFramesDto } from '../dto/generate-video-from-frames.dto';
+import { uploadBufferToCloudinary } from '../../render-videos/utils/cloudinary.utils';
 import { AiRuntimeService } from './ai-runtime.service';
 import { isLikelyImageBuffer } from './ai-image/image-bytes';
 
@@ -132,11 +134,349 @@ export class AiVideoService {
     return this.runtime.grokApiKey;
   }
 
+  private get klingApiKey() {
+    return this.runtime.klingApiKey;
+  }
+
+  private get klingSecretKey() {
+    return this.runtime.klingSecretKey;
+  }
+
   private isGrokVideoModel(model?: string | null): boolean {
     const m = String(model ?? '')
       .trim()
       .toLowerCase();
     return m === 'grok-imagine-video' || m.startsWith('grok-');
+  }
+
+  private isKlingVideoModel(model?: string | null): boolean {
+    const m = String(model ?? '')
+      .trim()
+      .toLowerCase();
+    return m.startsWith('kling-');
+  }
+
+  private normalizeKlingDuration(value: unknown, fallback = 5): number {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return fallback;
+    }
+
+    return Math.max(3, Math.min(15, Math.round(numeric)));
+  }
+
+  private mapKlingMode(resolution?: string | null): 'std' | 'pro' | '4k' {
+    const normalized = String(resolution ?? '')
+      .trim()
+      .toLowerCase();
+
+    if (normalized.includes('4k')) {
+      return '4k';
+    }
+
+    if (normalized.includes('1080')) {
+      return 'pro';
+    }
+
+    return 'std';
+  }
+
+  private async downloadGeneratedVideo(url: string): Promise<{
+    buffer: Buffer;
+    mimeType: string;
+  }> {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new InternalServerErrorException(
+        `Failed to fetch generated video: ${res.status} ${res.statusText}`,
+      );
+    }
+
+    const mimeType = res.headers.get('content-type') || 'video/mp4';
+    const arrayBuffer = await res.arrayBuffer();
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      mimeType,
+    };
+  }
+
+  private isCloudinaryConfigured(): boolean {
+    return (
+      Boolean(process.env.CLOUDINARY_CLOUD_NAME) &&
+      Boolean(process.env.CLOUDINARY_API_KEY) &&
+      Boolean(process.env.CLOUDINARY_CLOUD_SECRET)
+    );
+  }
+
+  private inferVideoExtFromGenerated(params: {
+    uri?: string | null;
+    mimeType?: string | null;
+  }) {
+    const rawUri = String(params.uri ?? '').trim();
+
+    if (rawUri) {
+      try {
+        const parsed = new URL(rawUri);
+        const parsedExt = extname(parsed.pathname);
+        if (parsedExt) {
+          return parsedExt;
+        }
+      } catch {
+        const withoutQuery = rawUri.split('?')[0] ?? rawUri;
+        const parsedExt = extname(withoutQuery);
+        if (parsedExt) {
+          return parsedExt;
+        }
+      }
+    }
+
+    const mt = String(params.mimeType ?? '').toLowerCase();
+    if (mt.includes('webm')) return '.webm';
+    if (mt.includes('quicktime')) return '.mov';
+    return '.mp4';
+  }
+
+  private async persistGeneratedVideo(params: {
+    buffer: Buffer;
+    mimeType?: string | null;
+    uri?: string | null;
+  }): Promise<{ videoUrl: string }> {
+    if (this.isCloudinaryConfigured()) {
+      try {
+        const uploaded = await uploadBufferToCloudinary({
+          buffer: params.buffer,
+          folder: 'auto-video-generator/sentence-videos',
+          resource_type: 'video',
+        });
+
+        return { videoUrl: uploaded.secure_url };
+      } catch {
+        // Fall back to local storage when Cloudinary upload fails.
+      }
+    }
+
+    const baseUrl =
+      process.env.REMOTION_ASSET_BASE_URL ??
+      `http://127.0.0.1:${process.env.PORT ?? 3000}`;
+    const ext = this.inferVideoExtFromGenerated({
+      uri: params.uri,
+      mimeType: params.mimeType,
+    });
+    const fileName = `${randomUUID()}${ext}`;
+    const relPath = join('sentence-videos', fileName);
+    const absDir = join(process.cwd(), 'storage', 'sentence-videos');
+    fs.mkdirSync(absDir, { recursive: true });
+    fs.writeFileSync(join(process.cwd(), 'storage', relPath), params.buffer);
+
+    const normalized = relPath.split(sep).join('/');
+    return { videoUrl: `${baseUrl}/static/${normalized}` };
+  }
+
+  private async createKlingTask(params: {
+    path: '/v1/videos/text2video' | '/v1/videos/image2video';
+    body: Record<string, unknown>;
+  }): Promise<string> {
+    const authorization = this.createKlingAuthorizationToken();
+    if (!authorization) {
+      throw new InternalServerErrorException(
+        'KLING_API_KEY or KLING_SECRET_KEY is not configured on the server',
+      );
+    }
+
+    const res = await fetch(`https://api-singapore.klingai.com${params.path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${authorization}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params.body),
+    });
+
+    const json: any = await res.json().catch(() => null);
+    if (!res.ok || Number(json?.code ?? -1) !== 0) {
+      const message = String(json?.message ?? '').trim();
+      throw new InternalServerErrorException(
+        `Kling task creation failed: ${res.status} ${res.statusText}${message ? ` — ${message}` : ''}`,
+      );
+    }
+
+    const taskId = String(json?.data?.task_id ?? '').trim();
+    if (!taskId) {
+      throw new InternalServerErrorException(
+        'Kling task creation succeeded but no task_id was returned',
+      );
+    }
+
+    return taskId;
+  }
+
+  private async pollKlingTask(params: {
+    path: '/v1/videos/text2video' | '/v1/videos/image2video';
+    taskId: string;
+  }): Promise<string> {
+    const authorization = this.createKlingAuthorizationToken();
+    if (!authorization) {
+      throw new InternalServerErrorException(
+        'KLING_API_KEY or KLING_SECRET_KEY is not configured on the server',
+      );
+    }
+
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      const res = await fetch(
+        `https://api-singapore.klingai.com${params.path}/${encodeURIComponent(params.taskId)}`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${authorization}`,
+          },
+        },
+      );
+
+      const json: any = await res.json().catch(() => null);
+      if (!res.ok || Number(json?.code ?? -1) !== 0) {
+        const message = String(json?.message ?? '').trim();
+        throw new InternalServerErrorException(
+          `Kling task polling failed: ${res.status} ${res.statusText}${message ? ` — ${message}` : ''}`,
+        );
+      }
+
+      const status = String(json?.data?.task_status ?? '').trim().toLowerCase();
+      if (status === 'succeed') {
+        const url = String(json?.data?.task_result?.videos?.[0]?.url ?? '').trim();
+        if (!url) {
+          throw new InternalServerErrorException(
+            'Kling task succeeded but no video URL was returned',
+          );
+        }
+
+        return url;
+      }
+
+      if (status === 'failed') {
+        const message =
+          String(json?.data?.task_status_msg ?? '').trim() ||
+          String(json?.message ?? '').trim() ||
+          'Unknown Kling failure';
+        throw new InternalServerErrorException(
+          `Kling video generation failed: ${message}`,
+        );
+      }
+
+      await sleep(4_000);
+    }
+
+    throw new InternalServerErrorException(
+      'Timed out while waiting for Kling video generation to complete',
+    );
+  }
+
+  private async klingGenerateTextToVideo(params: {
+    prompt: string;
+    model?: string;
+    durationSeconds?: number;
+    resolution?: string;
+    aspectRatio?: string;
+  }): Promise<{ buffer: Buffer; mimeType: string; uri: string }> {
+    const prompt = String(params.prompt ?? '').trim();
+    if (!prompt) {
+      throw new BadRequestException('Prompt is required to generate a video');
+    }
+
+    const taskId = await this.createKlingTask({
+      path: '/v1/videos/text2video',
+      body: {
+        model_name: String(params.model ?? '').trim() || 'kling-v2-6',
+        prompt,
+        duration: String(this.normalizeKlingDuration(params.durationSeconds)),
+        mode: this.mapKlingMode(params.resolution),
+        sound: 'off',
+        aspect_ratio: String(params.aspectRatio ?? '').trim() || '9:16',
+      },
+    });
+
+    const uri = await this.pollKlingTask({
+      path: '/v1/videos/text2video',
+      taskId,
+    });
+    const downloaded = await this.downloadGeneratedVideo(uri);
+
+    return {
+      buffer: downloaded.buffer,
+      mimeType: downloaded.mimeType,
+      uri,
+    };
+  }
+
+  private createKlingAuthorizationToken(): string | null {
+    const accessKey = String(this.klingApiKey ?? '').trim();
+    const secretKey = String(this.klingSecretKey ?? '').trim();
+
+    if (!accessKey || !secretKey) {
+      return null;
+    }
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    return jwt.sign(
+      {
+        iss: accessKey,
+        exp: nowSeconds + 1800,
+        nbf: nowSeconds - 5,
+      },
+      secretKey,
+      {
+        algorithm: 'HS256',
+        header: {
+          alg: 'HS256',
+          typ: 'JWT',
+        },
+        noTimestamp: true,
+      },
+    );
+  }
+
+  private async klingGenerateImageToVideo(params: {
+    prompt: string;
+    model?: string;
+    durationSeconds?: number;
+    resolution?: string;
+    aspectRatio?: string;
+    image: { buffer: Buffer; mimeType: string };
+    imageTail?: { buffer: Buffer; mimeType: string };
+  }): Promise<{ buffer: Buffer; mimeType: string; uri: string }> {
+    const prompt = String(params.prompt ?? '').trim();
+    if (!prompt) {
+      throw new BadRequestException('Prompt is required to generate a video');
+    }
+
+    const taskId = await this.createKlingTask({
+      path: '/v1/videos/image2video',
+      body: {
+        model_name: String(params.model ?? '').trim() || 'kling-v2-6',
+        image: params.image.buffer.toString('base64'),
+        image_tail: params.imageTail
+          ? params.imageTail.buffer.toString('base64')
+          : undefined,
+        prompt,
+        duration: String(this.normalizeKlingDuration(params.durationSeconds)),
+        mode: this.mapKlingMode(params.resolution),
+        sound: 'off',
+        aspect_ratio: String(params.aspectRatio ?? '').trim() || '9:16',
+      },
+    });
+
+    const uri = await this.pollKlingTask({
+      path: '/v1/videos/image2video',
+      taskId,
+    });
+    const downloaded = await this.downloadGeneratedVideo(uri);
+
+    return {
+      buffer: downloaded.buffer,
+      mimeType: downloaded.mimeType,
+      uri,
+    };
   }
 
   private async xaiGenerateVideo(params: {
@@ -331,28 +671,43 @@ export class AiVideoService {
   async generateVideoFromFrames(params: {
     prompt: string;
     model?: string;
+    durationSeconds?: number;
     resolution?: string;
     aspectRatio?: string;
     isLooping?: boolean;
     startFrame: { buffer: Buffer; mimeType: string };
     endFrame?: { buffer: Buffer; mimeType: string };
   }): Promise<{ buffer: Buffer; mimeType: string; uri: string }> {
+    const prompt = String(params.prompt ?? '').trim();
+    if (!prompt) {
+      throw new BadRequestException('Prompt is required to generate a video');
+    }
+
+    const finalEndFrame = params.isLooping ? params.startFrame : params.endFrame;
+
+    if (this.isKlingVideoModel(params.model)) {
+      return this.klingGenerateImageToVideo({
+        prompt,
+        model: params.model,
+        durationSeconds: params.durationSeconds,
+        resolution: params.resolution,
+        aspectRatio: params.aspectRatio,
+        image: params.startFrame,
+        imageTail: finalEndFrame,
+      });
+    }
+
     if (!this.geminiApiKey) {
       throw new InternalServerErrorException(
         'GEMINI_API_KEY is not configured on the server',
       );
     }
 
-    const prompt = String(params.prompt ?? '').trim();
-    if (!prompt) {
-      throw new BadRequestException('Prompt is required to generate a video');
-    }
-
     const ai = new GoogleGenAI({ apiKey: this.geminiApiKey });
 
     const config: any = {
       numberOfVideos: 1,
-      resolution: String(params.resolution ?? '').trim() || '720p',
+      resolution: String(params.resolution ?? '').trim() || '1080p',
     };
 
     // Default to portrait (shorts/reels) if not specified.
@@ -365,9 +720,6 @@ export class AiVideoService {
 
     const requestedModel = requestedModelRaw || 'veo-3.0-fast-generate-001';
 
-    const finalEndFrame = params.isLooping
-      ? params.startFrame
-      : params.endFrame;
     const hasSecondFrame = Boolean(finalEndFrame);
 
     // Veo 3 uses `endFrame` while older variants use `lastFrame`.
@@ -650,26 +1002,7 @@ export class AiVideoService {
       endFrame: end,
     });
 
-    const baseUrl =
-      process.env.REMOTION_ASSET_BASE_URL ??
-      `http://127.0.0.1:${process.env.PORT ?? 3000}`;
-
-    const fromMime = () => {
-      const mt = String(generated.mimeType ?? '').toLowerCase();
-      if (mt.includes('webm')) return '.webm';
-      if (mt.includes('quicktime')) return '.mov';
-      return '.mp4';
-    };
-
-    const ext = extname(String(generated.uri ?? '').trim()) || fromMime();
-    const fileName = `${randomUUID()}${ext}`;
-    const relPath = join('sentence-videos', fileName);
-    const absDir = join(process.cwd(), 'storage', 'sentence-videos');
-    fs.mkdirSync(absDir, { recursive: true });
-    fs.writeFileSync(join(process.cwd(), 'storage', relPath), generated.buffer);
-
-    const normalized = relPath.split(sep).join('/');
-    return { videoUrl: `${baseUrl}/static/${normalized}` };
+    return this.persistGeneratedVideo(generated);
   }
 
   async generateVideoFromText(params: {
@@ -677,6 +1010,7 @@ export class AiVideoService {
     dto: {
       prompt: string;
       model?: string;
+      durationSeconds?: number;
       resolution?: string;
       aspectRatio?: string;
     };
@@ -694,6 +1028,14 @@ export class AiVideoService {
           resolution: params.dto?.resolution,
           aspectRatio: params.dto?.aspectRatio,
         })
+      : this.isKlingVideoModel(params.dto?.model)
+        ? await this.klingGenerateTextToVideo({
+            prompt,
+            model: params.dto?.model,
+            durationSeconds: params.dto?.durationSeconds,
+            resolution: params.dto?.resolution,
+            aspectRatio: params.dto?.aspectRatio,
+          })
       : await this.generateVideoFromTextRaw({
           prompt,
           model: params.dto?.model,
@@ -701,26 +1043,7 @@ export class AiVideoService {
           aspectRatio: params.dto?.aspectRatio,
         });
 
-    const baseUrl =
-      process.env.REMOTION_ASSET_BASE_URL ??
-      `http://127.0.0.1:${process.env.PORT ?? 3000}`;
-
-    const fromMime = () => {
-      const mt = String(generated.mimeType ?? '').toLowerCase();
-      if (mt.includes('webm')) return '.webm';
-      if (mt.includes('quicktime')) return '.mov';
-      return '.mp4';
-    };
-
-    const ext = extname(String(generated.uri ?? '').trim()) || fromMime();
-    const fileName = `${randomUUID()}${ext}`;
-    const relPath = join('sentence-videos', fileName);
-    const absDir = join(process.cwd(), 'storage', 'sentence-videos');
-    fs.mkdirSync(absDir, { recursive: true });
-    fs.writeFileSync(join(process.cwd(), 'storage', relPath), generated.buffer);
-
-    const normalized = relPath.split(sep).join('/');
-    return { videoUrl: `${baseUrl}/static/${normalized}` };
+    return this.persistGeneratedVideo(generated);
   }
 
   async generateVideoFromUploadedReferenceImage(params: {
@@ -728,6 +1051,7 @@ export class AiVideoService {
     dto: {
       prompt: string;
       model?: string;
+      durationSeconds?: number;
       resolution?: string;
       aspectRatio?: string;
       isLooping?: boolean;
@@ -758,9 +1082,19 @@ export class AiVideoService {
           aspectRatio: params.dto?.aspectRatio,
           image,
         })
+      : this.isKlingVideoModel(params.dto?.model)
+        ? await this.klingGenerateImageToVideo({
+            prompt,
+            model: params.dto?.model,
+            durationSeconds: params.dto?.durationSeconds,
+            resolution: params.dto?.resolution,
+            aspectRatio: params.dto?.aspectRatio,
+            image,
+          })
       : await this.generateVideoFromFrames({
           prompt,
           model: params.dto?.model,
+          durationSeconds: params.dto?.durationSeconds,
           resolution: params.dto?.resolution,
           aspectRatio: params.dto?.aspectRatio,
           isLooping,
@@ -768,25 +1102,6 @@ export class AiVideoService {
           endFrame: undefined,
         });
 
-    const baseUrl =
-      process.env.REMOTION_ASSET_BASE_URL ??
-      `http://127.0.0.1:${process.env.PORT ?? 3000}`;
-
-    const fromMime = () => {
-      const mt = String(generated.mimeType ?? '').toLowerCase();
-      if (mt.includes('webm')) return '.webm';
-      if (mt.includes('quicktime')) return '.mov';
-      return '.mp4';
-    };
-
-    const ext = extname(String(generated.uri ?? '').trim()) || fromMime();
-    const fileName = `${randomUUID()}${ext}`;
-    const relPath = join('sentence-videos', fileName);
-    const absDir = join(process.cwd(), 'storage', 'sentence-videos');
-    fs.mkdirSync(absDir, { recursive: true });
-    fs.writeFileSync(join(process.cwd(), 'storage', relPath), generated.buffer);
-
-    const normalized = relPath.split(sep).join('/');
-    return { videoUrl: `${baseUrl}/static/${normalized}` };
+    return this.persistGeneratedVideo(generated);
   }
 }
