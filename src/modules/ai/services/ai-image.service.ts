@@ -1264,7 +1264,7 @@ export class AiImageService {
                 dto.sentence.toLowerCase().includes('prophet')
                 ? noHumanFiguresRule
                 : '')]
-        console.log('Final system prompt for LLM:', [...base,...finalSystemPrompt].join('\n'));
+        console.log('Final system prompt for LLM:', [...base,...finalSystemPrompt].join('\n').trim());
         try {
           const promptMessages: LlmMessage[] =
             imageVariant === 'secondary' && continuityPrompt

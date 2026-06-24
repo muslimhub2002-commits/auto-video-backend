@@ -1277,7 +1277,7 @@ export class RenderVideosService implements OnModuleInit {
           join(jobDir, REMOTION_CHROMA_LEAK_SFX_REL),
         );
         this.safeCopyFile(
-          join(remotionAssetsDir, 'camera_click.mp3'),
+          join(remotionAssetsDir, 'camera_click_update.mp3'),
           join(jobDir, REMOTION_CAMERA_CLICK_SFX_REL),
         );
         this.safeCopyFile(
