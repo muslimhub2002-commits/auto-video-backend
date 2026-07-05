@@ -116,11 +116,11 @@ export class LlmRouter {
         model,
         ...(systemText
           ? {
-              systemInstruction: {
-                role: 'system',
-                parts: [{ text: systemText }],
-              },
-            }
+            systemInstruction: {
+              role: 'system',
+              parts: [{ text: systemText }],
+            },
+          }
           : {}),
       } as any);
 
@@ -167,7 +167,7 @@ export class LlmRouter {
           if (status === 404) {
             throw new Error(
               `Gemini model "${model}" is not available for this API key or does not support streaming. ` +
-                'Pick a different Gemini model (e.g. gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash).',
+              'Pick a different Gemini model (e.g. gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash).',
             );
           }
 
@@ -336,11 +336,11 @@ export class LlmRouter {
           model,
           ...(systemText
             ? {
-                systemInstruction: {
-                  role: 'system',
-                  parts: [{ text: systemText }],
-                },
-              }
+              systemInstruction: {
+                role: 'system',
+                parts: [{ text: systemText }],
+              },
+            }
             : {}),
         } as any);
 
@@ -364,7 +364,7 @@ export class LlmRouter {
             if (status === 404) {
               throw new Error(
                 `Gemini model "${model}" is not available for this API key or does not support generateContent. ` +
-                  'Pick a different Gemini model (e.g. gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash).',
+                'Pick a different Gemini model (e.g. gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash).',
               );
             }
 

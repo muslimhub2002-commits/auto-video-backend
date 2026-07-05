@@ -1142,7 +1142,7 @@ export class YoutubeService {
             publicStatsViewable,
             ...(publishAt ? { publishAt } : {}),
             // “Altered content” disclosure: No
-            containsSyntheticMedia: false,
+            containsSyntheticMedia: true,
           },
         },
         media: {
