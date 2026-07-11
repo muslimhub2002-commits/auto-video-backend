@@ -5,7 +5,7 @@ import type { TimelineScene } from '../types';
 
 type SceneMotionEffect = NonNullable<TimelineScene['imageMotionEffect']>;
 
-const DEFAULT_IMAGE_MOTION_SPEED = 1.2;
+const DEFAULT_IMAGE_MOTION_SPEED = 2;
 
 const clampNumber = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));

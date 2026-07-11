@@ -7,12 +7,14 @@ const DIRECT_GEMINI_IMAGE_MODELS = new Set([
   'gemini-2.5-flash-image',
   'gemini-3.1-flash-image-preview',
   'gemini-3-pro-image-preview',
+  'gemini-3.5-flash',
 ]);
 
 type GeminiImageModel =
   | 'gemini-2.5-flash-image'
   | 'gemini-3.1-flash-image-preview'
   | 'gemini-3-pro-image-preview'
+  | 'gemini-3.5-flash'
   | 'imagen-3'
   | 'imagen-4'
   | 'imagen-4-ultra';
@@ -95,7 +97,10 @@ export const generateWithImagen = async (params: {
       aspectRatio: params.aspectRatio,
     };
 
-    if (params.imageModel !== 'gemini-2.5-flash-image') {
+    if (
+      params.imageModel !== 'gemini-2.5-flash-image' &&
+      params.imageModel !== 'gemini-3.5-flash'
+    ) {
       imageConfig.imageSize = '1K';
     }
 

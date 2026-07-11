@@ -36,6 +36,7 @@ export class AiImageService {
     'gemini-2.5-flash-image',
     'gemini-3.1-flash-image-preview',
     'gemini-3-pro-image-preview',
+    'gemini-3.5-flash',
     'imagen-3',
     'imagen-4',
     'imagen-4-ultra',
@@ -1240,31 +1241,30 @@ export class AiImageService {
           );
         }
         const base = [
-          'ABSOLUTE RULE: The prompt must be 4 lines max with great detail' +
-          'You are a visual prompt engineer for image generation models.'
+          'ABSOLUTE RULE: The prompt must be 4 lines max with great detail.' +
+          'You are a visual prompt engineer for image generation models.' +
+          'The Image style must be dreamy with a an effect of magenta, orange or golden colors and lighting with motion blur.'
         ]
-        const finalSystemPrompt =
-
-          showNoHumanFiguresRule ? [`${noHumanFiguresRule}`,
-            'Your prompt Must symbolize the sentence through using objects or landscapes that indicates the feeling of the sentence for example if the sentence is about a person being sad, you can use a broken glass, if the sentence is about marriage you can use a wedding ring and so on. ',
-            'You can also use objects or animals that is mentioned inside the sentence to represent the sentence and the feeling of the sentence.']
-            :
-            ['Your prompt MUST visually express the exact sentence that is happening in the context of the script', 
-              'If there are more than one character or group of people you need to define what is the position of these character(s) or group of people related to each other(Looking at each other,Confronting,Fighting,etc...)', 
-              "Don't leave any important visual detail out, and be sure to include any important visual element that is implied by the sentence.", 
-              "Don't mention the characters names",
-              'Use reasoning to highlight the important objects and actions and stress on it in the prompt.',
-              AiImageService.NO_TEXT_PROMPT_SUFFIX ,
-              (frameBlock ? frameBlock + '\n' : '') ,
-              (secondaryVariantBlock
-                ? secondaryVariantBlock
-                : ''),
-              protectedCharactersRole,
-              (!referencedCharacterKeys.length &&
-                dto.sentence.toLowerCase().includes('prophet')
-                ? noHumanFiguresRule
-                : '')]
-        console.log('Final system prompt for LLM:', [...base,...finalSystemPrompt].join('\n').trim());
+        const finalSystemPrompt = showNoHumanFiguresRule ? [`${noHumanFiguresRule}`,
+          'Your prompt Must symbolize the sentence through using objects or landscapes that indicates the feeling of the sentence for example if the sentence is about a person being sad, you can use a broken glass, if the sentence is about marriage you can use a wedding ring and so on. ',
+          'You can also use objects or animals that is mentioned inside the sentence to represent the sentence and the feeling of the sentence.']
+          :
+          ['Your prompt MUST visually express the exact sentence that is happening in the context of the script',
+            'If there are more than one character or group of people you need to define what is the position of these character(s) or group of people related to each other(Looking at each other,Confronting,Fighting,etc...)',
+            referencedCharacterKeys.length ?
+              'All the characters must have emotions on their faces that reflects the feeling of the sentence and the context of the script.' :
+              '',
+            // "Don't leave any important visual detail out, and be sure to include any important visual element that is implied by the sentence.",
+            "Don't mention the characters names",
+            'Use reasoning to highlight the important objects and actions and stress on it in the prompt.',
+            AiImageService.NO_TEXT_PROMPT_SUFFIX,
+            (frameBlock ? frameBlock + '\n' : ''),
+            (secondaryVariantBlock
+              ? secondaryVariantBlock
+              : ''),
+            protectedCharactersRole,
+            (!referencedCharacterKeys.length ? noHumanFiguresRule : '')]
+        console.log('Final system prompt for LLM:', [...base, ...finalSystemPrompt].join('\n').trim());
         try {
           const promptMessages: LlmMessage[] =
             imageVariant === 'secondary' && continuityPrompt
@@ -1282,7 +1282,7 @@ export class AiImageService {
               : [
                 {
                   role: 'system',
-                  content: [...base,...finalSystemPrompt].join('\n').trim(),
+                  content: [...base, ...finalSystemPrompt].join('\n').trim(),
                 },
                 {
                   role: 'user',
@@ -1296,7 +1296,6 @@ export class AiImageService {
                       : '') +
                     (frameBlock ? `${frameBlock}\n\n` : '') +
                     `Sentence: "${dto.sentence}"\n` +
-                    `Desired style: ${style}.\n\n` +
                     'Important constraints:\n' +
                     'Do not depict women/females.\n' +
                     'Return only the final image prompt text, with these constraints already applied, and do not include any quotation marks.' +
@@ -1304,16 +1303,15 @@ export class AiImageService {
                 },
               ];
 
-          prompt =
-            (
-              await this.llm.completeText({
-                model: promptModel,
-                maxTokens: 250,
-                temperature: 0.8,
-                retries: 2,
-                messages: promptMessages,
-              })
-            )?.trim() || dto.sentence;
+          prompt = `${style}, ${(
+            await this.llm.completeText({
+              model: promptModel,
+              maxTokens: 250,
+              temperature: 0.8,
+              retries: 2,
+              messages: promptMessages,
+            })
+          )?.trim() || dto.sentence}`;
         } catch (error: any) {
           console.error(
             'Prompt generation failed after retries; falling back to sentence.',

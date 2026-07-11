@@ -95,7 +95,7 @@ const getBoolean = (value: unknown, fallback = false) => {
   return fallback;
 };
 
-const DEFAULT_IMAGE_MOTION_SPEED = 1.2;
+const DEFAULT_IMAGE_MOTION_SPEED = 2;
 
 const normalizeMotionSpeed = (value: unknown) =>
   clampNumber(getNumeric(value, DEFAULT_IMAGE_MOTION_SPEED), 0.5, 2.5);
@@ -530,7 +530,7 @@ export const Scene: React.FC<{
           scene.imageMotionSpeed,
         )
       : null;
-    const motionSpeed = resolvedMotion?.speed ?? 1;
+    const motionSpeed = resolvedMotion?.speed ?? 2;
     const motionEasing = Easing.inOut(Easing.cubic);
     const forwardMotionProgress =
       Math.max(0, elapsedSeconds / MOTION_CYCLE_DURATION_SECONDS) * motionSpeed;

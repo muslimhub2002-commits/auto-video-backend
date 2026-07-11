@@ -599,7 +599,7 @@ const normalizeTextAnimationSettings = (
     isShortVideo,
     sampleText,
   );
-  const resolvedPresetKey =
+  const resolvedPresetKey: TextAnimationEffect =
     resolveLegacyTextAnimationEffect(settings?.presetKey) ?? defaults.presetKey;
   const editMode = resolveTextAnimationEditMode(settings);
   const animatePerWord =

@@ -8,6 +8,10 @@ export class AiRuntimeService {
   public readonly openai: OpenAI | null;
   public readonly deepseek: OpenAI | null;
   public readonly grok: OpenAI | null;
+  public readonly nvidia: OpenAI | null;
+  // OpenAI-compatible client for Google's v1beta/openai endpoint
+  // Reserved for Gemini models that require the OpenAI-compat path.
+  public readonly geminiCompat: OpenAI | null;
   public readonly anthropic: Anthropic | null;
   public readonly llm: LlmRouter;
 
@@ -21,6 +25,7 @@ export class AiRuntimeService {
   public readonly grokApiKey?: string;
   public readonly klingApiKey?: string;
   public readonly klingSecretKey?: string;
+  public readonly nvidiaApiKey?: string;
 
   public readonly elevenApiKey?: string;
   public readonly elevenDefaultVoiceId: string;
@@ -37,6 +42,7 @@ export class AiRuntimeService {
     const klingSecretKey = process.env.KLING_SECRET_KEY;
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
+    const nvidiaKey = process.env.NVIDIA_API_KEY;
 
     this.geminiApiKey = (geminiKey || '').trim() || undefined;
     this.geminiTtsModel =
@@ -46,6 +52,7 @@ export class AiRuntimeService {
     this.grokApiKey = (grokKey || '').trim() || undefined;
     this.klingApiKey = (klingKey || '').trim() || undefined;
     this.klingSecretKey = (klingSecretKey || '').trim() || undefined;
+    this.nvidiaApiKey = (nvidiaKey || '').trim() || undefined;
 
     this.openai = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
     this.deepseek = deepseekKey
@@ -57,6 +64,20 @@ export class AiRuntimeService {
     this.grok = grokKey
       ? new OpenAI({ apiKey: grokKey, baseURL: 'https://api.x.ai/v1' })
       : null;
+    this.nvidia = nvidiaKey
+      ? new OpenAI({
+          apiKey: nvidiaKey,
+          baseURL: 'https://integrate.api.nvidia.com/v1',
+        })
+      : null;
+    // OpenAI-compatible client for Google's v1beta/openai endpoint.
+    // May be used for specific Gemini models that require the OpenAI-compat path.
+    this.geminiCompat = (geminiKey || '').trim()
+      ? new OpenAI({
+          apiKey: geminiKey!,
+          baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        })
+      : null;
     this.anthropic = anthropicKey
       ? new Anthropic({ apiKey: anthropicKey })
       : null;
@@ -67,10 +88,11 @@ export class AiRuntimeService {
       !this.grok &&
       !(klingKey || '').trim() &&
       !this.anthropic &&
-      !(geminiKey || '').trim()
+      !(geminiKey || '').trim() &&
+      !this.nvidia
     ) {
       throw new Error(
-        'Set OPENAI_API_KEY, DEEPSEEK_API_KEY, GROK_API_KEY, KLING_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY in the environment.',
+        'Set OPENAI_API_KEY, DEEPSEEK_API_KEY, GROK_API_KEY, KLING_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or NVIDIA_API_KEY in the environment.',
       );
     }
 
@@ -80,6 +102,8 @@ export class AiRuntimeService {
       grok: this.grok,
       anthropic: this.anthropic,
       geminiApiKey: geminiKey,
+      nvidia: this.nvidia,
+      geminiCompat: this.geminiCompat,
     });
 
     // Default text model is Anthropic-first when available. Otherwise, fall back to
@@ -101,12 +125,15 @@ export class AiRuntimeService {
       defaultMainModel;
 
     // Used for small classification tasks (cheaper/faster than the main model).
+    // gemini-3.5-flash is the preferred cheap model when GEMINI_API_KEY is available
+    // (free tier via generativelanguage.googleapis.com/v1beta — native SDK path).
     const defaultCheapModel = ((): string => {
+      if ((geminiKey ?? '').trim()) return 'gemini-3.5-flash';
       if ((openaiKey ?? '').trim()) return 'gpt-4.1-mini';
       if ((deepseekKey ?? '').trim()) return 'deepseek-chat';
       if ((grokKey ?? '').trim()) return 'grok-3-mini-latest';
       if ((anthropicKey ?? '').trim()) return 'claude-3-haiku-20240307';
-      if ((geminiKey ?? '').trim()) return 'gemini-1.5-flash';
+      if ((nvidiaKey ?? '').trim()) return 'minimaxai/minimax-m3';
       return 'gpt-4.1-mini';
     })();
 

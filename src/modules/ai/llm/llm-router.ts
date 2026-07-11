@@ -12,6 +12,10 @@ const isAnthropicModel = (model: string) => /^claude-/i.test(model || '');
 const isDeepseekModel = (model: string) => /^deepseek-/i.test(model || '');
 const isGeminiModel = (model: string) => /^gemini-/i.test(model || '');
 const isGrokModel = (model: string) => /^grok-/i.test(model || '');
+// NVIDIA NIM models use org/model-name format (e.g. minimaxai/minimax-m3)
+const isNvidiaModel = (model: string) => String(model || '').includes('/');
+// Gemini models that do not support the streaming API
+const NON_STREAMING_GEMINI_MODELS = new Set(['gemini-3.5-flash']);
 
 const prefersMaxCompletionTokens = (model: string): boolean => {
   const m = /^gpt-(\d+)/i.exec(String(model || '').trim());
@@ -90,6 +94,10 @@ export class LlmRouter {
       grok: OpenAI | null;
       anthropic: Anthropic | null;
       geminiApiKey?: string | null;
+      nvidia: OpenAI | null;
+      // OpenAI-compatible client for Google's v1beta/openai endpoint;
+      // used for non-streaming Gemini models like gemini-3-5-flash.
+      geminiCompat: OpenAI | null;
     },
   ) {
     const key = (deps.geminiApiKey ?? '').trim();
@@ -107,6 +115,18 @@ export class LlmRouter {
         throw new Error(
           'GEMINI_API_KEY is not set, but a Gemini model was requested.',
         );
+      }
+
+      // Some Gemini models do not support streaming; fall back to non-streaming.
+      if (NON_STREAMING_GEMINI_MODELS.has(model)) {
+        const full = await this.completeText({
+          model,
+          messages: params.messages,
+          temperature: params.temperature,
+          maxTokens,
+        });
+        if (full) yield full;
+        return;
       }
 
       const { systemText, contents } = toGeminiContents(params.messages);
@@ -255,6 +275,24 @@ export class LlmRouter {
         if (content) yield content;
       }
 
+      return;
+    }
+
+    // NVIDIA NIM models don't support streaming — use non-streaming completion and yield.
+    if (isNvidiaModel(model)) {
+      if (!this.deps.nvidia) {
+        throw new Error(
+          'NVIDIA_API_KEY is not set, but a NVIDIA NIM model was requested.',
+        );
+      }
+
+      const full = await this.completeText({
+        model,
+        messages: params.messages,
+        temperature: params.temperature,
+        maxTokens,
+      });
+      if (full) yield full;
       return;
     }
 
@@ -434,6 +472,23 @@ export class LlmRouter {
         return String(completion.choices?.[0]?.message?.content ?? '');
       }
 
+      if (isNvidiaModel(model)) {
+        if (!this.deps.nvidia) {
+          throw new Error(
+            'NVIDIA_API_KEY is not set, but a NVIDIA NIM model was requested.',
+          );
+        }
+
+        const completion = await this.deps.nvidia.chat.completions.create({
+          model,
+          messages: params.messages as any,
+          temperature: params.temperature,
+          max_tokens: maxTokens,
+        } as any);
+
+        return String(completion.choices?.[0]?.message?.content ?? '');
+      }
+
       if (!this.deps.openai) {
         throw new Error(
           'OPENAI_API_KEY is not set, but an OpenAI model was requested.',
@@ -549,6 +604,39 @@ export class LlmRouter {
     }
 
     if (isDeepseekModel(model)) {
+      const baseMessages = (params.messages || []).slice();
+
+      for (let attempt = 0; attempt <= retries; attempt += 1) {
+        const attemptMessages: LlmMessage[] = baseMessages.slice();
+
+        if (attempt > 0) {
+          attemptMessages.unshift({
+            role: 'system',
+            content:
+              'IMPORTANT: Your previous response was invalid JSON. ' +
+              'Return ONLY valid JSON. No prose, no markdown, no code fences.',
+          });
+        }
+
+        const text = await this.completeText({
+          model,
+          messages: attemptMessages,
+          temperature: params.temperature,
+          maxTokens: params.maxTokens ?? 2048,
+        });
+
+        const jsonText = tryExtractJson(text);
+        try {
+          return JSON.parse(jsonText) as T;
+        } catch (err) {
+          if (attempt >= retries) throw err;
+        }
+      }
+
+      throw new Error('Failed to produce valid JSON');
+    }
+
+    if (isNvidiaModel(model)) {
       const baseMessages = (params.messages || []).slice();
 
       for (let attempt = 0; attempt <= retries; attempt += 1) {

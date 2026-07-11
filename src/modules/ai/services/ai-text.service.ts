@@ -48,7 +48,7 @@ export class AiTextService {
   constructor(
     private readonly runtime: AiRuntimeService,
     private readonly webSearch: AiWebSearchService,
-  ) {}
+  ) { }
 
   private get llm() {
     return this.runtime.llm;
@@ -259,10 +259,10 @@ export class AiTextService {
 
     const normalized = Array.isArray(result.parsed.ideas)
       ? result.parsed.ideas
-          .map((idea) => ({
-            title: this.normalizeIdeaText(idea?.title),
-          }))
-          .filter((idea) => idea.title)
+        .map((idea) => ({
+          title: this.normalizeIdeaText(idea?.title),
+        }))
+        .filter((idea) => idea.title)
       : [];
 
     const deduped = this.dedupeScriptIdeas(normalized).slice(0, params.count);
@@ -357,7 +357,7 @@ export class AiTextService {
         return (
           'TECHNIQUE: The Dance (Context, Conflict)\n' +
           '- Make the story progress with constant movement using “but” / “therefore” turns (metaphorically).\n' +
-          '- Create an open loop early (a clear question/tension) and pay it off later.\n' +
+          '- Always Create open loops (a clear question/tension) and pay it off later.\n' +
           '- Avoid flat “and then” stacking; each beat must add conflict (BUT) or cause the next step (THEREFORE).'
         );
       case 'Loss Aversion':
@@ -1199,6 +1199,7 @@ export class AiTextService {
           'You are an expert video topic strategist for short-form and long-form narrated videos. ' +
           'Return ONLY valid JSON. No prose, no markdown, no code fences. ' +
           'Your job is to produce exactly five clearly distinct very creative script ideas that all stay within the selected subject but are not variations of the same topic. ' +
+          'The Ideas must be out of the box, unexpected,not obvious and adds value. ' +
           'Each idea must feel different in story, event, or hook. Avoid duplicates, near-duplicates, and simple wording changes.',
       },
       {
