@@ -15,6 +15,7 @@ import { generateWithOpenAi } from './ai-image/providers/openai';
 import { generateWithImagen } from './ai-image/providers/imagen';
 import { generateWithLeonardo } from './ai-image/providers/leonardo';
 import { generateWithGrokImagine } from './ai-image/providers/grok';
+import { generateWithKling } from './ai-image/providers/kling';
 import type {
   CharacterBible,
   CharacterGender,
@@ -31,6 +32,17 @@ export class AiImageService {
   ]);
 
   private static readonly GROK_IMAGE_MODELS = new Set(['grok-imagine-image']);
+
+  private static readonly KLING_IMAGE_MODELS = new Set([
+    'kling-v1',
+    'kling-v1-5',
+    'kling-v2',
+    'kling-v2-new',
+    'kling-v2-1',
+    'kling-3.0-omni',
+    'kling-v3',
+    'kling-image-o1',
+  ]);
 
   private static readonly GEMINI_IMAGE_MODELS = new Set([
     'gemini-2.5-flash-image',
@@ -107,6 +119,12 @@ export class AiImageService {
   }
   private get leonardoModelId() {
     return this.runtime.leonardoModelId;
+  }
+  private get klingApiKey() {
+    return this.runtime.klingApiKey;
+  }
+  private get klingSecretKey() {
+    return this.runtime.klingSecretKey;
   }
 
   private extractLeonardoPlatformModelCandidates(payload: unknown): any[] {
@@ -987,6 +1005,7 @@ export class AiImageService {
     modelslabModelId: string;
     isLeonardo: boolean;
     leonardoModelIdOverride: string;
+    isKling: boolean;
   } {
     const imageModelRaw = String(dto.imageModel ?? '')
       .trim()
@@ -1002,18 +1021,20 @@ export class AiImageService {
     const modelslabModelId = isModelsLab
       ? imageModel.slice('modelslab:'.length).trim()
       : '';
+    const isKling = AiImageService.KLING_IMAGE_MODELS.has(imageModel);
 
-    if (
-      !isLeonardo &&
-      !isModelsLab &&
-      !AiImageService.OPENAI_IMAGE_MODELS.has(imageModel) &&
-      !AiImageService.GROK_IMAGE_MODELS.has(imageModel) &&
-      !AiImageService.GEMINI_IMAGE_MODELS.has(imageModel)
-    ) {
-      throw new BadRequestException(
-        `Unsupported imageModel "${dto.imageModel}". Supported: leonardo, leonardo:<model_id>, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, gemini-2.5-flash-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, imagen-3, imagen-4, imagen-4-ultra, and modelslab:<model_id>.`,
-      );
-    }
+    // if (
+    //   !isLeonardo &&
+    //   !isModelsLab &&
+    //   !isKling &&
+    //   !AiImageService.OPENAI_IMAGE_MODELS.has(imageModel) &&
+    //   !AiImageService.GROK_IMAGE_MODELS.has(imageModel) &&
+    //   !AiImageService.GEMINI_IMAGE_MODELS.has(imageModel)
+    // ) {
+    //   throw new BadRequestException(
+    //     `Unsupported imageModel "${dto.imageModel}". Supported: leonardo, leonardo:<model_id>, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, gemini-2.5-flash-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, imagen-3, imagen-4, imagen-4-ultra, kling-3.0-omni, kling-o1, and modelslab:<model_id>.`,
+    //   );
+    // }
 
     return {
       imageModel,
@@ -1021,6 +1042,7 @@ export class AiImageService {
       modelslabModelId,
       isLeonardo,
       leonardoModelIdOverride,
+      isKling,
     };
   }
 
@@ -1241,7 +1263,6 @@ export class AiImageService {
           );
         }
         const base = [
-          'ABSOLUTE RULE: The prompt must be 4 lines max with great detail.' +
           'You are a visual prompt engineer for image generation models.' +
           'The Image style must be dreamy with a an effect of magenta, orange or golden colors and lighting with motion blur.'
         ]
@@ -1368,6 +1389,7 @@ export class AiImageService {
         isModelsLab,
         modelslabModelId,
         leonardoModelIdOverride,
+        isKling,
       } = this.validateAndNormalizeImageModel(dto);
 
       if (isModelsLab) {
@@ -1431,6 +1453,25 @@ export class AiImageService {
         const image = await generateWithImagen({
           geminiApiKey: this.geminiApiKey,
           imageModel: imageModel as any,
+          prompt,
+          aspectRatio,
+        });
+
+        return this.persistToCloudinary({
+          userId,
+          buffer: image.buffer,
+          base64: image.base64,
+          prompt,
+          style,
+          isShortForm,
+        });
+      }
+
+      if (isKling || AiImageService.KLING_IMAGE_MODELS.has(imageModel)) {
+        const image = await generateWithKling({
+          klingApiKey: this.klingApiKey,
+          klingSecretKey: this.klingSecretKey,
+          imageModel,
           prompt,
           aspectRatio,
         });

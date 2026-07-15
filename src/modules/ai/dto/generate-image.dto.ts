@@ -101,15 +101,15 @@ export class GenerateImageDto {
   // Supported: "leonardo", OpenAI ("gpt-image-1", "gpt-image-1-mini", "gpt-image-1.5"),
   // Gemini image models ("gemini-2.5-flash-image", "gemini-3.1-flash-image-preview",
   // "gemini-3-pro-image-preview") and legacy Imagen aliases ("imagen-3", "imagen-4",
-  // "imagen-4-ultra"), plus ModelsLab stable diffusion community models via the prefix:
-  // "modelslab:<model_id>" (e.g. "modelslab:sd-xl-10-base").
+  // "imagen-4-ultra"), Kling image models ("kling-3.0-omni", "kling-o1"), plus ModelsLab
+  // stable diffusion community models via the prefix: "modelslab:<model_id>" (e.g. "modelslab:sd-xl-10-base").
   @IsString()
   @IsOptional()
   @Matches(
-    /^(leonardo(?::[a-z0-9][a-z0-9-]{0,63})?|grok-imagine-image|gpt-image-1|gpt-image-1-mini|gpt-image-1\.5|gemini-2\.5-flash-image|gemini-3\.5-flash-image|gemini-3\.1-flash-image-preview|gemini-3-pro-image-preview|imagen-3|imagen-4|imagen-4-ultra|modelslab:[a-z0-9][a-z0-9-_]{0,40})$/,
+    /^(leonardo(?::[a-z0-9][a-z0-9-]{0,63})?|grok-imagine-image|gpt-image-1|gpt-image-1-mini|gpt-image-1\.5|gemini-2\.5-flash-image|gemini-3\.5-flash-image|gemini-3\.1-flash-image-preview|gemini-3-pro-image-preview|imagen-3|imagen-4|imagen-4-ultra|kling-[a-z0-9.-]+|modelslab:[a-z0-9][a-z0-9-_]{0,40})$/,
     {
       message:
-        'imageModel must be one of: leonardo, leonardo:<model_id>, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, gemini-2.5-flash-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, imagen-3, imagen-4, imagen-4-ultra, or modelslab:<model_id>',
+        'imageModel must be one of: leonardo, leonardo:<model_id>, grok-imagine-image, gpt-image-1, gpt-image-1-mini, gpt-image-1.5, gemini-2.5-flash-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, imagen-3, imagen-4, imagen-4-ultra, kling-3.0-omni, kling-o1, or modelslab:<model_id>',
     },
   )
   @MaxLength(80)
