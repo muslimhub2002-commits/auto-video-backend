@@ -105,7 +105,7 @@ export class Script {
   @Column({ type: 'jsonb', nullable: true })
   voice_generation_config: {
     mode: 'auto' | 'perSentence';
-    provider: 'google' | 'elevenlabs' | null;
+    provider: 'google' | 'elevenlabs' | 'minimax' | null;
     providerVoiceId: string | null;
     elevenLabsAutoGenerationStrategy?: 'oneTake' | 'chunks' | null;
     elevenLabsModel?: 'eleven_multilingual_v2' | 'eleven_v3' | null;

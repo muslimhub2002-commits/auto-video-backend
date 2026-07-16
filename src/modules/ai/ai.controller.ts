@@ -52,7 +52,7 @@ type UploadedImageFile = {
 
 @Controller('ai')
 export class AiController {
-  constructor(private readonly aiService: AiService) {}
+  constructor(private readonly aiService: AiService) { }
 
   // Debug helper: list available Google models for the configured GEMINI_API_KEY.
   // Useful for discovering Imagen model ids per account/region.
@@ -394,19 +394,21 @@ export class AiController {
       Array.isArray(body.sentences) && body.sentences.length > 0;
     const result = hasSentences
       ? await this.aiService.generateVoiceForSentences(
-          body.sentences!,
-          body.voiceId,
-          body.styleInstructions,
-          body.elevenLabsSettings,
-          body.elevenLabsModel,
-        )
+        body.sentences!,
+        body.voiceId,
+        body.styleInstructions,
+        body.elevenLabsSettings,
+        body.elevenLabsModel,
+        body.minimaxSettings,
+      )
       : await this.aiService.generateVoiceForScript(
-          body.script,
-          body.voiceId,
-          body.styleInstructions,
-          body.elevenLabsSettings,
-          body.elevenLabsModel,
-        );
+        body.script,
+        body.voiceId,
+        body.styleInstructions,
+        body.elevenLabsSettings,
+        body.elevenLabsModel,
+        body.minimaxSettings,
+      );
 
     res.setHeader('Content-Type', result.mimeType);
     res.setHeader(

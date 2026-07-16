@@ -117,7 +117,7 @@ type NormalizedVoiceOverChunk = {
 
 type NormalizedVoiceGenerationConfig = {
   mode: 'auto' | 'perSentence';
-  provider: 'google' | 'elevenlabs' | null;
+  provider: 'google' | 'elevenlabs' | 'minimax' | null;
   providerVoiceId: string | null;
   elevenLabsAutoGenerationStrategy: 'oneTake' | 'chunks' | null;
   elevenLabsModel: 'eleven_multilingual_v2' | 'eleven_v3' | null;
@@ -551,19 +551,19 @@ export class ScriptsService implements OnModuleInit {
       recentActivity: {
         latestScript: latestScriptRaw
           ? {
-              id: latestScriptRaw.id,
-              title: latestScriptRaw.title,
-              createdAt: new Date(latestScriptRaw.created_at).toISOString(),
-              updatedAt: new Date(latestScriptRaw.updated_at).toISOString(),
-            }
+            id: latestScriptRaw.id,
+            title: latestScriptRaw.title,
+            createdAt: new Date(latestScriptRaw.created_at).toISOString(),
+            updatedAt: new Date(latestScriptRaw.updated_at).toISOString(),
+          }
           : null,
         latestPublishedVideo: latestPublishedVideoRaw
           ? {
-              id: latestPublishedVideoRaw.id,
-              title: latestPublishedVideoRaw.title,
-              updatedAt: new Date(latestPublishedVideoRaw.updated_at).toISOString(),
-              publishedPlatforms: this.getPublishedPlatforms(latestPublishedVideoRaw),
-            }
+            id: latestPublishedVideoRaw.id,
+            title: latestPublishedVideoRaw.title,
+            updatedAt: new Date(latestPublishedVideoRaw.updated_at).toISOString(),
+            publishedPlatforms: this.getPublishedPlatforms(latestPublishedVideoRaw),
+          }
           : null,
       },
     };
@@ -585,8 +585,8 @@ export class ScriptsService implements OnModuleInit {
         const rawIndex = this.normalizeOptionalNumber(item?.index);
         const sentences = Array.isArray(item?.sentences)
           ? item.sentences
-              .map((sentence: unknown) => String(sentence ?? '').trim())
-              .filter(Boolean)
+            .map((sentence: unknown) => String(sentence ?? '').trim())
+            .filter(Boolean)
           : [];
 
         return {
@@ -630,7 +630,7 @@ export class ScriptsService implements OnModuleInit {
     const mode = (value as any).mode === 'perSentence' ? 'perSentence' : 'auto';
     const providerRaw = String((value as any).provider ?? '').trim();
     const provider =
-      providerRaw === 'google' || providerRaw === 'elevenlabs'
+      providerRaw === 'google' || providerRaw === 'elevenlabs' || providerRaw === 'minimax'
         ? providerRaw
         : null;
 
@@ -731,7 +731,7 @@ export class ScriptsService implements OnModuleInit {
     @InjectRepository(ScriptTranslationGroup)
     private readonly scriptTranslationGroupRepository: Repository<ScriptTranslationGroup>,
     private readonly aiService: AiService,
-  ) {}
+  ) { }
 
   private normalizeSentenceSoundEffectTimingMode(
     value: unknown,
@@ -812,16 +812,16 @@ export class ScriptsService implements OnModuleInit {
           volumeRaw === null || volumeRaw === undefined
             ? null
             : (() => {
-                const v = Number(volumeRaw);
-                if (!Number.isFinite(v)) return null;
-                return Math.max(0, Math.min(300, Math.round(v)));
-              })();
+              const v = Number(volumeRaw);
+              if (!Number.isFinite(v)) return null;
+              return Math.max(0, Math.min(300, Math.round(v)));
+            })();
         const timingMode = this.normalizeSentenceSoundEffectTimingMode(
           item?.timing_mode,
         );
         const audioSettingsOverride =
           item?.audio_settings_override &&
-          typeof item.audio_settings_override === 'object'
+            typeof item.audio_settings_override === 'object'
             ? normalizeSoundEffectAudioSettings(item.audio_settings_override)
             : null;
 
@@ -904,14 +904,14 @@ export class ScriptsService implements OnModuleInit {
           ),
           audio_settings_override:
             item.audio_settings_override &&
-            typeof item.audio_settings_override === 'object' &&
-            !Array.isArray(item.audio_settings_override)
+              typeof item.audio_settings_override === 'object' &&
+              !Array.isArray(item.audio_settings_override)
               ? normalizeSoundEffectAudioSettings(item.audio_settings_override)
               : null,
           default_audio_settings:
             item.default_audio_settings &&
-            typeof item.default_audio_settings === 'object' &&
-            !Array.isArray(item.default_audio_settings)
+              typeof item.default_audio_settings === 'object' &&
+              !Array.isArray(item.default_audio_settings)
               ? normalizeSoundEffectAudioSettings(item.default_audio_settings)
               : null,
           duration_seconds:
@@ -985,26 +985,26 @@ export class ScriptsService implements OnModuleInit {
           volume_percent:
             requestedVolumePercent === null
               ? Math.max(
-                  0,
-                  Math.min(
-                    300,
-                    Number(soundEffect.volume_percent ?? 100) || 100,
-                  ),
-                )
+                0,
+                Math.min(
+                  300,
+                  Number(soundEffect.volume_percent ?? 100) || 100,
+                ),
+              )
               : Math.max(0, Math.min(300, requestedVolumePercent)),
           timing_mode: this.normalizeSentenceSoundEffectTimingMode(
             item.timing_mode,
           ),
           audio_settings_override:
             item.audio_settings_override &&
-            typeof item.audio_settings_override === 'object' &&
-            !Array.isArray(item.audio_settings_override)
+              typeof item.audio_settings_override === 'object' &&
+              !Array.isArray(item.audio_settings_override)
               ? normalizeSoundEffectAudioSettings(item.audio_settings_override)
               : null,
           default_audio_settings: defaultAudioSettings,
           duration_seconds:
             typeof soundEffect.duration_seconds === 'number' &&
-            Number.isFinite(soundEffect.duration_seconds)
+              Number.isFinite(soundEffect.duration_seconds)
               ? Math.max(0, soundEffect.duration_seconds)
               : null,
         },
@@ -1074,12 +1074,12 @@ export class ScriptsService implements OnModuleInit {
         };
       })
       .filter(Boolean) as Array<{
-      sound_effect_id: string;
-      title?: string;
-      url?: string;
-      delay_seconds: number;
-      volume_percent: number;
-    }>;
+        sound_effect_id: string;
+        title?: string;
+        url?: string;
+        delay_seconds: number;
+        volume_percent: number;
+      }>;
 
     return normalized.length > 0 ? normalized : null;
   }
@@ -1267,8 +1267,8 @@ export class ScriptsService implements OnModuleInit {
       const hasSentenceSoundEffectAudioSettingsOverride =
         sentenceSoundEffectsTableExists
           ? await this.sentenceSoundEffectsColumnExists(
-              'audio_settings_override',
-            )
+            'audio_settings_override',
+          )
           : true;
 
       if (
@@ -1340,8 +1340,8 @@ export class ScriptsService implements OnModuleInit {
       const finalHasSentenceSoundEffectAudioSettingsOverride =
         finalSentenceSoundEffectsTableExists
           ? await this.sentenceSoundEffectsColumnExists(
-              'audio_settings_override',
-            )
+            'audio_settings_override',
+          )
           : true;
 
       if (
@@ -1365,8 +1365,8 @@ export class ScriptsService implements OnModuleInit {
       ) {
         throw new InternalServerErrorException(
           'Database schema is missing required columns on `scripts`/`sentences` (expected: "isShortScript", shorts_scripts, youtube_url, facebook_url, instagram_url, tiktok_url, locations, language, and sentences.character_keys/location_key/forced_location_key). ' +
-            'This also includes scripts.voice_over_chunks and scripts.subject_content as TEXT. ' +
-            'Ensure your DB user has ALTER permissions, or apply the schema update SQL in `ScriptsService.ensureScriptsSchema()`.',
+          'This also includes scripts.voice_over_chunks and scripts.subject_content as TEXT. ' +
+          'Ensure your DB user has ALTER permissions, or apply the schema update SQL in `ScriptsService.ensureScriptsSchema()`.',
         );
       }
 
@@ -2250,7 +2250,7 @@ export class ScriptsService implements OnModuleInit {
                 isSuspense,
                 forced_character_keys:
                   Array.isArray(s.forced_character_keys) &&
-                  s.forced_character_keys.length > 0
+                    s.forced_character_keys.length > 0
                     ? s.forced_character_keys
                     : null,
                 character_keys:
@@ -2494,10 +2494,10 @@ export class ScriptsService implements OnModuleInit {
       : (endFromUpload ??
         (endUrl
           ? await this.downloadUrlToBuffer({
-              url: endUrl,
-              maxBytes: 12 * 1024 * 1024,
-              label: 'end frame image',
-            })
+            url: endUrl,
+            maxBytes: 12 * 1024 * 1024,
+            label: 'end frame image',
+          })
           : undefined));
 
     const generated = await this.aiService.generateVideoFromFrames({
@@ -2740,9 +2740,9 @@ export class ScriptsService implements OnModuleInit {
         ? undefined
         : cleanedReferenceIds.length > 0
           ? await this.scriptRepository.find({
-              where: { id: In(cleanedReferenceIds), user_id: userId },
-              select: { id: true, title: true, script: true, user_id: true },
-            })
+            where: { id: In(cleanedReferenceIds), user_id: userId },
+            select: { id: true, title: true, script: true, user_id: true },
+          })
           : [];
 
     if (
@@ -2928,7 +2928,7 @@ export class ScriptsService implements OnModuleInit {
             isSuspense,
             forced_character_keys:
               Array.isArray(s.forced_character_keys) &&
-              s.forced_character_keys.length > 0
+                s.forced_character_keys.length > 0
                 ? s.forced_character_keys
                 : null,
             character_keys:
@@ -3112,7 +3112,7 @@ export class ScriptsService implements OnModuleInit {
           isSuspense,
           forced_character_keys:
             Array.isArray(s.forced_character_keys) &&
-            s.forced_character_keys.length > 0
+              s.forced_character_keys.length > 0
               ? s.forced_character_keys
               : null,
           character_keys:
@@ -3233,7 +3233,7 @@ export class ScriptsService implements OnModuleInit {
       baseQb.andWhere(
         "(COALESCE(script.title, '') ILIKE :q OR COALESCE(script.script, '') ILIKE :q)",
         {
-        q: `%${query}%`,
+          q: `%${query}%`,
         },
       );
     }
@@ -3365,9 +3365,9 @@ export class ScriptsService implements OnModuleInit {
         voice:
           s.voice_id && voiceUrl
             ? {
-                id: s.voice_id,
-                voice: voiceUrl,
-              }
+              id: s.voice_id,
+              voice: voiceUrl,
+            }
             : null,
         sentences_count: counts.sentences_count,
         images_count: counts.images_count,
@@ -3639,8 +3639,8 @@ export class ScriptsService implements OnModuleInit {
 
     const shortIds = Array.isArray((script as any).shorts_scripts)
       ? ((script as any).shorts_scripts as string[])
-          .map((s) => String(s ?? '').trim())
-          .filter(Boolean)
+        .map((s) => String(s ?? '').trim())
+        .filter(Boolean)
       : [];
 
     if (shortIds.length > 0) {
@@ -3900,7 +3900,7 @@ export class ScriptsService implements OnModuleInit {
             isSuspense,
             forced_character_keys:
               Array.isArray(s.forced_character_keys) &&
-              s.forced_character_keys.length > 0
+                s.forced_character_keys.length > 0
                 ? s.forced_character_keys
                 : null,
             character_keys:

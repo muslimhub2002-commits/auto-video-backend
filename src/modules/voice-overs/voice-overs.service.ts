@@ -18,7 +18,7 @@ import { AiService } from '../ai/ai.service';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import { UploadsService } from '../uploads/uploads.service';
 
-type VoiceProvider = 'elevenlabs' | 'google';
+type VoiceProvider = 'elevenlabs' | 'google' | 'minimax';
 
 interface ElevenLabsVoiceSample {
   sample_id: string;
@@ -112,7 +112,7 @@ export class VoiceOversService implements OnModuleInit {
     private readonly uploadsService: UploadsService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
   async onModuleInit(): Promise<void> {
     if (!shouldRunStartupTasks()) {
@@ -238,15 +238,15 @@ export class VoiceOversService implements OnModuleInit {
     return {
       ...payload,
       hash: this.buildVoiceHash({
-      provider: payload.provider!,
-      voice_id: payload.voice_id!,
-      name: payload.name!,
-      description: payload.description ?? null,
-      category: payload.category ?? null,
-      gender: payload.gender ?? null,
-      accent: payload.accent ?? null,
-      descriptive: payload.descriptive ?? null,
-      use_case: payload.use_case ?? null,
+        provider: payload.provider!,
+        voice_id: payload.voice_id!,
+        name: payload.name!,
+        description: payload.description ?? null,
+        category: payload.category ?? null,
+        gender: payload.gender ?? null,
+        accent: payload.accent ?? null,
+        descriptive: payload.descriptive ?? null,
+        use_case: payload.use_case ?? null,
       }),
     };
   }
@@ -303,10 +303,10 @@ export class VoiceOversService implements OnModuleInit {
     const legacy = existing
       ? null
       : await this.findVoiceByCandidates({
-          user_id: null,
-          candidates,
-          provider: params.provider,
-        });
+        user_id: null,
+        candidates,
+        provider: params.provider,
+      });
 
     const payload = this.buildVoicePayload({
       user_id: params.user_id,
@@ -443,7 +443,7 @@ export class VoiceOversService implements OnModuleInit {
     const raw = String(voiceId ?? '').trim();
     const candidates = raw.includes(':')
       ? [raw]
-      : [raw, `google:${raw}`, `elevenlabs:${raw}`];
+      : [raw, `google:${raw}`, `elevenlabs:${raw}`, `minimax:${raw}`];
 
     const voice = await this.ensureUserVoiceByCandidates({
       user_id,
@@ -496,6 +496,7 @@ export class VoiceOversService implements OnModuleInit {
       .trim()
       .toLowerCase();
     if (value === 'elevenlabs') return 'elevenlabs';
+    if (value === 'minimax') return 'minimax';
     if (value === 'google' || value === 'ai-studio' || value === 'aistudio') {
       return 'google';
     }
@@ -601,6 +602,11 @@ export class VoiceOversService implements OnModuleInit {
       await this.syncAllFromGoogleTts(user_id);
       return;
     }
+
+    if (provider === 'minimax') {
+      await this.syncAllFromMinimax(user_id);
+      return;
+    }
   }
 
   async syncAll(params?: {
@@ -612,6 +618,9 @@ export class VoiceOversService implements OnModuleInit {
     const provider = this.normalizeProvider(params?.provider);
     if (provider === 'elevenlabs') {
       return this.syncAllFromElevenLabs(params!.user_id);
+    }
+    if (provider === 'minimax') {
+      return this.syncAllFromMinimax(params!.user_id);
     }
     return this.syncAllFromGoogleTts(params!.user_id);
   }
@@ -686,6 +695,91 @@ export class VoiceOversService implements OnModuleInit {
     }
 
     pageToken = data.next_page_token ?? null;
+
+    return { imported, updated };
+  }
+
+  async syncAllFromMinimax(
+    user_id: string,
+  ): Promise<{ imported: number; updated: number }> {
+    await this.ensureSchema();
+
+    const apiKey = process.env.MINIMAX_API_KEY;
+    if (!apiKey) {
+      this.logger.error('MINIMAX_API_KEY is not set');
+      throw new Error('MINIMAX_API_KEY is not configured');
+    }
+
+    let imported = 0;
+    let updated = 0;
+
+    const response = await fetch('https://api.minimax.io/v1/get_voice', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ voice_type: 'all' }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      this.logger.error(
+        `Failed to fetch MiniMax voices: ${response.status} ${response.statusText} - ${text}`,
+      );
+      throw new Error('Failed to fetch MiniMax voices');
+    }
+
+    const data = await response.json();
+    const baseResp = data?.base_resp;
+    if (baseResp?.status_code !== 0) {
+      this.logger.error(
+        `MiniMax voice list API error: ${baseResp?.status_code} ${baseResp?.status_msg}`,
+      );
+      throw new Error('MiniMax voice list API returned an error');
+    }
+
+    const allVoices: Array<{
+      voice_id: string;
+      voice_name: string;
+      description: string[];
+      created_time?: string;
+    }> = [
+        ...(Array.isArray(data.system_voice) ? data.system_voice : []),
+        ...(Array.isArray(data.voice_cloning) ? data.voice_cloning : []),
+        ...(Array.isArray(data.voice_generation) ? data.voice_generation : []),
+      ];
+
+    for (const voice of allVoices) {
+      const provider: VoiceProvider = 'minimax';
+      const rawId = String(voice.voice_id ?? '').trim();
+      if (!rawId) continue;
+
+      const descriptionText =
+        Array.isArray(voice.description) && voice.description.length > 0
+          ? voice.description[0]
+          : null;
+
+      const result = await this.upsertUserVoice({
+        user_id,
+        provider,
+        rawId,
+        name: String(voice.voice_name ?? '').trim() || rawId,
+        preview_url: null,
+        description: descriptionText,
+        category: null,
+        gender: null,
+        accent: null,
+        descriptive: null,
+        use_case: descriptionText,
+      });
+
+      if (result.outcome === 'imported') {
+        imported += 1;
+      } else if (result.outcome === 'updated') {
+        updated += 1;
+      }
+    }
 
     return { imported, updated };
   }
@@ -841,6 +935,117 @@ export class VoiceOversService implements OnModuleInit {
     return result.row;
   }
 
+  async importOneFromMinimax(
+    user_id: string,
+    voiceId: string,
+  ): Promise<VoiceOver> {
+    await this.ensureSchema();
+
+    const provider: VoiceProvider = 'minimax';
+    const apiKey = process.env.MINIMAX_API_KEY;
+    if (!apiKey) {
+      throw new InternalServerErrorException(
+        'MINIMAX_API_KEY is not configured on the server',
+      );
+    }
+
+    const rawInput = String(voiceId ?? '').trim();
+    if (!rawInput) {
+      throw new BadRequestException('voiceId is required');
+    }
+
+    const rawId = this.stripNamespace(provider, rawInput);
+    if (!rawId) {
+      throw new BadRequestException('voiceId is required');
+    }
+
+    // Fetch all voices and find the matching one.
+    const response = await fetch('https://api.minimax.io/v1/get_voice', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ voice_type: 'all' }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      this.logger.error(
+        `Failed to fetch MiniMax voices for import: ${response.status} ${response.statusText} - ${text}`,
+      );
+
+      if (response.status === 401 || response.status === 403) {
+        throw new UnauthorizedException(
+          'Unauthorized to call MiniMax API. Check MINIMAX_API_KEY.',
+        );
+      }
+
+      throw new InternalServerErrorException(
+        'Failed to fetch MiniMax voices',
+      );
+    }
+
+    const data = await response.json();
+    const baseResp = data?.base_resp;
+    if (baseResp?.status_code !== 0) {
+      throw new InternalServerErrorException(
+        `MiniMax voice list API error: ${baseResp?.status_msg || 'Unknown error'}`,
+      );
+    }
+
+    const allVoices: Array<{
+      voice_id: string;
+      voice_name: string;
+      description: string[];
+      created_time?: string;
+    }> = [
+        ...(Array.isArray(data.system_voice) ? data.system_voice : []),
+        ...(Array.isArray(data.voice_cloning) ? data.voice_cloning : []),
+        ...(Array.isArray(data.voice_generation) ? data.voice_generation : []),
+      ];
+
+    const voice = allVoices.find(
+      (v) => String(v.voice_id ?? '').trim() === rawId,
+    );
+
+    if (!voice) {
+      throw new NotFoundException(
+        `MiniMax voice not found: ${rawId}. Make sure the voiceId is correct and accessible with your API key.`,
+      );
+    }
+
+    const resolvedRawId = String(voice.voice_id ?? rawId).trim();
+    if (!resolvedRawId) {
+      throw new InternalServerErrorException(
+        'MiniMax response missing voice_id',
+      );
+    }
+
+    const descriptionText =
+      Array.isArray(voice.description) && voice.description.length > 0
+        ? voice.description[0]
+        : null;
+
+    const result = await this.upsertUserVoice({
+      user_id,
+      provider,
+      rawId: resolvedRawId,
+      name:
+        String(voice.voice_name ?? '').trim() ||
+        `minimax:${resolvedRawId}`,
+      preview_url: null,
+      description: descriptionText,
+      category: null,
+      gender: null,
+      accent: null,
+      descriptive: null,
+      use_case: descriptionText,
+    });
+
+    return result.row;
+  }
+
   async syncAllFromGoogleTts(
     user_id: string,
   ): Promise<{ imported: number; updated: number }> {
@@ -920,6 +1125,7 @@ export class VoiceOversService implements OnModuleInit {
       id,
       this.namespacedVoiceId('google', id),
       this.namespacedVoiceId('elevenlabs', id),
+      this.namespacedVoiceId('minimax', id),
     ].filter(Boolean);
 
     const target = await this.ensureUserVoiceByCandidates({
@@ -931,16 +1137,11 @@ export class VoiceOversService implements OnModuleInit {
       throw new NotFoundException('Voice not found');
     }
 
-    await this.voiceOverRepository.manager.transaction(async (manager) => {
-      const repo = manager.getRepository(VoiceOver);
-
-      // Use TypeORM metadata-aware updates so column naming/quoting works in Postgres
-      await repo.update(
-        { user_id, provider: target.provider, isFavorite: true },
-        { isFavorite: false },
-      );
-      await repo.update({ id: target.id, user_id }, { isFavorite: true });
-    });
+    // Toggle: flip isFavorite for this voice only
+    await this.voiceOverRepository.update(
+      { id: target.id, user_id },
+      { isFavorite: !target.isFavorite },
+    );
 
     const updated = await this.voiceOverRepository.findOne({
       where: { id: target.id, user_id },

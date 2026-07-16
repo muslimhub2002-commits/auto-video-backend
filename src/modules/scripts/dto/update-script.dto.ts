@@ -468,9 +468,9 @@ class VoiceGenerationConfigInput {
   @IsOptional()
   mode?: 'auto' | 'perSentence';
 
-  @IsIn(['google', 'elevenlabs'])
+  @IsIn(['google', 'elevenlabs', 'minimax'])
   @IsOptional()
-  provider?: 'google' | 'elevenlabs' | null;
+  provider?: 'google' | 'elevenlabs' | 'minimax' | null;
 
   @IsString()
   @IsOptional()

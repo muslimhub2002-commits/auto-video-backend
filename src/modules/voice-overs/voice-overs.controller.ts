@@ -17,10 +17,11 @@ import { VoiceOversService } from './voice-overs.service';
 import { VoiceOver } from './entities/voice-over.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ImportElevenLabsVoiceDto } from './dto/import-elevenlabs-voice.dto';
+import { ImportMinimaxVoiceDto } from './dto/import-minimax-voice.dto';
 
 @Controller('voice-overs')
 export class VoiceOversController {
-  constructor(private readonly voiceOversService: VoiceOversService) {}
+  constructor(private readonly voiceOversService: VoiceOversService) { }
 
   @UseGuards(JwtAuthGuard)
   @Get()
@@ -64,6 +65,21 @@ export class VoiceOversController {
     }
 
     return this.voiceOversService.importOneFromElevenLabs(user_id, body.voiceId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('minimax/import')
+  @HttpCode(HttpStatus.OK)
+  async importMinimaxVoice(
+    @Req() req: Request,
+    @Body() body: ImportMinimaxVoiceDto,
+  ): Promise<VoiceOver> {
+    const user_id = (req as any).user?.id;
+    if (!user_id) {
+      throw new UnauthorizedException('User not found in request');
+    }
+
+    return this.voiceOversService.importOneFromMinimax(user_id, body.voiceId);
   }
 
   @Patch('favorite/:voiceId')

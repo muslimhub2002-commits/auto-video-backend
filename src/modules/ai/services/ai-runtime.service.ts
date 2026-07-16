@@ -31,6 +31,10 @@ export class AiRuntimeService {
   public readonly elevenDefaultVoiceId: string;
   public readonly googleTtsDefaultVoiceName?: string;
 
+  public readonly minimaxApiKey?: string;
+  public readonly minimaxDefaultVoiceId?: string;
+  public readonly minimaxTtsModel: string;
+
   public readonly leonardoApiKey?: string;
   public readonly leonardoModelId?: string;
 
@@ -57,26 +61,26 @@ export class AiRuntimeService {
     this.openai = openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
     this.deepseek = deepseekKey
       ? new OpenAI({
-          apiKey: deepseekKey,
-          baseURL: 'https://api.deepseek.com/v1',
-        })
+        apiKey: deepseekKey,
+        baseURL: 'https://api.deepseek.com/v1',
+      })
       : null;
     this.grok = grokKey
       ? new OpenAI({ apiKey: grokKey, baseURL: 'https://api.x.ai/v1' })
       : null;
     this.nvidia = nvidiaKey
       ? new OpenAI({
-          apiKey: nvidiaKey,
-          baseURL: 'https://integrate.api.nvidia.com/v1',
-        })
+        apiKey: nvidiaKey,
+        baseURL: 'https://integrate.api.nvidia.com/v1',
+      })
       : null;
     // OpenAI-compatible client for Google's v1beta/openai endpoint.
     // May be used for specific Gemini models that require the OpenAI-compat path.
     this.geminiCompat = (geminiKey || '').trim()
       ? new OpenAI({
-          apiKey: geminiKey!,
-          baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-        })
+        apiKey: geminiKey!,
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      })
       : null;
     this.anthropic = anthropicKey
       ? new Anthropic({ apiKey: anthropicKey })
@@ -149,6 +153,14 @@ export class AiRuntimeService {
     this.elevenApiKey = process.env.ELEVENLABS_API_KEY;
     this.elevenDefaultVoiceId =
       process.env.ELEVENLABS_VOICE_ID || 'BtWabtumIemAotTjP5sk';
+
+    // MiniMax TTS
+    this.minimaxApiKey =
+      (process.env.MINIMAX_API_KEY || '').trim() || undefined;
+    this.minimaxDefaultVoiceId =
+      process.env.MINIMAX_DEFAULT_VOICE_ID?.trim() || undefined;
+    this.minimaxTtsModel =
+      String(process.env.MINIMAX_TTS_MODEL ?? '').trim() || 'speech-2.8-hd';
 
     // AI Studio voices (Gemini TTS)
     this.googleTtsDefaultVoiceName = process.env.GOOGLE_TTS_VOICE_NAME;

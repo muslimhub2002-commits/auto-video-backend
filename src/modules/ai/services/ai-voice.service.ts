@@ -12,8 +12,15 @@ import { AiRuntimeService } from './ai-runtime.service';
 import { withTimeout } from '../../render-videos/utils/promise.utils';
 import { runFfmpeg } from '../../../common/runtime/ffmpeg.utils';
 
-type VoiceProvider = 'google' | 'elevenlabs';
+type VoiceProvider = 'google' | 'elevenlabs' | 'minimax';
 type ElevenLabsModel = 'eleven_multilingual_v2' | 'eleven_v3';
+
+type MinimaxVoiceSettings = {
+  speed?: number;
+  vol?: number;
+  pitch?: number;
+  emotion?: string;
+};
 
 type ElevenLabsVoiceSettings = {
   stability?: number;
@@ -43,7 +50,7 @@ const ELEVENLABS_DEFAULT_VOICE_SETTINGS = {
 export class AiVoiceService {
   private readonly narrationWpm = 150;
 
-  constructor(private readonly runtime: AiRuntimeService) {}
+  constructor(private readonly runtime: AiRuntimeService) { }
 
   private estimateScriptSeconds(value: string): number {
     const wordCount = String(value ?? '')
@@ -54,13 +61,16 @@ export class AiVoiceService {
   }
 
   private getProviderTimeoutMs(provider: VoiceProvider): number {
-    const raw =
-      provider === 'google'
-        ? process.env.GEMINI_TTS_TIMEOUT_MS
-        : process.env.ELEVENLABS_TTS_TIMEOUT_MS;
-    const fallback = provider === 'google' ? 240_000 : 180_000;
-    const value = Number(raw ?? fallback);
-    return Number.isFinite(value) && value > 0 ? value : fallback;
+    if (provider === 'google') {
+      const value = Number(process.env.GEMINI_TTS_TIMEOUT_MS ?? 240_000);
+      return Number.isFinite(value) && value > 0 ? value : 240_000;
+    }
+    if (provider === 'minimax') {
+      const value = Number(process.env.MINIMAX_TTS_TIMEOUT_MS ?? 180_000);
+      return Number.isFinite(value) && value > 0 ? value : 180_000;
+    }
+    const value = Number(process.env.ELEVENLABS_TTS_TIMEOUT_MS ?? 180_000);
+    return Number.isFinite(value) && value > 0 ? value : 180_000;
   }
 
   private getMergeTimeoutMs(): number {
@@ -166,7 +176,7 @@ export class AiVoiceService {
       typeof settings.useSpeakerBoost === 'boolean' &&
       !omitted.has('useSpeakerBoost') &&
       settings.useSpeakerBoost !==
-        ELEVENLABS_DEFAULT_VOICE_SETTINGS.useSpeakerBoost
+      ELEVENLABS_DEFAULT_VOICE_SETTINGS.useSpeakerBoost
     ) {
       payload.use_speaker_boost = settings.useSpeakerBoost;
     }
@@ -347,6 +357,15 @@ export class AiVoiceService {
   private get googleTtsDefaultVoiceName() {
     return this.runtime.googleTtsDefaultVoiceName;
   }
+  private get minimaxApiKey() {
+    return this.runtime.minimaxApiKey;
+  }
+  private get minimaxTtsModel() {
+    return this.runtime.minimaxTtsModel;
+  }
+  private get minimaxDefaultVoiceId() {
+    return this.runtime.minimaxDefaultVoiceId;
+  }
 
   private mergeSentenceTexts(sentences: string[]): string {
     return (sentences || [])
@@ -364,6 +383,7 @@ export class AiVoiceService {
     styleInstructions?: string,
     elevenLabsSettings?: ElevenLabsVoiceSettings,
     elevenLabsModel?: ElevenLabsModel,
+    minimaxSettings?: MinimaxVoiceSettings,
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     const merged = this.mergeSentenceTexts(sentences);
     return this.generateVoiceForScript(
@@ -372,6 +392,7 @@ export class AiVoiceService {
       styleInstructions,
       elevenLabsSettings,
       elevenLabsModel,
+      minimaxSettings,
     );
   }
 
@@ -381,6 +402,7 @@ export class AiVoiceService {
     styleInstructions?: string,
     elevenLabsSettings?: ElevenLabsVoiceSettings,
     elevenLabsModel?: ElevenLabsModel,
+    minimaxSettings?: MinimaxVoiceSettings,
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     const text = script?.trim();
     if (!text) {
@@ -391,7 +413,7 @@ export class AiVoiceService {
 
     const decideProvider = (
       idRaw?: string,
-    ): { provider: 'google' | 'elevenlabs'; rawId?: string } => {
+    ): { provider: VoiceProvider; rawId?: string } => {
       const id = String(idRaw ?? '').trim();
       if (!id) {
         if ((this.geminiApiKey || '').trim()) {
@@ -411,6 +433,13 @@ export class AiVoiceService {
         return {
           provider: 'elevenlabs',
           rawId: id.slice('elevenlabs:'.length),
+        };
+      }
+
+      if (id.startsWith('minimax:')) {
+        return {
+          provider: 'minimax',
+          rawId: id.slice('minimax:'.length),
         };
       }
 
@@ -434,6 +463,20 @@ export class AiVoiceService {
         styleInstructions,
       });
       return result;
+    }
+
+    if (chosen.provider === 'minimax') {
+      const minimaxVoiceId =
+        String(chosen.rawId ?? '').trim() || this.minimaxDefaultVoiceId;
+      if (!minimaxVoiceId) {
+        throw new BadRequestException('voiceId is required for MiniMax TTS');
+      }
+      const buffer = await this.generateVoiceWithMinimax({
+        text,
+        voiceId: minimaxVoiceId,
+        settings: minimaxSettings,
+      });
+      return { buffer, mimeType: 'audio/mpeg', filename: 'voice-over.mp3' };
     }
 
     const elevenVoiceId =
@@ -596,13 +639,13 @@ export class AiVoiceService {
       ): Promise<
         | { ok: true; buffer: Buffer }
         | {
-            ok: false;
-            status: number;
-            statusText: string;
-            errorText: string;
-            omittedKeys: Array<keyof ElevenLabsVoiceSettings>;
-            payload?: ElevenLabsVoiceSettingsPayload;
-          }
+          ok: false;
+          status: number;
+          statusText: string;
+          errorText: string;
+          omittedKeys: Array<keyof ElevenLabsVoiceSettings>;
+          payload?: ElevenLabsVoiceSettingsPayload;
+        }
       > => {
         const voiceSettings = this.buildElevenLabsVoiceSettingsPayload(
           params.settings,
@@ -751,6 +794,154 @@ export class AiVoiceService {
     return true;
   }
 
+  private async generateVoiceWithMinimax(params: {
+    text: string;
+    voiceId: string;
+    settings?: MinimaxVoiceSettings;
+  }): Promise<Buffer> {
+    if (!this.minimaxApiKey) {
+      throw new InternalServerErrorException(
+        'MINIMAX_API_KEY is not configured on the server',
+      );
+    }
+
+    try {
+      const timeoutMs = this.getProviderTimeoutMs('minimax');
+
+      const requestBody = {
+        model: this.minimaxTtsModel,
+        text: params.text,
+        stream: false,
+        voice_setting: {
+          voice_id: params.voiceId,
+          speed: params.settings?.speed ?? 1,
+          vol: params.settings?.vol ?? 1,
+          pitch: params.settings?.pitch ?? 0,
+          ...(params.settings?.emotion ? { emotion: params.settings.emotion } : {}),
+        },
+        audio_setting: {
+          sample_rate: 32000,
+          bitrate: 128000,
+          format: 'mp3',
+          channel: 1,
+        },
+        output_format: 'hex',
+      };
+
+      const response = await this.runWithAbortableTimeout({
+        label: 'MiniMax voice generation',
+        timeoutMs,
+        run: async (signal) =>
+          fetch('https://api.minimax.io/v1/t2a_v2', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${this.minimaxApiKey}`,
+            },
+            body: JSON.stringify(requestBody),
+            signal,
+          } as any),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        console.error('MiniMax TTS failed', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText,
+        });
+
+        if (response.status === 400 || response.status === 422) {
+          const providerMessage = this.extractApiErrorMessage(errorText);
+          throw new BadRequestException(
+            providerMessage
+              ? `MiniMax rejected the request: ${providerMessage}`
+              : 'Invalid request to MiniMax text-to-speech API',
+          );
+        }
+
+        if (response.status === 401 || response.status === 403) {
+          throw new UnauthorizedException(
+            'Unauthorized to call MiniMax text-to-speech API',
+          );
+        }
+
+        if (response.status === 429) {
+          throw new InternalServerErrorException(
+            'MiniMax rate limit exceeded. Please try again shortly.',
+          );
+        }
+
+        throw new InternalServerErrorException(
+          'Failed to generate voice using MiniMax',
+        );
+      }
+
+      const json = await response.json();
+      const baseResp = json?.base_resp;
+      const statusCode = baseResp?.status_code;
+
+      if (statusCode !== 0) {
+        const statusMsg = String(baseResp?.status_msg ?? '').trim();
+        console.error('MiniMax TTS API error', { statusCode, statusMsg });
+
+        if (statusCode === 1004) {
+          throw new UnauthorizedException(
+            'MiniMax authentication failed. Check MINIMAX_API_KEY.',
+          );
+        }
+        if (statusCode === 1002 || statusCode === 1039) {
+          throw new InternalServerErrorException(
+            'MiniMax rate limit exceeded. Please try again shortly.',
+          );
+        }
+        if (statusCode === 2013) {
+          throw new BadRequestException(
+            statusMsg
+              ? `MiniMax invalid parameters: ${statusMsg}`
+              : 'Invalid parameters sent to MiniMax API',
+          );
+        }
+
+        throw new InternalServerErrorException(
+          statusMsg
+            ? `MiniMax TTS failed: ${statusMsg}`
+            : 'MiniMax TTS returned an error',
+        );
+      }
+
+      const audioHex = String(json?.data?.audio ?? '').trim();
+      if (!audioHex) {
+        throw new InternalServerErrorException(
+          'MiniMax TTS returned empty audio data',
+        );
+      }
+
+      return Buffer.from(audioHex, 'hex');
+    } catch (error) {
+      const err: any = error;
+
+      console.error('Error while calling MiniMax TTS', {
+        message: err?.message,
+        stack: err?.stack,
+      });
+      if (
+        err instanceof BadRequestException ||
+        err instanceof UnauthorizedException
+      ) {
+        throw err;
+      }
+      if (err?.name === 'AbortError' || this.isTimeoutError(err)) {
+        throw new InternalServerErrorException(
+          'MiniMax voice generation timed out',
+        );
+      }
+      throw new InternalServerErrorException(
+        'Unexpected error while generating voice with MiniMax',
+      );
+    }
+  }
+
   private async generateVoiceWithGeminiTts(params: {
     text: string;
     voiceName: string;
@@ -850,7 +1041,7 @@ export class AiVoiceService {
       const json = await response.json();
       const parts =
         json?.candidates?.[0]?.content?.parts &&
-        Array.isArray(json.candidates[0].content.parts)
+          Array.isArray(json.candidates[0].content.parts)
           ? json.candidates[0].content.parts
           : [];
 
@@ -864,19 +1055,19 @@ export class AiVoiceService {
       const declaredMimeType = this.normalizeMimeType(
         String(
           audioPart?.inlineData?.mimeType ??
-            audioPart?.inlineData?.mime_type ??
-            audioPart?.inline_data?.mimeType ??
-            audioPart?.inline_data?.mime_type ??
-            '',
+          audioPart?.inlineData?.mime_type ??
+          audioPart?.inline_data?.mimeType ??
+          audioPart?.inline_data?.mime_type ??
+          '',
         ),
       );
 
       const declaredMimeTypeFull = String(
         audioPart?.inlineData?.mimeType ??
-          audioPart?.inlineData?.mime_type ??
-          audioPart?.inline_data?.mimeType ??
-          audioPart?.inline_data?.mime_type ??
-          '',
+        audioPart?.inlineData?.mime_type ??
+        audioPart?.inline_data?.mimeType ??
+        audioPart?.inline_data?.mime_type ??
+        '',
       ).trim();
 
       if (!b64) {

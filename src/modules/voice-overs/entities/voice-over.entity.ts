@@ -24,7 +24,7 @@ export class VoiceOver {
 
   // Provider for the voice catalog (ElevenLabs vs Google TTS / AI Studio)
   @Column({ type: 'varchar', default: 'elevenlabs' })
-  provider!: 'elevenlabs' | 'google';
+  provider!: 'elevenlabs' | 'google' | 'minimax';
 
   @Column({ type: 'varchar', length: 255 })
   voice_id: string;

@@ -46,6 +46,44 @@ class ElevenLabsVoiceSettingsInput {
   useSpeakerBoost?: boolean;
 }
 
+class MinimaxVoiceSettingsInput {
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.5)
+  @Max(2)
+  @IsOptional()
+  speed?: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.1)
+  @Max(10)
+  @IsOptional()
+  vol?: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-12)
+  @Max(12)
+  @IsOptional()
+  pitch?: number;
+
+  @IsString()
+  @IsIn([
+    'happy',
+    'sad',
+    'angry',
+    'fearful',
+    'disgusted',
+    'surprised',
+    'calm',
+    'fluent',
+    'whisper',
+  ])
+  @IsOptional()
+  emotion?: string;
+}
+
 export class GenerateVoiceDto {
   @IsString()
   @IsNotEmpty()
@@ -73,4 +111,9 @@ export class GenerateVoiceDto {
   @IsIn(['eleven_multilingual_v2', 'eleven_v3'])
   @IsOptional()
   elevenLabsModel?: 'eleven_multilingual_v2' | 'eleven_v3';
+
+  @ValidateNested()
+  @Type(() => MinimaxVoiceSettingsInput)
+  @IsOptional()
+  minimaxSettings?: MinimaxVoiceSettingsInput;
 }

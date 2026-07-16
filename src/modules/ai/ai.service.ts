@@ -29,7 +29,7 @@ export class AiService {
     private readonly imageService: AiImageService,
     private readonly voiceService: AiVoiceService,
     private readonly videoService: AiVideoService,
-  ) {}
+  ) { }
 
   generateVideoFromFrames(params: {
     prompt: string;
@@ -160,11 +160,11 @@ export class AiService {
       sentenceId: string;
       index: number;
       visualEffect:
-        | 'colorGrading'
-        | 'animatedLighting'
-        | 'glassSubtle'
-        | 'glassReflections'
-        | 'glassStrong';
+      | 'colorGrading'
+      | 'animatedLighting'
+      | 'glassSubtle'
+      | 'glassReflections'
+      | 'glassStrong';
       imageFilterSettings: Record<string, unknown>;
     }>;
   }> {
@@ -186,15 +186,15 @@ export class AiService {
       sentenceId: string;
       index: number;
       imageMotionEffect:
-        | 'slowZoomIn'
-        | 'slowZoomOut'
-        | 'diagonalDrift'
-        | 'cinematicPan'
-        | 'focusShift'
-        | 'parallaxMotion'
-        | 'shakeMicroMotion'
-        | 'splitMotion'
-        | 'rotationDrift';
+      | 'slowZoomIn'
+      | 'slowZoomOut'
+      | 'diagonalDrift'
+      | 'cinematicPan'
+      | 'focusShift'
+      | 'parallaxMotion'
+      | 'shakeMicroMotion'
+      | 'splitMotion'
+      | 'rotationDrift';
       imageMotionSettings: Record<string, unknown>;
     }>;
   }> {
@@ -261,12 +261,12 @@ export class AiService {
     );
     const selectedCharacterKeys = Array.isArray(dto?.selectedCharacterKeys)
       ? Array.from(
-          new Set(
-            dto.selectedCharacterKeys
-              .map((value) => String(value ?? '').trim())
-              .filter(Boolean),
-          ),
-        )
+        new Set(
+          dto.selectedCharacterKeys
+            .map((value) => String(value ?? '').trim())
+            .filter(Boolean),
+        ),
+      )
       : [];
 
     if (selectedCharacterKeys.length > 4) {
@@ -283,8 +283,8 @@ export class AiService {
 
     const selectedSafeCharacters = selectedCharacterKeys.length
       ? safeCharacters.filter((character) =>
-          selectedCharacterKeys.includes(character.key),
-        )
+        selectedCharacterKeys.includes(character.key),
+      )
       : [];
 
     const wallpaper = await this.youtubeService.generateYoutubeWallpaperPrompt({
@@ -342,6 +342,12 @@ export class AiService {
       useSpeakerBoost?: boolean;
     },
     elevenLabsModel?: 'eleven_multilingual_v2' | 'eleven_v3',
+    minimaxSettings?: {
+      speed?: number;
+      vol?: number;
+      pitch?: number;
+      emotion?: string;
+    },
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     return this.voiceService.generateVoiceForSentences(
       sentences,
@@ -349,6 +355,7 @@ export class AiService {
       styleInstructions,
       elevenLabsSettings,
       elevenLabsModel,
+      minimaxSettings,
     );
   }
 
@@ -364,6 +371,12 @@ export class AiService {
       useSpeakerBoost?: boolean;
     },
     elevenLabsModel?: 'eleven_multilingual_v2' | 'eleven_v3',
+    minimaxSettings?: {
+      speed?: number;
+      vol?: number;
+      pitch?: number;
+      emotion?: string;
+    },
   ): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
     return this.voiceService.generateVoiceForScript(
       script,
@@ -371,6 +384,7 @@ export class AiService {
       styleInstructions,
       elevenLabsSettings,
       elevenLabsModel,
+      minimaxSettings,
     );
   }
 
