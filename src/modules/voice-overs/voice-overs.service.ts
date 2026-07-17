@@ -500,8 +500,8 @@ export class VoiceOversService implements OnModuleInit {
     if (value === 'google' || value === 'ai-studio' || value === 'aistudio') {
       return 'google';
     }
-    // Default to AI Studio as requested
-    return 'google';
+    // Default to MiniMax
+    return 'minimax';
   }
 
   private namespacedVoiceId(provider: VoiceProvider, rawId: string): string {

@@ -1,10 +1,8 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
-  IsIn,
   IsNotEmpty,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   MaxLength,
@@ -25,46 +23,6 @@ class BulkMotionEffectSentenceDto {
   @IsNotEmpty()
   @MaxLength(12000)
   imagePrompt: string;
-
-  @IsOptional()
-  @IsIn([
-    'default',
-    'slowZoomIn',
-    'slowZoomOut',
-    'diagonalDrift',
-    'cinematicPan',
-    'focusShift',
-    'parallaxMotion',
-    'shakeMicroMotion',
-    'splitMotion',
-    'rotationDrift',
-  ])
-  imageMotionEffect?:
-    | 'default'
-    | 'slowZoomIn'
-    | 'slowZoomOut'
-    | 'diagonalDrift'
-    | 'cinematicPan'
-    | 'focusShift'
-    | 'parallaxMotion'
-    | 'shakeMicroMotion'
-    | 'splitMotion'
-    | 'rotationDrift'
-    | null;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  imageMotionSpeed?: number | null;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  customMotionEffectId?: string | null;
-
-  @IsOptional()
-  @IsObject()
-  imageMotionSettings?: Record<string, unknown> | null;
 }
 
 export class GenerateBulkMotionEffectsDto {

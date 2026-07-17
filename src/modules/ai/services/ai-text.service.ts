@@ -17,6 +17,11 @@ import { TranslateDto } from '../dto/translate.dto';
 import type { LlmMessage } from '../llm/llm-types';
 import { AiRuntimeService } from './ai-runtime.service';
 import { AiWebSearchService } from './ai-web-search.service';
+import {
+  buildAvailableMotionTitles,
+  resolveMotionEffectByTitle,
+  type UserMotionPreset,
+} from '../../motion-effects/default-motion-settings';
 // translate-google is a CommonJS export. This project compiles to CommonJS without
 // `esModuleInterop`, so we must import it via `require` to avoid `.default` being undefined.
 import translateGoogle = require('translate-google');
@@ -869,7 +874,10 @@ export class AiTextService {
     }
   }
 
-  async generateBulkMotionEffects(dto: GenerateBulkMotionEffectsDto): Promise<{
+  async generateBulkMotionEffects(
+    dto: GenerateBulkMotionEffectsDto,
+    userPresets: UserMotionPreset[] = [],
+  ): Promise<{
     items: Array<{
       sentenceId: string;
       index: number;
@@ -883,6 +891,7 @@ export class AiTextService {
       | 'shakeMicroMotion'
       | 'splitMotion'
       | 'rotationDrift';
+      motionEffectId: string | null;
       imageMotionSettings: Record<string, unknown>;
     }>;
   }> {
@@ -892,18 +901,6 @@ export class AiTextService {
           index: Number(item?.index),
           sentenceId: String(item?.sentenceId ?? '').trim(),
           imagePrompt: String(item?.imagePrompt ?? '').trim(),
-          imageMotionEffect: item?.imageMotionEffect ?? null,
-          imageMotionSpeed: this.clampNumber(
-            item?.imageMotionSpeed,
-            0.5,
-            2.5,
-            1.2,
-          ),
-          imageMotionSettings:
-            item?.imageMotionSettings &&
-              typeof item.imageMotionSettings === 'object'
-              ? item.imageMotionSettings
-              : null,
         }))
         .filter(
           (item) =>
@@ -919,6 +916,13 @@ export class AiTextService {
       );
     }
 
+    const availableTitles = buildAvailableMotionTitles(userPresets);
+    if (!availableTitles.length) {
+      throw new BadRequestException(
+        'No motion effect titles are available for selection',
+      );
+    }
+
     const model = dto.model?.trim() || this.cheapModel;
     const customSystemPrompt = dto.systemPrompt?.trim();
     const chunks = this.chunkItemsByBudget(
@@ -928,18 +932,16 @@ export class AiTextService {
       16,
     );
 
+    const titlesList = availableTitles.join(', ');
+
     const systemPrompt = [
       customSystemPrompt,
-      'You are an AI motion director creating RANDOM but tasteful camera-like MOTION effects for already-generated still images.',
-      'Always respond with pure JSON as an OBJECT with exactly this shape: {"items": [{"sentenceId": string, "index": number, "imageMotionEffect": string, "imageMotionSettings": object}]}',
+      'You are an AI motion director picking a preset camera-like MOTION effect for already-generated still images.',
+      'Always respond with pure JSON as an OBJECT with exactly this shape: {"items": [{"sentenceId": string, "index": number, "motionEffectTitle": string}]}',
       'Rules:',
-      `- imageMotionEffect must be one of: ${this.motionEffectOptions.join(', ')}.`,
+      `- motionEffectTitle must be EXACTLY one of these available titles: ${titlesList}.`,
       '- Return exactly one item for each provided image.',
       '- Each image should get a fitting but varied random motion style. Do not make all images identical.',
-      '- Work only from the image prompt and any current motion values provided.',
-      '- IMPORTANT: Keep the currentMotionSpeed exactly unchanged. Do NOT return a new speed and do NOT encode a different speed in imageMotionSettings.speed.',
-      '- imageMotionSettings must contain only numeric/boolean tuning values and presetKey="custom".',
-      '- Do not return imagePrompt or extra keys.',
       '- No prose. No markdown. JSON only.',
     ]
       .filter(Boolean)
@@ -953,8 +955,7 @@ export class AiTextService {
               items?: Array<{
                 sentenceId?: unknown;
                 index?: unknown;
-                imageMotionEffect?: unknown;
-                imageMotionSettings?: unknown;
+                motionEffectTitle?: unknown;
               }>;
             }>({
               model,
@@ -964,18 +965,19 @@ export class AiTextService {
                 {
                   role: 'user',
                   content:
-                    'Return ONLY valid JSON in this exact shape: {"items":[{"sentenceId":"...","index":0,"imageMotionEffect":"slowZoomIn","imageMotionSettings":{"presetKey":"custom"}}]}\n\n' +
+                    'Return ONLY valid JSON in this exact shape: {"items":[{"sentenceId":"...","index":0,"motionEffectTitle":"slowZoomIn"}]}\n\n' +
+                    `Available motion effect titles: ${titlesList}\n\n` +
                     'TARGET IMAGES:\n' +
                     chunk
                       .map(
                         (item) =>
-                          `- index=${item.index}; sentenceId=${item.sentenceId}; currentMotionEffect=${item.imageMotionEffect ?? 'default'}; currentMotionSpeed=${item.imageMotionSpeed}; currentSettings=${JSON.stringify(item.imageMotionSettings ?? {})}; imagePrompt=${JSON.stringify(item.imagePrompt)}`,
+                          `- index=${item.index}; sentenceId=${item.sentenceId}; imagePrompt=${JSON.stringify(item.imagePrompt)}`,
                       )
                       .join('\n'),
                 },
               ],
             });
-
+            console.log(parsed)
             const bySentenceId = new Map(
               chunk.map((item) => [item.sentenceId, item]),
             );
@@ -984,24 +986,16 @@ export class AiTextService {
               .map((item) => {
                 const sentenceId = String(item?.sentenceId ?? '').trim();
                 const source = bySentenceId.get(sentenceId);
-                const imageMotionEffect = this.motionEffectOptions.find(
-                  (value) => value === item?.imageMotionEffect,
-                );
+                const title = String(item?.motionEffectTitle ?? '').trim();
 
-                if (!source || !imageMotionEffect) return null;
+                if (!source || !title) return null;
 
-                return {
+                return resolveMotionEffectByTitle({
+                  title,
                   sentenceId: source.sentenceId,
                   index: source.index,
-                  imageMotionEffect,
-                  imageMotionSettings: this.normalizeMotionSettings(
-                    item?.imageMotionSettings as
-                    | Record<string, unknown>
-                    | null
-                    | undefined,
-                    source.imageMotionSpeed,
-                  ),
-                };
+                  userPresets,
+                });
               })
               .filter(Boolean) as Array<{
                 sentenceId: string;
@@ -1016,6 +1010,7 @@ export class AiTextService {
                 | 'shakeMicroMotion'
                 | 'splitMotion'
                 | 'rotationDrift';
+                motionEffectId: string | null;
                 imageMotionSettings: Record<string, unknown>;
               }>;
           } catch (error) {
@@ -1949,9 +1944,9 @@ export class AiTextService {
         '- If the army is the Muslim Army make sure to make their faces covered with cloth (e.g. keffiyeh) to avoid any depiction of facial features for the soldiers, to keep it respectful and in line with common Islamic art conventions.\n' +
         '- Do NOT include Allah/God as a character.\n' +
         '- If the script mentions Sahaba (companions of Prophet Muhammad), still extract them but set the boolean flags accordingly.\n' +
-        '- Each character(s).description MUST be only two lines max & include detailed facial + physical + clothing attributes.\n' +
-        '- DO NOT INCLUDE ANYTHING BESIDE FACIAL, PHYSICAL & CLOTHING ATTRIBUTES';
-      '- For any character with isProphet=true or isSahaba=true: DO NOT describe face details.\n' +
+        '- Each character(s).description MUST be only four lines max & include detailed facial + physical + clothing attributes.\n' +
+        '- DO NOT INCLUDE ANYTHING BESIDE FACIAL, PHYSICAL & CLOTHING ATTRIBUTES' +
+        '- For any character with isProphet=true or isSahaba=true: DO NOT describe face details.\n' +
         '- Character keys must be short like C1, C2, C3... in first-appearance order.\n' +
         '- If unsure about any boolean flag, set it to false.\n' +
         '- Each description needs to be one line max\n' +
@@ -2051,7 +2046,7 @@ export class AiTextService {
         '- Extract the different canonical LOCATIONS that are relevant to the story.\n' +
         '- Use keys E1, E2, E3... (do NOT use E0).\n' +
         '- Keep location.name short and production-friendly (e.g. "Desert caravan route", "Ottoman court interior", "Modern city rooftop").\n' +
-        '- The description must be maximum two lines and must describe environment structure, time of day\n' +
+        '- The description must be maximum four lines and must describe environment structure, time of day\n' +
         "- Don't add any human or character details; focus only on the place, time of day, weather, lighting, mood, and surrounding environment.\n" +
         '- Multiple sentences can share the same location. Do NOT create one location per sentence.\n' +
         '- If the story revisits the same place later, reuse the same location concept.\n' +

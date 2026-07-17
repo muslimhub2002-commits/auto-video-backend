@@ -20,6 +20,8 @@ import { AiImageService } from './services/ai-image.service';
 import { AiVoiceService } from './services/ai-voice.service';
 import { AiVideoService } from './services/ai-video.service';
 import { AiYoutubeService } from './services/ai-youtube.service';
+import { MotionEffectsService } from '../motion-effects/motion-effects.service';
+import type { UserMotionPreset } from '../motion-effects/default-motion-settings';
 
 @Injectable()
 export class AiService {
@@ -29,6 +31,7 @@ export class AiService {
     private readonly imageService: AiImageService,
     private readonly voiceService: AiVoiceService,
     private readonly videoService: AiVideoService,
+    private readonly motionEffectsService: MotionEffectsService,
   ) { }
 
   generateVideoFromFrames(params: {
@@ -181,7 +184,10 @@ export class AiService {
     return this.textService.generateBulkFeelingCues(dto);
   }
 
-  generateBulkMotionEffects(dto: GenerateBulkMotionEffectsDto): Promise<{
+  async generateBulkMotionEffects(
+    dto: GenerateBulkMotionEffectsDto,
+    userId: string,
+  ): Promise<{
     items: Array<{
       sentenceId: string;
       index: number;
@@ -195,10 +201,23 @@ export class AiService {
       | 'shakeMicroMotion'
       | 'splitMotion'
       | 'rotationDrift';
+      motionEffectId: string | null;
       imageMotionSettings: Record<string, unknown>;
     }>;
   }> {
-    return this.textService.generateBulkMotionEffects(dto);
+    const { items: userPresets } = await this.motionEffectsService.findAllByUser(
+      userId,
+      1,
+      500,
+    );
+
+    const normalizedPresets: UserMotionPreset[] = userPresets.map((preset) => ({
+      id: preset.id,
+      title: String(preset.title ?? '').trim(),
+      settings: preset.settings ?? {},
+    }));
+
+    return this.textService.generateBulkMotionEffects(dto, normalizedPresets);
   }
 
   generateMediaSearchTerm(dto: GenerateMediaSearchTermDto) {

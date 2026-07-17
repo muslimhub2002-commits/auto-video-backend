@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { AiController } from './ai.controller';
 import { ImagesModule } from '../images/images.module';
+import { MotionEffectsModule } from '../motion-effects/motion-effects.module';
 import { AiRuntimeService } from './services/ai-runtime.service';
 import { AiWebSearchService } from './services/ai-web-search.service';
 import { AiTextService } from './services/ai-text.service';
@@ -11,7 +12,7 @@ import { AiVoiceService } from './services/ai-voice.service';
 import { AiVideoService } from './services/ai-video.service';
 
 @Module({
-  imports: [ImagesModule],
+  imports: [ImagesModule, MotionEffectsModule],
   controllers: [AiController],
   providers: [
     AiRuntimeService,
@@ -25,4 +26,4 @@ import { AiVideoService } from './services/ai-video.service';
   ],
   exports: [AiService],
 })
-export class AiModule {}
+export class AiModule { }

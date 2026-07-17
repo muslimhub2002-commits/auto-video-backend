@@ -6,13 +6,14 @@ import {
   UploadedFiles,
   Controller,
   Post,
+  Req,
   Res,
   HttpCode,
   HttpStatus,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Response, Request } from 'express';
 import {
   FileFieldsInterceptor,
   FilesInterceptor,
@@ -234,8 +235,16 @@ export class AiController {
   @Post('generate-bulk-motion-effects')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
-  async generateBulkMotionEffects(@Body() body: GenerateBulkMotionEffectsDto) {
-    return this.aiService.generateBulkMotionEffects(body);
+  async generateBulkMotionEffects(
+    @Req() req: Request,
+    @Body() body: GenerateBulkMotionEffectsDto,
+  ) {
+    const user = (req as any).user;
+    const userId = String(user?.id ?? user?.userId ?? '').trim();
+    if (!userId) {
+      throw new BadRequestException('User not authenticated');
+    }
+    return this.aiService.generateBulkMotionEffects(body, userId);
   }
 
   @Post('generate-media-search-term')
