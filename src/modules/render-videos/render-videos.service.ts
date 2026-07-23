@@ -112,8 +112,7 @@ export class RenderVideosService implements OnModuleInit {
       );
 
       console.log(
-        `[render-jobs] Startup cleanup ran (env=${nodeEnv || 'unset'}, watch=${isWatchMode}, staleMinutes=${staleMinutes}). Updated=${
-          Array.isArray(updated) ? updated.length : 0
+        `[render-jobs] Startup cleanup ran (env=${nodeEnv || 'unset'}, watch=${isWatchMode}, staleMinutes=${staleMinutes}). Updated=${Array.isArray(updated) ? updated.length : 0
         }`,
       );
 
@@ -186,6 +185,7 @@ export class RenderVideosService implements OnModuleInit {
     useLowerFps?: boolean;
     useLowerResolution?: boolean;
     addSubtitles?: boolean;
+    addBackgroundSoundtrack?: boolean;
     enableGlitchTransitions?: boolean;
     enableLongFormSubscribeOverlay?: boolean;
     backgroundMusicFile?: UploadedAsset | null;
@@ -282,6 +282,7 @@ export class RenderVideosService implements OnModuleInit {
     useLowerFps?: boolean;
     useLowerResolution?: boolean;
     addSubtitles?: boolean;
+    addBackgroundSoundtrack?: boolean;
     enableGlitchTransitions?: boolean;
     enableLongFormSubscribeOverlay?: boolean;
     backgroundMusicSrc?: string | null;
@@ -606,10 +607,10 @@ export class RenderVideosService implements OnModuleInit {
         outputFsPath: params.outputFsPath,
         onProgress: params.jobId
           ? async () => {
-              await this.jobsRepo
-                .save({ id: params.jobId, lastProgressAt: new Date() } as any)
-                .catch(() => undefined);
-            }
+            await this.jobsRepo
+              .save({ id: params.jobId, lastProgressAt: new Date() } as any)
+              .catch(() => undefined);
+          }
           : undefined,
       });
       return;
@@ -661,6 +662,7 @@ export class RenderVideosService implements OnModuleInit {
       useLowerFps?: boolean;
       useLowerResolution?: boolean;
       addSubtitles?: boolean;
+      addBackgroundSoundtrack?: boolean;
       enableGlitchTransitions?: boolean;
       enableLongFormSubscribeOverlay?: boolean;
       backgroundMusicFile?: UploadedAsset | null;
@@ -988,7 +990,7 @@ export class RenderVideosService implements OnModuleInit {
           sentence?.mediaType === 'video' ||
           (sentence?.mediaType === 'overlay' &&
             resolveOverlaySceneBackgroundMode(sentence.overlaySettings) ===
-              'video');
+            'video');
         if (!requiresSceneVideo) return;
 
         const current = String(sentence.videoUrl ?? '').trim();
@@ -1493,15 +1495,15 @@ export class RenderVideosService implements OnModuleInit {
       // so that a real aligner (e.g. Whisper-based) can be plugged in later.
       const sentenceTimings = tempAudioPath
         ? await this.alignAudioToSentences(
-            tempAudioPath,
-            params.sentences,
-            durationSeconds,
-          )
+          tempAudioPath,
+          params.sentences,
+          durationSeconds,
+        )
         : this.buildSyntheticSentenceTimings(
-            params.sentences,
-            durationSeconds,
-            effectiveAddSubtitles !== false,
-          );
+          params.sentences,
+          durationSeconds,
+          effectiveAddSubtitles !== false,
+        );
 
       const timeline = this.buildTimeline({
         language: params.language,
@@ -1516,6 +1518,7 @@ export class RenderVideosService implements OnModuleInit {
         useLowerFps: params.useLowerFps,
         useLowerResolution: params.useLowerResolution,
         addSubtitles: effectiveAddSubtitles,
+        addBackgroundSoundtrack: params.addBackgroundSoundtrack,
         enableGlitchTransitions: params.enableGlitchTransitions,
         enableLongFormSubscribeOverlay: params.enableLongFormSubscribeOverlay,
         backgroundMusicSrc: params.backgroundMusicSrc,

@@ -54,6 +54,10 @@ export class CreateRenderVideoDto {
 
   @IsOptional()
   @IsString()
+  addBackgroundSoundtrack?: string;
+
+  @IsOptional()
+  @IsString()
   enableGlitchTransitions?: string;
 
   @IsOptional()

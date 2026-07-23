@@ -1264,6 +1264,7 @@ export class AiImageService {
         }
         const base = [
           'You are a visual prompt engineer for image generation models.' +
+          'If the sentence mentions any book specifically the Quran make the book explicitly closed' +
           'The Image style must be dreamy with a an effect of magenta, orange or golden colors and lighting with motion blur.'
         ]
         const finalSystemPrompt = showNoHumanFiguresRule ? [`${noHumanFiguresRule}`,
@@ -1278,7 +1279,7 @@ export class AiImageService {
             // "Don't leave any important visual detail out, and be sure to include any important visual element that is implied by the sentence.",
             "Don't mention the characters names",
             'Use reasoning to highlight the important objects and actions and stress on it in the prompt.',
-            AiImageService.NO_TEXT_PROMPT_SUFFIX,
+            // AiImageService.NO_TEXT_PROMPT_SUFFIX,
             (frameBlock ? frameBlock + '\n' : ''),
             (secondaryVariantBlock
               ? secondaryVariantBlock
@@ -1412,7 +1413,7 @@ export class AiImageService {
           isShortForm,
         });
       }
-      prompt = `${prompt}, NO WOMEN, NO GIRLS, NO LADIES.`;
+      prompt = `${prompt}`;
       if (AiImageService.OPENAI_IMAGE_MODELS.has(imageModel)) {
         const image = await generateWithOpenAi({
           openai: this.openai,

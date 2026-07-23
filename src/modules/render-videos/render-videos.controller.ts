@@ -42,12 +42,12 @@ import type { SentenceInput } from './render-videos.types';
 const LOCAL_RENDER_ASSET_MAX_BYTES = Math.max(
   100 * 1024 * 1024,
   Number(process.env.LOCAL_RENDER_ASSET_MAX_BYTES ?? 512 * 1024 * 1024) ||
-    512 * 1024 * 1024,
+  512 * 1024 * 1024,
 );
 
 @Controller('videos')
 export class RenderVideosController {
-  constructor(private readonly renderVideosService: RenderVideosService) {}
+  constructor(private readonly renderVideosService: RenderVideosService) { }
 
   private isAcceptedRenderUrl(url: string) {
     return (
@@ -72,60 +72,60 @@ export class RenderVideosController {
     return sentences.map((sentence) => {
       const secondaryImageUrl =
         typeof sentence.secondaryImageUrl === 'string' &&
-        sentence.secondaryImageUrl.trim().length > 0
+          sentence.secondaryImageUrl.trim().length > 0
           ? sentence.secondaryImageUrl.trim()
           : undefined;
       const videoUrl =
         typeof sentence.videoUrl === 'string' &&
-        sentence.videoUrl.trim().length > 0
+          sentence.videoUrl.trim().length > 0
           ? sentence.videoUrl.trim()
           : undefined;
       const textBackgroundVideoUrl =
         typeof (sentence as any).textBackgroundVideoUrl === 'string' &&
-        String((sentence as any).textBackgroundVideoUrl).trim().length > 0
+          String((sentence as any).textBackgroundVideoUrl).trim().length > 0
           ? String((sentence as any).textBackgroundVideoUrl).trim()
           : undefined;
       const overlayUrl =
         typeof (sentence as any).overlayUrl === 'string' &&
-        String((sentence as any).overlayUrl).trim().length > 0
+          String((sentence as any).overlayUrl).trim().length > 0
           ? String((sentence as any).overlayUrl).trim()
           : undefined;
       const overlayMimeType =
         typeof (sentence as any).overlayMimeType === 'string' &&
-        String((sentence as any).overlayMimeType).trim().length > 0
+          String((sentence as any).overlayMimeType).trim().length > 0
           ? String((sentence as any).overlayMimeType).trim()
           : undefined;
       const hasSecondaryImageUpload =
         (sentence as any).hasSecondaryImageUpload === true;
       const mediaType =
         sentence.mediaType === 'image' ||
-        sentence.mediaType === 'video' ||
-        sentence.mediaType === 'text' ||
-        sentence.mediaType === 'overlay'
+          sentence.mediaType === 'video' ||
+          sentence.mediaType === 'text' ||
+          sentence.mediaType === 'overlay'
           ? sentence.mediaType
           : undefined;
       const textAnimationEffect =
         typeof sentence.textAnimationEffect === 'string' &&
-        (TEXT_ANIMATION_EFFECT_VALUES as readonly string[]).includes(
-          sentence.textAnimationEffect,
-        )
+          (TEXT_ANIMATION_EFFECT_VALUES as readonly string[]).includes(
+            sentence.textAnimationEffect,
+          )
           ? (sentence.textAnimationEffect as SentenceInput['textAnimationEffect'])
           : undefined;
       const textAnimationText =
         typeof sentence.textAnimationText === 'string' &&
-        sentence.textAnimationText.trim().length > 0
+          sentence.textAnimationText.trim().length > 0
           ? sentence.textAnimationText.trim()
           : undefined;
       const textAnimationSettings =
         sentence.textAnimationSettings &&
-        typeof sentence.textAnimationSettings === 'object' &&
-        !Array.isArray(sentence.textAnimationSettings)
+          typeof sentence.textAnimationSettings === 'object' &&
+          !Array.isArray(sentence.textAnimationSettings)
           ? (sentence.textAnimationSettings as Record<string, unknown>)
           : undefined;
       const overlaySettings =
         (sentence as any).overlaySettings &&
-        typeof (sentence as any).overlaySettings === 'object' &&
-        !Array.isArray((sentence as any).overlaySettings)
+          typeof (sentence as any).overlaySettings === 'object' &&
+          !Array.isArray((sentence as any).overlaySettings)
           ? ((sentence as any).overlaySettings as Record<string, unknown>)
           : undefined;
       const {
@@ -843,6 +843,10 @@ export class RenderVideosController {
       typeof body.addSubtitles === 'string'
         ? body.addSubtitles === 'true'
         : undefined;
+    const addBackgroundSoundtrack =
+      typeof body.addBackgroundSoundtrack === 'string'
+        ? body.addBackgroundSoundtrack === 'true'
+        : undefined;
     const isShort =
       typeof body.isShort === 'string' ? body.isShort === 'true' : undefined;
 
@@ -871,6 +875,7 @@ export class RenderVideosController {
       enableGlitchTransitions,
       enableLongFormSubscribeOverlay,
       addSubtitles,
+      addBackgroundSoundtrack,
       isShort,
       backgroundMusicSrc,
       backgroundMusicVolume,
@@ -1060,44 +1065,44 @@ export class RenderVideosController {
     const sentences: SentenceInput[] = urlSentences.map((s) => {
       const secondaryImageUrl =
         typeof (s as any).secondaryImageUrl === 'string' &&
-        String((s as any).secondaryImageUrl).trim()
+          String((s as any).secondaryImageUrl).trim()
           ? String((s as any).secondaryImageUrl).trim()
           : undefined;
       const videoUrl =
         typeof (s as any).videoUrl === 'string' &&
-        String((s as any).videoUrl).trim()
+          String((s as any).videoUrl).trim()
           ? String((s as any).videoUrl).trim()
           : undefined;
       const textBackgroundVideoUrl =
         typeof (s as any).textBackgroundVideoUrl === 'string' &&
-        String((s as any).textBackgroundVideoUrl).trim()
+          String((s as any).textBackgroundVideoUrl).trim()
           ? String((s as any).textBackgroundVideoUrl).trim()
           : undefined;
       const overlayUrl =
         typeof (s as any).overlayUrl === 'string' &&
-        String((s as any).overlayUrl).trim()
+          String((s as any).overlayUrl).trim()
           ? String((s as any).overlayUrl).trim()
           : undefined;
       const overlayMimeType =
         typeof (s as any).overlayMimeType === 'string' &&
-        String((s as any).overlayMimeType).trim()
+          String((s as any).overlayMimeType).trim()
           ? String((s as any).overlayMimeType).trim()
           : undefined;
       const textAnimationText =
         typeof (s as any).textAnimationText === 'string' &&
-        String((s as any).textAnimationText).trim()
+          String((s as any).textAnimationText).trim()
           ? String((s as any).textAnimationText).trim()
           : undefined;
       const textAnimationSettings =
         (s as any).textAnimationSettings &&
-        typeof (s as any).textAnimationSettings === 'object' &&
-        !Array.isArray((s as any).textAnimationSettings)
+          typeof (s as any).textAnimationSettings === 'object' &&
+          !Array.isArray((s as any).textAnimationSettings)
           ? ((s as any).textAnimationSettings as Record<string, unknown>)
           : undefined;
       const overlaySettings =
         (s as any).overlaySettings &&
-        typeof (s as any).overlaySettings === 'object' &&
-        !Array.isArray((s as any).overlaySettings)
+          typeof (s as any).overlaySettings === 'object' &&
+          !Array.isArray((s as any).overlaySettings)
           ? ((s as any).overlaySettings as Record<string, unknown>)
           : undefined;
       const mediaType =
@@ -1180,7 +1185,7 @@ export class RenderVideosController {
       (sentence, index) => {
         const secondaryImageUrl =
           typeof secondaryImageUrls[index] === 'string' &&
-          String(secondaryImageUrls[index]).trim()
+            String(secondaryImageUrls[index]).trim()
             ? String(secondaryImageUrls[index]).trim()
             : undefined;
 
@@ -1228,6 +1233,7 @@ export class RenderVideosController {
       useLowerFps: !!body.useLowerFps,
       useLowerResolution: !!body.useLowerResolution,
       addSubtitles: body.addSubtitles,
+      addBackgroundSoundtrack: body.addBackgroundSoundtrack,
       enableGlitchTransitions: !!body.enableGlitchTransitions,
       enableLongFormSubscribeOverlay: body.enableLongFormSubscribeOverlay,
       backgroundMusicSrc,
@@ -1336,6 +1342,7 @@ export class RenderVideosController {
       enableGlitchTransitions,
       enableLongFormSubscribeOverlay,
       addSubtitles,
+      addBackgroundSoundtrack,
       isShort,
       backgroundMusicSrc,
       backgroundMusicVolume,
@@ -1346,10 +1353,10 @@ export class RenderVideosController {
         typeof body.language === 'string' ? body.language.trim() : undefined,
       audioFile: voice
         ? {
-            buffer: voice.buffer,
-            originalName: voice.originalname,
-            mimeType: voice.mimetype,
-          }
+          buffer: voice.buffer,
+          originalName: voice.originalname,
+          mimeType: voice.mimetype,
+        }
         : null,
       audioUrl,
       allowSilentAudio: isSilent,
@@ -1357,46 +1364,46 @@ export class RenderVideosController {
       imageFiles: alignedImages.map((f) =>
         f
           ? {
-              buffer: f.buffer,
-              originalName: f.originalname,
-              mimeType: f.mimetype,
-            }
+            buffer: f.buffer,
+            originalName: f.originalname,
+            mimeType: f.mimetype,
+          }
           : null,
       ),
       secondaryImageFiles: alignedSecondaryImages.map((file) =>
         file
           ? {
-              buffer: file.buffer,
-              originalName: file.originalname,
-              mimeType: file.mimetype,
-            }
+            buffer: file.buffer,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+          }
           : null,
       ),
       sceneVideoFiles: alignedSceneVideos.map((file) =>
         file
           ? {
-              buffer: file.buffer,
-              originalName: file.originalname,
-              mimeType: file.mimetype,
-            }
+            buffer: file.buffer,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+          }
           : null,
       ),
       overlayFiles: alignedOverlayAssets.map((file) =>
         file
           ? {
-              buffer: file.buffer,
-              originalName: file.originalname,
-              mimeType: file.mimetype,
-            }
+            buffer: file.buffer,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+          }
           : null,
       ),
       textBackgroundVideoFiles: alignedTextBackgroundVideos.map((file) =>
         file
           ? {
-              buffer: file.buffer,
-              originalName: file.originalname,
-              mimeType: file.mimetype,
-            }
+            buffer: file.buffer,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+          }
           : null,
       ),
       imageUrls,
@@ -1406,14 +1413,15 @@ export class RenderVideosController {
       useLowerFps,
       useLowerResolution,
       addSubtitles,
+      addBackgroundSoundtrack,
       enableGlitchTransitions,
       enableLongFormSubscribeOverlay,
       backgroundMusicFile: backgroundMusicFile
         ? {
-            buffer: backgroundMusicFile.buffer,
-            originalName: backgroundMusicFile.originalname,
-            mimeType: backgroundMusicFile.mimetype,
-          }
+          buffer: backgroundMusicFile.buffer,
+          originalName: backgroundMusicFile.originalname,
+          mimeType: backgroundMusicFile.mimetype,
+        }
         : null,
       backgroundMusicSrc,
       backgroundMusicVolume,
@@ -1518,6 +1526,7 @@ export class RenderVideosController {
       enableGlitchTransitions,
       enableLongFormSubscribeOverlay,
       addSubtitles,
+      addBackgroundSoundtrack,
       isShort,
       backgroundMusicSrc,
       backgroundMusicVolume,
@@ -1528,10 +1537,10 @@ export class RenderVideosController {
         typeof body.language === 'string' ? body.language.trim() : undefined,
       audioFile: voice
         ? {
-            buffer: voice.buffer,
-            originalName: voice.originalname,
-            mimeType: voice.mimetype,
-          }
+          buffer: voice.buffer,
+          originalName: voice.originalname,
+          mimeType: voice.mimetype,
+        }
         : null,
       audioUrl,
       allowSilentAudio: isSilent,
@@ -1539,46 +1548,46 @@ export class RenderVideosController {
       imageFiles: alignedImages.map((f) =>
         f
           ? {
-              buffer: f.buffer,
-              originalName: f.originalname,
-              mimeType: f.mimetype,
-            }
+            buffer: f.buffer,
+            originalName: f.originalname,
+            mimeType: f.mimetype,
+          }
           : null,
       ),
       secondaryImageFiles: alignedSecondaryImages.map((file) =>
         file
           ? {
-              buffer: file.buffer,
-              originalName: file.originalname,
-              mimeType: file.mimetype,
-            }
+            buffer: file.buffer,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+          }
           : null,
       ),
       sceneVideoFiles: alignedSceneVideos.map((file) =>
         file
           ? {
-              buffer: file.buffer,
-              originalName: file.originalname,
-              mimeType: file.mimetype,
-            }
+            buffer: file.buffer,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+          }
           : null,
       ),
       overlayFiles: alignedOverlayAssets.map((file) =>
         file
           ? {
-              buffer: file.buffer,
-              originalName: file.originalname,
-              mimeType: file.mimetype,
-            }
+            buffer: file.buffer,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+          }
           : null,
       ),
       textBackgroundVideoFiles: alignedTextBackgroundVideos.map((file) =>
         file
           ? {
-              buffer: file.buffer,
-              originalName: file.originalname,
-              mimeType: file.mimetype,
-            }
+            buffer: file.buffer,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+          }
           : null,
       ),
       imageUrls,
@@ -1588,14 +1597,15 @@ export class RenderVideosController {
       useLowerFps,
       useLowerResolution,
       addSubtitles,
+      addBackgroundSoundtrack,
       enableGlitchTransitions,
       enableLongFormSubscribeOverlay,
       backgroundMusicFile: backgroundMusicFile
         ? {
-            buffer: backgroundMusicFile.buffer,
-            originalName: backgroundMusicFile.originalname,
-            mimeType: backgroundMusicFile.mimetype,
-          }
+          buffer: backgroundMusicFile.buffer,
+          originalName: backgroundMusicFile.originalname,
+          mimeType: backgroundMusicFile.mimetype,
+        }
         : null,
       backgroundMusicSrc,
       backgroundMusicVolume,
@@ -1612,8 +1622,8 @@ export class RenderVideosController {
     const updated = await this.renderVideosService.getJob(id);
     const derivedIsShort =
       updated.timeline &&
-      typeof updated.timeline.width === 'number' &&
-      typeof updated.timeline.height === 'number'
+        typeof updated.timeline.width === 'number' &&
+        typeof updated.timeline.height === 'number'
         ? updated.timeline.height > updated.timeline.width
         : null;
     return {

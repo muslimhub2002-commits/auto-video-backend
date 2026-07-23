@@ -11,7 +11,7 @@ export class AiYoutubeService {
   constructor(
     private readonly runtime: AiRuntimeService,
     private readonly webSearch: AiWebSearchService,
-  ) {}
+  ) { }
 
   private describeLanguage(languageCode: string): string {
     switch (languageCode.toLowerCase()) {
@@ -87,25 +87,25 @@ export class AiYoutubeService {
 
     const safeChars = Array.isArray(params?.safeCharacters)
       ? params.safeCharacters
-          .map((c) => ({
-            key: String(c?.key ?? '').trim(),
-            name: String(c?.name ?? '').trim(),
-            description: String(c?.description ?? '').trim(),
-          }))
-          .filter((c) => c.key && c.name && c.description)
-          .slice(0, 12)
+        .map((c) => ({
+          key: String(c?.key ?? '').trim(),
+          name: String(c?.name ?? '').trim(),
+          description: String(c?.description ?? '').trim(),
+        }))
+        .filter((c) => c.key && c.name && c.description)
+        .slice(0, 12)
       : [];
 
     const selectedSafeChars = Array.isArray(params?.selectedSafeCharacters)
       ? params.selectedSafeCharacters
-          .map((c) => ({
-            key: String(c?.key ?? '').trim(),
-            name: String(c?.name ?? '').trim(),
-            description: String(c?.description ?? '').trim(),
-          }))
-          .filter((c) => c.key && c.name && c.description)
-          .filter((c) => safeChars.some((safeChar) => safeChar.key === c.key))
-          .slice(0, 4)
+        .map((c) => ({
+          key: String(c?.key ?? '').trim(),
+          name: String(c?.name ?? '').trim(),
+          description: String(c?.description ?? '').trim(),
+        }))
+        .filter((c) => c.key && c.name && c.description)
+        .filter((c) => safeChars.some((safeChar) => safeChar.key === c.key))
+        .slice(0, 4)
       : [];
 
     const promptSafeChars =
@@ -113,14 +113,14 @@ export class AiYoutubeService {
 
     const safeCharBlock = promptSafeChars.length
       ? 'SAFE CHARACTERS (ONLY these may be depicted as humans):\n' +
-        promptSafeChars
-          .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
-          .join('\n')
+      promptSafeChars
+        .map((c) => `- ${c.key}: ${c.name} — ${c.description}`)
+        .join('\n')
       : 'SAFE CHARACTERS: (none provided)';
 
     const selectedCharBlock = selectedSafeChars.length
       ? '\n\nUSER-SELECTED CHARACTERS (prefer these if any humans appear):\n' +
-        selectedSafeChars.map((c) => `- ${c.key}: ${c.name}`).join('\n')
+      selectedSafeChars.map((c) => `- ${c.key}: ${c.name}`).join('\n')
       : '';
 
     let parsed: any;
@@ -279,7 +279,7 @@ export class AiYoutubeService {
     const description = (() => {
       if (isShort) {
         const shortSentence = pickShortSentence(modelDesc);
-        return `${title}\n${shortSentence}`;
+        return `${title}\n${shortSentence}\nSoundtrack credit goes to (Halal Sounds)`;
       }
 
       // Long-form: a separate long SEO description (not equal to the title).

@@ -52,12 +52,12 @@ export type TextAnimationSettings = {
   strokeColor?: string;
   strokeWidthPx?: number;
   backgroundMode?:
-    | 'inheritImage'
-    | 'image'
-    | 'inheritVideo'
-    | 'video'
-    | 'solid'
-    | 'gradient';
+  | 'inheritImage'
+  | 'image'
+  | 'inheritVideo'
+  | 'video'
+  | 'solid'
+  | 'gradient';
   backgroundColor?: string;
   gradientFrom?: string;
   gradientTo?: string;
@@ -132,41 +132,41 @@ export type TimelineScene = {
     volume?: number;
   }>;
   transitionToNext?:
-    | 'none'
-    | 'glitch'
-    | 'whip'
-    | 'flash'
-    | 'fade'
-    | 'chromaLeak'
-    | 'impactZoom'
-    | 'slicePush'
-    | 'irisReveal'
-    | 'echoStutter'
-    | 'tiltSnap'
-    | null;
+  | 'none'
+  | 'glitch'
+  | 'whip'
+  | 'flash'
+  | 'fade'
+  | 'chromaLeak'
+  | 'impactZoom'
+  | 'slicePush'
+  | 'irisReveal'
+  | 'echoStutter'
+  | 'tiltSnap'
+  | null;
   visualEffect?:
-    | 'none'
-    | 'colorGrading'
-    | 'animatedLighting'
-    | 'glassSubtle'
-    | 'glassReflections'
-    | 'glassStrong'
-    | null;
+  | 'none'
+  | 'colorGrading'
+  | 'animatedLighting'
+  | 'glassSubtle'
+  | 'glassReflections'
+  | 'glassStrong'
+  | null;
   textAnimationEffect?: TextAnimationEffect | null;
   textAnimationText?: string;
   textAnimationSettings?: TextAnimationSettings | Record<string, unknown> | null;
   imageMotionEffect?:
-    | 'default'
-    | 'slowZoomIn'
-    | 'slowZoomOut'
-    | 'diagonalDrift'
-    | 'cinematicPan'
-    | 'focusShift'
-    | 'parallaxMotion'
-    | 'shakeMicroMotion'
-    | 'splitMotion'
-    | 'rotationDrift'
-    | null;
+  | 'default'
+  | 'slowZoomIn'
+  | 'slowZoomOut'
+  | 'diagonalDrift'
+  | 'cinematicPan'
+  | 'focusShift'
+  | 'parallaxMotion'
+  | 'shakeMicroMotion'
+  | 'splitMotion'
+  | 'rotationDrift'
+  | null;
   imageMotionSpeed?: number | null;
   startFrame: number;
   durationFrames: number;
@@ -182,6 +182,7 @@ export type Timeline = {
   durationInFrames: number;
   audioSrc: string; // static file path (publicDir) or absolute URL
   addSubtitles?: boolean;
+  addBackgroundSoundtrack?: boolean;
   scenes: TimelineScene[];
   // Optional asset URLs for production renders (CDN/Cloudinary/S3). If omitted,
   // the composition falls back to local `staticFile()` assets.

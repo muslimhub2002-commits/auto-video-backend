@@ -134,7 +134,7 @@ export class AiTextService {
       role: 'system',
       content:
         'REFERENCE SCRIPTS MODE: The user provided one or more reference scripts in the conversation history below. ' +
-        'Analyze them to infer writing style (voice, pacing, structure, rhythm, hooks, transitions). ' +
+        'Analyze them to infer writing style (pacing, structure, rhythm, hooks, transitions). ' +
         'For this request, IGNORE any style/tone field and IGNORE any writing-goals prompt text. ' +
         'Generate NEW output that matches the requested subject, subject content, and length constraints, while matching the STYLE of the references. ' +
         'Do NOT mention the reference scripts. Do NOT copy unique facts or reuse long verbatim phrases; only mimic style.',
@@ -368,13 +368,13 @@ export class AiTextService {
       case 'Loss Aversion':
         return (
           'TECHNIQUE: Loss Aversion\n' +
-          '- Frame the hook around what the viewer might miss if they skip: a mistake, a hidden insight, a consequence.\n' +
           '- Use urgency and stakes without being spammy, manipulative, or dishonest.\n' +
           '- Add mid-script curiosity re-opens (e.g., “but here’s what most people miss…”).'
         );
       case 'The Rhythm':
         return (
           'TECHNIQUE: The Rhythm\n' +
+          '- Start with a strong hook that immediately establishes the scene and stakes.\n' +
           '- Vary sentence length intentionally: mix short punchy lines with medium and a few longer lines.\n' +
           '- Keep cadence unpredictable; avoid runs of many long sentences.\n' +
           '- Prefer one sentence per line so rhythm is visible when read.'
@@ -501,10 +501,23 @@ export class AiTextService {
     return chunks;
   }
 
+  private readonly MINIMAX_ALLOWED_EMOTIONS: ReadonlySet<string> = new Set([
+    'happy',
+    'sad',
+    'angry',
+    'fearful',
+    'disgusted',
+    'surprised',
+    'calm',
+    'fluent',
+    'whisper',
+  ]);
+
   private normalizeFeelingCue(raw: unknown): string | null {
     const normalized = String(raw ?? '')
       .toLowerCase()
       .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\([^)]*\)/g, ' ')
       .replace(/[^a-z\s-]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -515,6 +528,27 @@ export class AiTextService {
 
     const words = normalized.split(' ').filter(Boolean).slice(0, 3);
     return words.length > 0 ? words.join(' ') : null;
+  }
+
+  private validateMinimaxEmotion(feeling: string | null): string | null {
+    if (!feeling) return null;
+
+    const normalized = feeling.toLowerCase().trim();
+
+    // Exact match
+    if (this.MINIMAX_ALLOWED_EMOTIONS.has(normalized)) {
+      return normalized;
+    }
+
+    // Fuzzy match: check if any allowed emotion is a substring, or vice versa
+    for (const allowed of this.MINIMAX_ALLOWED_EMOTIONS) {
+      if (normalized.includes(allowed) || allowed.includes(normalized)) {
+        return allowed;
+      }
+    }
+
+    // No match — default to calm
+    return 'calm';
   }
 
   private normalizeLookSettings(
@@ -619,6 +653,9 @@ export class AiTextService {
 
     const model = dto.model?.trim() || this.cheapModel;
     const customSystemPrompt = dto.systemPrompt?.trim();
+    const voiceProvider = (dto.voiceProvider?.trim().toLowerCase() || 'elevenlabs') as 'google' | 'elevenlabs' | 'minimax';
+    const isMiniMax = voiceProvider === 'minimax';
+
     const chunks = this.chunkItemsByBudget(
       sentencesWithContext,
       (item) =>
@@ -627,21 +664,36 @@ export class AiTextService {
       24,
     );
 
-    const systemPrompt = [
-      customSystemPrompt,
+    const baseRules = [
       'You assign one short performance feeling cue to each narration sentence for text-to-speech.',
       'Always respond with pure JSON as an OBJECT with exactly this shape: {"items": [{"sentenceId": string, "index": number, "feeling": string}]}',
       'Rules:',
       '- Return exactly one item for each provided sentence.',
       '- feeling must be a short lowercase English cue of 1 to 3 words.',
-      '- Use only letters, spaces, or hyphens. No brackets. No punctuation. No emojis.',
-      '- The cue should fit inside square brackets before the sentence, for example: [calm], [excited], [urgent], [hopeful], [serious], [curious], [warm], [dramatic].',
-      '- If the sentence already starts with a bracket cue, ignore that existing cue and choose the best cue from the underlying sentence meaning.',
+      '- Use only letters, spaces, or hyphens. No brackets. No parentheses. No punctuation. No emojis.',
+      '- If the sentence already starts with a bracket or parenthetical cue, ignore that existing cue and choose the best cue from the underlying sentence meaning.',
       '- Each item may include up to the last 3 previous sentences as context. Use them only to understand how the target sentence should feel.',
       '- The feeling must describe the TARGET sentence, not the earlier context sentences.',
       '- Do not rewrite the sentence. Only choose the cue.',
       '- Keep cues safe, natural, and useful for voice performance.',
       '- No prose. No markdown. JSON only.',
+    ];
+
+    const minimaxExtraRules = [
+      '- The feeling MUST be exactly ONE of these nine emotions: happy, sad, angry, fearful, disgusted, surprised, calm, fluent, whisper.',
+      '- Do not invent new emotions. Only pick from the list above.',
+    ];
+
+    const elevenlabsExtraRules = [
+      '- The cue should fit inside square brackets before the sentence, for example: [calm], [excited], [urgent], [hopeful], [serious], [curious], [warm], [dramatic].',
+    ];
+
+    const extraRules = isMiniMax ? minimaxExtraRules : elevenlabsExtraRules;
+
+    const systemPrompt = [
+      customSystemPrompt,
+      ...baseRules,
+      ...extraRules,
     ]
       .filter(Boolean)
       .join('\n');
@@ -681,7 +733,10 @@ export class AiTextService {
           for (const item of parsedItems) {
             const sentenceId = String(item?.sentenceId ?? '').trim();
             const index = Number(item?.index);
-            const feeling = this.normalizeFeelingCue(item?.feeling);
+            let feeling = this.normalizeFeelingCue(item?.feeling);
+            if (isMiniMax && feeling) {
+              feeling = this.validateMinimaxEmotion(feeling);
+            }
             if (!sentenceId || !Number.isFinite(index) || !feeling) {
               continue;
             }
@@ -1080,12 +1135,12 @@ export class AiTextService {
         {
           role: 'system',
           content:
-            'You are an expert video script writer. ' +
-              'You ONLY respond with the script text, no explanations, headings, or markdown. ' +
-              'You have a talent for reaching the point from a unique unseen before prespective. ' +
-              subject == 'religious (Islam)' ? 'You have to get your info from an authentic source' : '' +
-              'Aim for driving a comment from the viewer. ' +
-              `HARD LENGTH CONSTRAINT: Output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.\n` +
+            'You have 20 years of experience in writing compelling video scripts. ' +
+            'You are experienced in getting the user reach the WOW Effect point which would lead them into sharing your scripts. ' +
+            'You ONLY respond with the script text, no explanations, headings, or markdown. ' +
+            'You have a talent for reaching the point from a unique unseen before perspective. ' +
+            (subject == 'religious (Islam)' ? 'You have to get your info from an authentic source. ' : '') +
+            `HARD LENGTH CONSTRAINT: Output MUST be between ${wordRange.minWords} and ${wordRange.maxWords} words (target ${wordRange.targetWords}). Count words before responding; if over or under, rewrite until within range.\n` +
             `LANGUAGE REQUIREMENT: Write the entire script in ${languageDesc}. Do NOT mix languages.`,
         },
       ];
@@ -1103,14 +1158,10 @@ export class AiTextService {
       if (haveReferences) {
         this.appendReferenceScriptMessages(messages, referenceScripts);
       }
-
+      console.log(selectedIdeaTitle)
       messages.push({
         role: 'user',
         content:
-          `Generate a detailed video narration script.\n` +
-          `Approximate length: ${length}.\n` +
-          `Strict word count requirement: ${wordRange.minWords}-${wordRange.maxWords} words (target ${wordRange.targetWords}).\n` +
-          `Language: ${languageDesc}.\n` +
           `Subject: ${subject}.\n` +
           (selectedIdeaTitle
             ? 'SELECTED IDEA: The user explicitly chose this direction, so the full script must be about this exact idea rather than a different interpretation of the subject.\n' +
@@ -1121,14 +1172,12 @@ export class AiTextService {
             : '') +
           (haveReferences
             ? 'Write the NEW script in the same narrative style as the reference scripts above.\n'
-            : `Style: ${style}.\n`) +
+            : `Writing Style: ${style}.\n`) +
           (customSystemPrompt
             ? `Additional writing guidance: ${customSystemPrompt}.\n`
-            : '') +
-          `For religious (Islam) scripts, keep it respectful, authentic, and avoid controversial topics.\n` +
-          'Do not include scene directions, only spoken narration.',
+            : '')
       });
-
+      console.log(messages)
       return {
         stream: this.llm.streamText({ model, messages, maxTokens: 2500 }),
         ...(warning ? { warning } : {}),
@@ -1191,11 +1240,10 @@ export class AiTextService {
       {
         role: 'system',
         content:
-          'You are an expert video topic strategist for short-form and long-form narrated videos. ' +
+          'You have 20 years of experience in coming up with creative unique ideas' +
           'Return ONLY valid JSON. No prose, no markdown, no code fences. ' +
           'Your job is to produce exactly five clearly distinct very creative script ideas that all stay within the selected subject but are not variations of the same topic. ' +
-          'The Ideas must be out of the box, unexpected,not obvious and adds value. ' +
-          'Each idea must feel different in story, event, or hook. Avoid duplicates, near-duplicates, and simple wording changes.',
+          'The Ideas must be out of the box, unexpected,not obvious and adds value. '
       },
       {
         role: 'system',
@@ -1230,18 +1278,7 @@ export class AiTextService {
         `Generate ${count} script ideas.\n` +
         `Language: ${languageDesc}.\n` +
         `Subject: ${subject}.\n` +
-        (subjectContent ? `Subject content focus: ${subjectContent}.\n` : '') +
-        `Target duration: ${length}.\n` +
-        `Target script word range: ${wordRange.minWords}-${wordRange.maxWords} words.\n` +
-        (referenceScripts.length > 0
-          ? 'Match the overall style DNA of the reference scripts while keeping all 5 ideas about different topics.\n'
-          : `Preferred style: ${style}.\n`) +
-        (customSystemPrompt
-          ? `Additional writing guidance: ${customSystemPrompt}.\n`
-          : '') +
-        'Important: the 5 ideas must not be related to the same event, the same subtopic, or the same lesson told five ways. ' +
-        'They should feel like five genuinely different script-title directions a user could choose from. ' +
-        'For religious (Islam) requests, keep ideas respectful, authentic, and away from controversial framing.',
+        (subjectContent ? `Subject content focus: ${subjectContent}.\n` : '')
     });
 
     try {
@@ -2136,24 +2173,23 @@ export class AiTextService {
 
       const characters = await extractCharacters();
       const locations = await extractLocations();
-
+      const base =
+        'You have 20 years of experience in splitting scripts into interesting scenes\n' +
+        'Always start each sentence/scene with the most impactful upcoming word, not necessarily with the first word of the sentence\n' +
+        'Always study the best impactful time to split into a new sentence cause each sentence will be associated with its image so choose the best split point to make the sentence more impactful and visually appealing\n';
       const requiredSplitAndTagPrompt =
-        'You split a script into clean sentences (verbatim) and tag each sentence with character keys + a location key.\n' +
+        base +
+        'tag each sentence with character keys + a location key.\n' +
         'You are given canonical CHARACTERS and LOCATIONS with keys. Use ONLY those keys.\n' +
         'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
         '{"sentences": [{"text": string, "characterKeys": string[], "locationKey": string | null}]}\n\n' +
-        'Rules:\n' +
+        'Absolute Rules:\n' +
         '- Do NOT add/remove/rewrite words; only split into sentences. Sentence text MUST match the script wording verbatim.\n' +
-        (isLongFormScript
-          ? '- LONG-FORM MODE: Preserve naturally long spoken sentences. Do NOT split one grammatical sentence into multiple items unless there is a true sentence boundary in the text.\n'
-          : '- SHORT-FORM MODE: Prefer tighter spoken sentence units when a natural sentence boundary already exists in the text.\n') +
         '- characterKeys must be a subset of the provided character keys (or empty).\n' +
         '- If a sentence describes a battle/fight/combat moment, include the relevant GROUP/ARMY character keys for the sides involved (in addition to any named protagonists mentioned).\n' +
         '- locationKey must be one of the provided location keys OR null.\n' +
-        '- Infer a location ONLY if the TARGET sentence clearly implies one of the provided canonical locations.\n' +
-        '- Use script context only to resolve references/pronouns for the target sentence.\n' +
-        '- If the sentence does NOT imply a clear canonical location, set locationKey to null (do NOT guess).\n' +
-        '- No extra keys. No extra text.';
+        '- Infer a location ONLY if the TARGET sentence clearly implies or refers to one of the provided canonical locations.\n' +
+        '- Use script context only to resolve references/pronouns to a character or a location for the target sentence.\n'
 
       const charactersList = characters
         .map((c) => `${c.key}: ${c.name} — ${c.description}`)
@@ -2188,18 +2224,13 @@ export class AiTextService {
         }
 
         const sentenceSplitPrompt =
+          base +
           'You split a script segment into clean spoken sentences verbatim.\n' +
           'Always respond with pure JSON as an OBJECT with exactly this shape: ' +
           '{"sentences": [{"text": string}]}\n\n' +
           'Rules:\n' +
           '- Keep the original wording exactly as written. Do NOT paraphrase, summarize, or add words.\n' +
-          (isLongFormScript
-            ? '- LONG-FORM MODE: Keep naturally long narration sentences intact. Do NOT break a sentence into smaller parts just because it is lengthy; split only at true sentence-ending punctuation or very strong narration breaks already present in the text.\n'
-            : '- SHORT-FORM MODE: Keep sentence units concise when the text already contains natural sentence-ending punctuation.\n') +
           '- Preserve the original order.\n' +
-          '- Cover the entire segment exactly once with no omissions and no duplicates.\n' +
-          '- Each output item must be a natural sentence-sized narration unit.\n' +
-          '- If a fragment cannot be split further without rewriting, keep it as one item.\n' +
           '- No extra keys. No extra text.';
 
         const sentenceTexts: string[] = [];
@@ -2416,7 +2447,7 @@ export class AiTextService {
 
     const model = dto.model?.trim() || this.model;
     const wpm = 150;
-    const minSecondsPerShort = 60;
+    const minSecondsPerShort = 90;
 
     const wordCount = (text: string) =>
       text.trim().split(/\s+/u).filter(Boolean).length;
@@ -2501,17 +2532,14 @@ export class AiTextService {
     }
 
     const requiredPrompt =
-      'You split an ordered sentence list into multiple SHORTS (segments) without rewriting any text.\n' +
+      'You split an ordered sentence list into multiple SHORTS\n' +
+      'Detect the best split points to create shorts that each end with a satisfying closure beat.\n' +
       'Always respond with pure JSON as an OBJECT with exactly this shape: {"ranges": [{"start": number, "end": number}]}.\n\n' +
       'Rules:\n' +
       `- Sentences are indexed 0..${sentences.length - 1}.\n` +
-      '- Choose the number of shorts as needed. Do NOT force a fixed number of sentences per short.\n' +
+      '- Choose the number of shorts as needed but max 10 shorts. Do NOT force a fixed number of sentences per short.\n' +
       '- Each short should feel like a complete story with a clear ending beat (closure), not a random cutoff.\n' +
-      '- Ranges must be contiguous, in order, cover all sentences, and have no overlaps or gaps.\n' +
-      '- First range.start MUST be 0.\n' +
-      `- Last range.end MUST be ${sentences.length - 1}.\n` +
-      '- Each range must contain at least 1 sentence.\n' +
-      `- Each range must have estimated duration >= ${minSecondsPerShort} seconds based on the provided per-sentence estimates.\n` +
+      `- Each range must have estimated duration <= ${minSecondsPerShort} seconds based on the provided per-sentence estimates.\n` +
       '- Do not add extra keys. Do not add any explanation text.';
 
     const systemPrompt = [dto.systemPrompt?.trim(), requiredPrompt]
@@ -2520,7 +2548,7 @@ export class AiTextService {
 
     const userContent =
       'Return ONLY valid JSON in this exact shape: {"ranges": [{"start":0,"end":3}]}.\n\n' +
-      `Minimum seconds per short: ${minSecondsPerShort}.\n` +
+      `Maximum seconds per short: ${minSecondsPerShort}.\n` +
       `Words-per-minute estimate: ${wpm}.\n\n` +
       'Goal: split into shorts that each end with a satisfying closure beat.\n\n' +
       'Here are the sentences with estimated seconds:\n' +
@@ -2533,7 +2561,7 @@ export class AiTextService {
     try {
       const parsed = await this.llm.completeJson<unknown>({
         model,
-        retries: 1,
+        retries: 2,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },

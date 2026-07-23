@@ -75,16 +75,20 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   );
 
   // Treat empty strings from the backend as "unset" so local `staticFile()` defaults work.
+  // When addBackgroundSoundtrack is explicitly false, force-disable background music
+  // regardless of what backgroundMusicSrc contains.
+  const addBackgroundSoundtrack = timeline.addBackgroundSoundtrack !== false;
   const rawBackgroundMusicSrc = timeline.assets?.backgroundMusicSrc;
-  const backgroundMusicSrc =
-    rawBackgroundMusicSrc === null || rawBackgroundMusicSrc === '__none__'
+  const backgroundMusicSrc = addBackgroundSoundtrack
+    ? rawBackgroundMusicSrc === null || rawBackgroundMusicSrc === '__none__'
       ? null
-      : rawBackgroundMusicSrc || DEFAULT_BACKGROUND_MUSIC_SRC;
+      : rawBackgroundMusicSrc || DEFAULT_BACKGROUND_MUSIC_SRC
+    : null;
 
   const rawBackgroundMusicVolume = timeline.assets?.backgroundMusicVolume;
   const backgroundMusicVolume =
     typeof rawBackgroundMusicVolume === 'number' &&
-    Number.isFinite(rawBackgroundMusicVolume)
+      Number.isFinite(rawBackgroundMusicVolume)
       ? Math.max(0, Math.min(1, rawBackgroundMusicVolume))
       : 1;
   const glitchSfxSrc = timeline.assets?.glitchSfxSrc || DEFAULT_GLITCH_FX_URL;
@@ -132,9 +136,9 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
     : null;
   const recurringSubscribeOverlayDurationFrames = recurringSubscribeOverlay
     ? Math.max(
-        1,
-        Math.round(recurringSubscribeOverlay.durationSeconds * (timeline.fps || 30)),
-      )
+      1,
+      Math.round(recurringSubscribeOverlay.durationSeconds * (timeline.fps || 30)),
+    )
     : null;
   const recurringSubscribeOverlayInset = Math.max(16, Math.round(timeline.width * 0.02));
   const recurringSubscribeOverlayWidth = Math.max(260, Math.round(timeline.width * 0.24));
@@ -273,7 +277,7 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   return (
     <AbsoluteFill>
       {timeline.audioSrc && (
-        <Audio src={resolveMediaSrc(timeline.audioSrc)}/>
+        <Audio src={resolveMediaSrc(timeline.audioSrc)} />
       )}
       {backgroundMusicSrc ? (
         <Audio src={resolveMediaSrc(backgroundMusicSrc)} volume={backgroundMusicVolume} loop />
@@ -430,10 +434,10 @@ export const AutoVideo: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
           transition === 'slicePush'
             ? whooshEndSfxSrc
             : transition === 'irisReveal'
-            ? cameraClickSfxSrc
-            : transition === 'echoStutter'
-            ? airWhooshSfxSrc
-            : whooshSfxSrc;
+              ? cameraClickSfxSrc
+              : transition === 'echoStutter'
+                ? airWhooshSfxSrc
+                : whooshSfxSrc;
         if (!defaultTransitionSfxSrc) return null;
 
         const defaultTransitionDelayFrames =

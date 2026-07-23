@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsIn,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -40,4 +41,9 @@ export class GenerateBulkFeelingCuesDto {
   @IsString()
   @MaxLength(4000)
   systemPrompt?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['google', 'elevenlabs', 'minimax'])
+  voiceProvider?: 'google' | 'elevenlabs' | 'minimax';
 }

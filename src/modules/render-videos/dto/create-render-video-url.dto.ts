@@ -262,6 +262,9 @@ export class CreateRenderVideoUrlDto {
   addSubtitles?: boolean;
 
   @IsOptional()
+  addBackgroundSoundtrack?: boolean;
+
+  @IsOptional()
   isShort?: boolean;
 
   // Optional background soundtrack override.

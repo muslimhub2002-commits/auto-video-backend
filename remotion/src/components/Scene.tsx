@@ -410,8 +410,8 @@ export const Scene: React.FC<{
     const wrapperFilter = isTextScene || isOverlayScene
       ? undefined
       : [suspenseFilter, scene.videoSrc ? null : mediaLookFilter]
-          .filter(Boolean)
-          .join(' ') || undefined;
+        .filter(Boolean)
+        .join(' ') || undefined;
 
     // Subtle film flicker for the suspense opening.
     const suspenseFlicker = isSuspenseOpening
@@ -433,12 +433,12 @@ export const Scene: React.FC<{
     const hardPulse = isSuspenseOpening ? clamp01((vRand - 0.92) * 22) : 0;
     const verticalGlitchAlpha = isSuspenseOpening
       ? clamp01(
-          0.16 +
-            0.18 * suspenseFlicker +
-            0.42 * softPulse +
-            0.55 * hardPulse +
-            0.20 * scratchPulse,
-        )
+        0.16 +
+        0.18 * suspenseFlicker +
+        0.42 * softPulse +
+        0.55 * hardPulse +
+        0.20 * scratchPulse,
+      )
       : 0;
 
     // Overlay-only jitter during hard pulses.
@@ -481,43 +481,43 @@ export const Scene: React.FC<{
 
     const xIn = hasWhipIn
       ? interpolate(frame, [0, WHIP_EDGE_FRAMES], [-whipDirFromPrev * panDistance, 0], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: whipEasing,
-        })
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: whipEasing,
+      })
       : 0;
     const xOut = hasWhipOut
       ? interpolate(
-          frame,
-          [scene.durationFrames - WHIP_EDGE_FRAMES, scene.durationFrames],
-          [0, whipDirToNext * panDistance],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: whipEasing,
-          },
-        )
+        frame,
+        [scene.durationFrames - WHIP_EDGE_FRAMES, scene.durationFrames],
+        [0, whipDirToNext * panDistance],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: whipEasing,
+        },
+      )
       : 0;
     const whipX = xIn + xOut;
 
     const blurIn = hasWhipIn
       ? interpolate(frame, [0, WHIP_EDGE_FRAMES], [WHIP_MAX_BLUR_PX, 0], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: whipEasing,
-        })
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: whipEasing,
+      })
       : 0;
     const blurOut = hasWhipOut
       ? interpolate(
-          frame,
-          [scene.durationFrames - WHIP_EDGE_FRAMES, scene.durationFrames],
-          [0, WHIP_MAX_BLUR_PX],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: whipEasing,
-          },
-        )
+        frame,
+        [scene.durationFrames - WHIP_EDGE_FRAMES, scene.durationFrames],
+        [0, WHIP_MAX_BLUR_PX],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: whipEasing,
+        },
+      )
       : 0;
     const whipBlur = Math.min(WHIP_MAX_BLUR_PX, blurIn + blurOut);
 
@@ -525,10 +525,10 @@ export const Scene: React.FC<{
     const motionEffect = (scene.imageMotionEffect ?? 'default') as SceneMotionEffect;
     const resolvedMotion = shouldApplyImageMotion
       ? normalizeImageMotionSettings(
-          scene.imageMotionSettings,
-          motionEffect,
-          scene.imageMotionSpeed,
-        )
+        scene.imageMotionSettings,
+        motionEffect,
+        scene.imageMotionSpeed,
+      )
       : null;
     const motionSpeed = resolvedMotion?.speed ?? 2;
     const motionEasing = Easing.inOut(Easing.cubic);
@@ -539,8 +539,8 @@ export const Scene: React.FC<{
     const motionScale = !resolvedMotion
       ? 1
       : usesAutomaticDefaultScale
-      ? clampNumber(1 + elapsedSeconds * IMAGE_ZOOM_PER_SECOND * motionSpeed, 0.5, 2)
-      : interpolateMotionValue({
+        ? clampNumber(1 + elapsedSeconds * IMAGE_ZOOM_PER_SECOND * motionSpeed, 0.5, 2)
+        : interpolateMotionValue({
           start: resolvedMotion.startScale,
           end: resolvedMotion.endScale,
           boundedProgress: scaledMotionProgress,
@@ -551,33 +551,33 @@ export const Scene: React.FC<{
     const motionTranslateX = !resolvedMotion
       ? 0
       : interpolateMotionValue({
-          start: width * (resolvedMotion.translateXStart / 100),
-          end: width * (resolvedMotion.translateXEnd / 100),
-          boundedProgress: scaledMotionProgress,
-          extendedProgress: forwardMotionProgress,
-          noLimit: resolvedMotion.translateXEndNoLimit === true,
-          easing: motionEasing,
-        });
+        start: width * (resolvedMotion.translateXStart / 100),
+        end: width * (resolvedMotion.translateXEnd / 100),
+        boundedProgress: scaledMotionProgress,
+        extendedProgress: forwardMotionProgress,
+        noLimit: resolvedMotion.translateXEndNoLimit === true,
+        easing: motionEasing,
+      });
     const motionTranslateY = !resolvedMotion
       ? 0
       : interpolateMotionValue({
-          start: height * (resolvedMotion.translateYStart / 100),
-          end: height * (resolvedMotion.translateYEnd / 100),
-          boundedProgress: scaledMotionProgress,
-          extendedProgress: forwardMotionProgress,
-          noLimit: resolvedMotion.translateYEndNoLimit === true,
-          easing: motionEasing,
-        });
+        start: height * (resolvedMotion.translateYStart / 100),
+        end: height * (resolvedMotion.translateYEnd / 100),
+        boundedProgress: scaledMotionProgress,
+        extendedProgress: forwardMotionProgress,
+        noLimit: resolvedMotion.translateYEndNoLimit === true,
+        easing: motionEasing,
+      });
     const motionRotate = !resolvedMotion
       ? 0
       : interpolateMotionValue({
-          start: resolvedMotion.rotateStart,
-          end: resolvedMotion.rotateEnd,
-          boundedProgress: scaledMotionProgress,
-          extendedProgress: forwardMotionProgress,
-          noLimit: resolvedMotion.rotateEndNoLimit === true,
-          easing: motionEasing,
-        });
+        start: resolvedMotion.rotateStart,
+        end: resolvedMotion.rotateEnd,
+        boundedProgress: scaledMotionProgress,
+        extendedProgress: forwardMotionProgress,
+        noLimit: resolvedMotion.rotateEndNoLimit === true,
+        easing: motionEasing,
+      });
     const motionTransformOrigin = resolvedMotion
       ? `${resolvedMotion.originX.toFixed(2)}% ${resolvedMotion.originY.toFixed(2)}%`
       : '50% 50%';
@@ -591,25 +591,25 @@ export const Scene: React.FC<{
       frame >= scene.durationFrames - IMPACT_ZOOM_EDGE_FRAMES;
     const impactZoomInEnergy = hasImpactZoomIn
       ? interpolate(frame, [0, IMPACT_ZOOM_EDGE_FRAMES - 1], [1, 0], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: Easing.out(Easing.cubic),
-        })
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: Easing.out(Easing.cubic),
+      })
       : 0;
     const impactZoomOutEnergy = hasImpactZoomOut
       ? interpolate(
-          frame,
-          [
-            scene.durationFrames - IMPACT_ZOOM_EDGE_FRAMES,
-            scene.durationFrames - 1,
-          ],
-          [0, 1],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.in(Easing.cubic),
-          },
-        )
+        frame,
+        [
+          scene.durationFrames - IMPACT_ZOOM_EDGE_FRAMES,
+          scene.durationFrames - 1,
+        ],
+        [0, 1],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.in(Easing.cubic),
+        },
+      )
       : 0;
     const impactZoomEnergy = Math.max(impactZoomInEnergy, impactZoomOutEnergy);
     const impactZoomScale =
@@ -627,22 +627,22 @@ export const Scene: React.FC<{
       frame >= scene.durationFrames - TILT_SNAP_EDGE_FRAMES;
     const tiltSnapInEnergy = hasTiltSnapIn
       ? interpolate(frame, [0, TILT_SNAP_EDGE_FRAMES - 1], [1, 0], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: Easing.out(Easing.cubic),
-        })
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: Easing.out(Easing.cubic),
+      })
       : 0;
     const tiltSnapOutEnergy = hasTiltSnapOut
       ? interpolate(
-          frame,
-          [scene.durationFrames - TILT_SNAP_EDGE_FRAMES, scene.durationFrames - 1],
-          [0, 1],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.in(Easing.cubic),
-          },
-        )
+        frame,
+        [scene.durationFrames - TILT_SNAP_EDGE_FRAMES, scene.durationFrames - 1],
+        [0, 1],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.in(Easing.cubic),
+        },
+      )
       : 0;
     const tiltSnapEnergy = Math.max(tiltSnapInEnergy, tiltSnapOutEnergy);
     const tiltSnapTranslateX =
@@ -664,33 +664,33 @@ export const Scene: React.FC<{
       frame >= scene.durationFrames - IRIS_REVEAL_EDGE_FRAMES;
     const irisRevealInProgress = hasIrisRevealIn
       ? interpolate(frame, [0, IRIS_REVEAL_EDGE_FRAMES - 1], [0, 1], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: Easing.out(Easing.cubic),
-        })
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: Easing.out(Easing.cubic),
+      })
       : 0;
     const irisRevealOutProgress = hasIrisRevealOut
       ? interpolate(
-          frame,
-          [scene.durationFrames - IRIS_REVEAL_EDGE_FRAMES, scene.durationFrames - 1],
-          [0, 1],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.in(Easing.cubic),
-          },
-        )
+        frame,
+        [scene.durationFrames - IRIS_REVEAL_EDGE_FRAMES, scene.durationFrames - 1],
+        [0, 1],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.in(Easing.cubic),
+        },
+      )
       : 0;
     const irisRevealRadiusPercent = hasIrisRevealIn
       ? IRIS_REVEAL_MAX_RADIUS_PERCENT * irisRevealInProgress
       : hasIrisRevealOut
-      ? IRIS_REVEAL_MAX_RADIUS_PERCENT * (1 - irisRevealOutProgress)
-      : IRIS_REVEAL_MAX_RADIUS_PERCENT;
+        ? IRIS_REVEAL_MAX_RADIUS_PERCENT * (1 - irisRevealOutProgress)
+        : IRIS_REVEAL_MAX_RADIUS_PERCENT;
     const irisRevealGlowStrength = hasIrisRevealIn
       ? 4 * irisRevealInProgress * (1 - irisRevealInProgress)
       : hasIrisRevealOut
-      ? 4 * irisRevealOutProgress * (1 - irisRevealOutProgress)
-      : 0;
+        ? 4 * irisRevealOutProgress * (1 - irisRevealOutProgress)
+        : 0;
     const irisRevealClipPath = hasIrisRevealIn || hasIrisRevealOut
       ? `circle(${irisRevealRadiusPercent.toFixed(2)}% at 50% 50%)`
       : undefined;
@@ -702,22 +702,22 @@ export const Scene: React.FC<{
       frame >= scene.durationFrames - SLICE_PUSH_EDGE_FRAMES;
     const slicePushInEnergy = hasSlicePushIn
       ? interpolate(frame, [0, SLICE_PUSH_EDGE_FRAMES - 1], [1, 0], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: Easing.out(Easing.cubic),
-        })
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: Easing.out(Easing.cubic),
+      })
       : 0;
     const slicePushOutEnergy = hasSlicePushOut
       ? interpolate(
-          frame,
-          [scene.durationFrames - SLICE_PUSH_EDGE_FRAMES, scene.durationFrames - 1],
-          [0, 1],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.in(Easing.cubic),
-          },
-        )
+        frame,
+        [scene.durationFrames - SLICE_PUSH_EDGE_FRAMES, scene.durationFrames - 1],
+        [0, 1],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.in(Easing.cubic),
+        },
+      )
       : 0;
     const slicePushEnergy = Math.max(slicePushInEnergy, slicePushOutEnergy);
     const slicePushBaseOpacity = clampNumber(1 - slicePushEnergy, 0, 1);
@@ -729,25 +729,25 @@ export const Scene: React.FC<{
       frame >= scene.durationFrames - ECHO_STUTTER_EDGE_FRAMES;
     const echoStutterInEnergy = hasEchoStutterIn
       ? interpolate(frame, [0, ECHO_STUTTER_EDGE_FRAMES - 1], [1, 0], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: Easing.out(Easing.cubic),
-        })
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: Easing.out(Easing.cubic),
+      })
       : 0;
     const echoStutterOutEnergy = hasEchoStutterOut
       ? interpolate(
-          frame,
-          [
-            scene.durationFrames - ECHO_STUTTER_EDGE_FRAMES,
-            scene.durationFrames - 1,
-          ],
-          [0, 1],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.in(Easing.cubic),
-          },
-        )
+        frame,
+        [
+          scene.durationFrames - ECHO_STUTTER_EDGE_FRAMES,
+          scene.durationFrames - 1,
+        ],
+        [0, 1],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.in(Easing.cubic),
+        },
+      )
       : 0;
     const echoStutterEnergy = Math.max(
       echoStutterInEnergy,
@@ -764,23 +764,23 @@ export const Scene: React.FC<{
 
     const glitchInAlpha = hasGlitchIn
       ? interpolate(frame, [0, GLITCH_EDGE_FRAMES - 1], [1, 0], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: Easing.out(Easing.cubic),
-        })
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: Easing.out(Easing.cubic),
+      })
       : 0;
 
     const glitchOutAlpha = hasGlitchOut
       ? interpolate(
-          frame,
-          [scene.durationFrames - GLITCH_EDGE_FRAMES, scene.durationFrames - 1],
-          [0, 1],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.in(Easing.cubic),
-          },
-        )
+        frame,
+        [scene.durationFrames - GLITCH_EDGE_FRAMES, scene.durationFrames - 1],
+        [0, 1],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.in(Easing.cubic),
+        },
+      )
       : 0;
 
     const glitchAlpha = Math.max(glitchInAlpha, glitchOutAlpha);
@@ -860,23 +860,23 @@ export const Scene: React.FC<{
 
     const flashInAlpha = hasFlashIn
       ? interpolate(frame, [0, FLASH_EDGE_FRAMES - 1], [1, 0], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: flashDecayEasing,
-        })
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: flashDecayEasing,
+      })
       : 0;
 
     const flashOutAlpha = hasFlashOut
       ? interpolate(
-          frame,
-          [scene.durationFrames - FLASH_EDGE_FRAMES, scene.durationFrames - 1],
-          [0, 1],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: flashRiseEasing,
-          },
-        )
+        frame,
+        [scene.durationFrames - FLASH_EDGE_FRAMES, scene.durationFrames - 1],
+        [0, 1],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: flashRiseEasing,
+        },
+      )
       : 0;
 
     const flashAlpha = Math.max(flashInAlpha, flashOutAlpha);
@@ -888,23 +888,23 @@ export const Scene: React.FC<{
 
     const fadeInAlpha = hasFadeIn
       ? interpolate(frame, [0, FADE_EDGE_FRAMES - 1], [1, 0], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: Easing.out(Easing.cubic),
-        })
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: Easing.out(Easing.cubic),
+      })
       : 0;
 
     const fadeOutAlpha = hasFadeOut
       ? interpolate(
-          frame,
-          [scene.durationFrames - FADE_EDGE_FRAMES, scene.durationFrames - 1],
-          [0, 1],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.in(Easing.cubic),
-          },
-        )
+        frame,
+        [scene.durationFrames - FADE_EDGE_FRAMES, scene.durationFrames - 1],
+        [0, 1],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.in(Easing.cubic),
+        },
+      )
       : 0;
 
     const fadeAlpha = Math.max(fadeInAlpha, fadeOutAlpha);
@@ -918,23 +918,23 @@ export const Scene: React.FC<{
 
     const chromaInAlpha = hasChromaIn
       ? interpolate(frame, [0, CHROMA_EDGE_FRAMES - 1], [1, 0], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: Easing.out(Easing.cubic),
-        })
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+        easing: Easing.out(Easing.cubic),
+      })
       : 0;
 
     const chromaOutAlpha = hasChromaOut
       ? interpolate(
-          frame,
-          [scene.durationFrames - CHROMA_EDGE_FRAMES, scene.durationFrames - 1],
-          [0, 1],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.in(Easing.cubic),
-          },
-        )
+        frame,
+        [scene.durationFrames - CHROMA_EDGE_FRAMES, scene.durationFrames - 1],
+        [0, 1],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.in(Easing.cubic),
+        },
+      )
       : 0;
 
     const chromaAlpha = Math.max(chromaInAlpha, chromaOutAlpha);
@@ -1007,23 +1007,23 @@ export const Scene: React.FC<{
     const halfSceneFrame = Math.max(0, scene.durationFrames / 2);
     const imageCrossfadeFrames = resolvedSecondaryImageSrc
       ? Math.max(
-          8,
-          Math.min(27, Math.floor(Math.max(1, scene.durationFrames) * 0.3)),
-        )
+        8,
+        Math.min(27, Math.floor(Math.max(1, scene.durationFrames) * 0.3)),
+      )
       : 0;
     const crossfadeStartFrame = halfSceneFrame - imageCrossfadeFrames / 2;
     const crossfadeEndFrame = halfSceneFrame + imageCrossfadeFrames / 2;
     const secondaryImageOpacity = resolvedSecondaryImageSrc
       ? interpolate(
-          frame,
-          [crossfadeStartFrame, crossfadeEndFrame],
-          [0, 1],
-          {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.inOut(Easing.ease),
-          },
-        )
+        frame,
+        [crossfadeStartFrame, crossfadeEndFrame],
+        [0, 1],
+        {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+          easing: Easing.inOut(Easing.ease),
+        },
+      )
       : 0;
     const primaryImageOpacity = resolvedSecondaryImageSrc
       ? 1 - secondaryImageOpacity
@@ -1088,6 +1088,7 @@ export const Scene: React.FC<{
 
     const renderMediaContent = () => {
       if (isTextScene) {
+        if (!showSubtitles) return null;
         return (
           <TextScene
             scene={scene}
@@ -1155,84 +1156,84 @@ export const Scene: React.FC<{
 
     const slicePushLayers = slicePushEnergy > 0.001
       ? slicePushSegments.map((segment, idx) => {
-          const shift =
-            width *
-            SLICE_PUSH_MAX_SHIFT_MULTIPLIER *
-            segment.direction *
-            segment.speed *
-            slicePushEnergy;
-          const blur = SLICE_PUSH_MAX_BLUR_PX * segment.speed * slicePushEnergy;
+        const shift =
+          width *
+          SLICE_PUSH_MAX_SHIFT_MULTIPLIER *
+          segment.direction *
+          segment.speed *
+          slicePushEnergy;
+        const blur = SLICE_PUSH_MAX_BLUR_PX * segment.speed * slicePushEnergy;
 
-          return (
-            <AbsoluteFill
-              key={`slice-push-${idx}`}
-              style={{
-                clipPath: `inset(0 ${(100 - segment.end).toFixed(3)}% 0 ${segment.start.toFixed(3)}%)`,
-                opacity: 0.98,
-                pointerEvents: 'none',
-              }}
-            >
-              <AbsoluteFill style={mediaTransformStyle}>
-                <AbsoluteFill
-                  style={{
-                    transform: `translateX(${shift.toFixed(2)}px)`,
-                    filter:
-                      blur > 0.01
-                        ? `blur(${blur.toFixed(2)}px) contrast(1.05) saturate(1.06)`
-                        : undefined,
-                    willChange: 'transform, filter',
-                  }}
-                >
-                  {renderMediaContent()}
-                </AbsoluteFill>
+        return (
+          <AbsoluteFill
+            key={`slice-push-${idx}`}
+            style={{
+              clipPath: `inset(0 ${(100 - segment.end).toFixed(3)}% 0 ${segment.start.toFixed(3)}%)`,
+              opacity: 0.98,
+              pointerEvents: 'none',
+            }}
+          >
+            <AbsoluteFill style={mediaTransformStyle}>
+              <AbsoluteFill
+                style={{
+                  transform: `translateX(${shift.toFixed(2)}px)`,
+                  filter:
+                    blur > 0.01
+                      ? `blur(${blur.toFixed(2)}px) contrast(1.05) saturate(1.06)`
+                      : undefined,
+                  willChange: 'transform, filter',
+                }}
+              >
+                {renderMediaContent()}
               </AbsoluteFill>
             </AbsoluteFill>
-          );
-        })
+          </AbsoluteFill>
+        );
+      })
       : null;
 
     const echoStutterLayers = echoStutterEnergy > 0.001
       ? [0, 1, 2].map((layerIndex) => {
-          const depth = layerIndex + 1;
-          const shift =
-            width *
-            ECHO_STUTTER_MAX_SHIFT_MULTIPLIER *
-            depth *
-            echoStutterDirection *
-            echoStutterEnergy;
-          const scale =
-            1 + ECHO_STUTTER_MAX_SCALE_DELTA * depth * echoStutterEnergy;
-          const blur = ECHO_STUTTER_MAX_BLUR_PX * depth * 0.35 * echoStutterEnergy;
-          const opacity = Math.max(0, 0.4 - layerIndex * 0.075) * echoStutterEnergy;
+        const depth = layerIndex + 1;
+        const shift =
+          width *
+          ECHO_STUTTER_MAX_SHIFT_MULTIPLIER *
+          depth *
+          echoStutterDirection *
+          echoStutterEnergy;
+        const scale =
+          1 + ECHO_STUTTER_MAX_SCALE_DELTA * depth * echoStutterEnergy;
+        const blur = ECHO_STUTTER_MAX_BLUR_PX * depth * 0.35 * echoStutterEnergy;
+        const opacity = Math.max(0, 0.4 - layerIndex * 0.075) * echoStutterEnergy;
 
-          return (
-            <AbsoluteFill
-              key={`echo-stutter-${layerIndex}`}
-              style={{
-                opacity,
-                mixBlendMode: layerIndex === 0 ? 'screen' : 'lighten',
-                pointerEvents: 'none',
-              }}
-            >
-              <AbsoluteFill style={mediaTransformStyle}>
-                <AbsoluteFill
-                  style={{
-                    transform: `translate(${shift.toFixed(2)}px, ${(
-                      depth * 4 * echoStutterEnergy
-                    ).toFixed(2)}px) scale(${scale.toFixed(4)})`,
-                    filter:
-                      blur > 0.01
-                        ? `blur(${blur.toFixed(2)}px) saturate(1.18) brightness(1.08)`
-                        : undefined,
-                    willChange: 'transform, filter',
-                  }}
-                >
-                  {renderMediaContent()}
-                </AbsoluteFill>
+        return (
+          <AbsoluteFill
+            key={`echo-stutter-${layerIndex}`}
+            style={{
+              opacity,
+              mixBlendMode: layerIndex === 0 ? 'screen' : 'lighten',
+              pointerEvents: 'none',
+            }}
+          >
+            <AbsoluteFill style={mediaTransformStyle}>
+              <AbsoluteFill
+                style={{
+                  transform: `translate(${shift.toFixed(2)}px, ${(
+                    depth * 4 * echoStutterEnergy
+                  ).toFixed(2)}px) scale(${scale.toFixed(4)})`,
+                  filter:
+                    blur > 0.01
+                      ? `blur(${blur.toFixed(2)}px) saturate(1.18) brightness(1.08)`
+                      : undefined,
+                  willChange: 'transform, filter',
+                }}
+              >
+                {renderMediaContent()}
               </AbsoluteFill>
             </AbsoluteFill>
-          );
-        })
+          </AbsoluteFill>
+        );
+      })
       : null;
 
     const impactZoomOverlay = impactZoomEnergy > 0.001 ? (

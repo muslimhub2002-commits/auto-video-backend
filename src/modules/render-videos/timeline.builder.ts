@@ -54,6 +54,7 @@ export const buildTimeline = (params: {
   useLowerFps?: boolean;
   useLowerResolution?: boolean;
   addSubtitles?: boolean;
+  addBackgroundSoundtrack?: boolean;
   enableGlitchTransitions?: boolean;
   enableLongFormSubscribeOverlay?: boolean;
   backgroundMusicSrc?: string | null;
@@ -71,7 +72,7 @@ export const buildTimeline = (params: {
 
   const backgroundMusicVolume =
     typeof params.backgroundMusicVolume === 'number' &&
-    Number.isFinite(params.backgroundMusicVolume)
+      Number.isFinite(params.backgroundMusicVolume)
       ? clamp01(params.backgroundMusicVolume)
       : 1;
 
@@ -162,13 +163,13 @@ export const buildTimeline = (params: {
       : undefined;
     const overlaySettings = isOverlayScene
       ? {
-          ...(s.overlaySettings &&
+        ...(s.overlaySettings &&
           typeof s.overlaySettings === 'object' &&
           !Array.isArray(s.overlaySettings)
-            ? s.overlaySettings
-            : {}),
-          backgroundMode: overlayBackgroundMode ?? 'image',
-        }
+          ? s.overlaySettings
+          : {}),
+        backgroundMode: overlayBackgroundMode ?? 'image',
+      }
       : undefined;
     const overlaySrc = isOverlayScene
       ? String(s.overlayUrl ?? '').trim() || undefined
@@ -187,17 +188,17 @@ export const buildTimeline = (params: {
       : undefined;
     const textAnimationSettings = isTextScene
       ? {
-          ...(s.textAnimationSettings &&
+        ...(s.textAnimationSettings &&
           typeof s.textAnimationSettings === 'object' &&
           !Array.isArray(s.textAnimationSettings)
-            ? s.textAnimationSettings
-            : {}),
-          backgroundMode: textBackgroundMode ?? 'inheritImage',
-        }
+          ? s.textAnimationSettings
+          : {}),
+        backgroundMode: textBackgroundMode ?? 'inheritImage',
+      }
       : undefined;
     const textBackgroundVideoSrc =
       isTextScene &&
-      (textBackgroundMode === 'inheritVideo' || textBackgroundMode === 'video')
+        (textBackgroundMode === 'inheritVideo' || textBackgroundMode === 'video')
         ? String(s.textBackgroundVideoUrl ?? '').trim() || undefined
         : undefined;
 
@@ -214,7 +215,7 @@ export const buildTimeline = (params: {
     const sceneTiming = params.sentenceTimings?.[index];
     const subtitleWords =
       params.addSubtitles !== false && Array.isArray(sceneTiming?.words)
-      ? sceneTiming.words
+        ? sceneTiming.words
           .map((word) => {
             if (!word || !String(word.text ?? '').trim()) return null;
 
@@ -241,39 +242,39 @@ export const buildTimeline = (params: {
             };
           })
           .filter(Boolean)
-      : [];
+        : [];
 
     const normalizedSoundEffects = Array.isArray(s.soundEffects)
       ? (s.soundEffects
-          .map((se) => {
-            const src = String(se?.src ?? '').trim();
-            if (!src) return null;
+        .map((se) => {
+          const src = String(se?.src ?? '').trim();
+          if (!src) return null;
 
-            const delaySeconds = clampNonNegative(se?.delaySeconds);
-            const trimStartSeconds = clampNonNegative(se?.trimStartSeconds);
-            const durationSeconds = clampNonNegative(se?.durationSeconds);
-            const hasKnownDuration =
-              typeof se?.durationSeconds === 'number' &&
-              Number.isFinite(se.durationSeconds) &&
-              se.durationSeconds > 0;
-            const volumePercentRaw =
-              se?.volumePercent === null || se?.volumePercent === undefined
-                ? 100
-                : Number(se.volumePercent);
-            const volumePercent = Number.isFinite(volumePercentRaw)
-              ? Math.max(0, Math.min(300, volumePercentRaw))
-              : 100;
+          const delaySeconds = clampNonNegative(se?.delaySeconds);
+          const trimStartSeconds = clampNonNegative(se?.trimStartSeconds);
+          const durationSeconds = clampNonNegative(se?.durationSeconds);
+          const hasKnownDuration =
+            typeof se?.durationSeconds === 'number' &&
+            Number.isFinite(se.durationSeconds) &&
+            se.durationSeconds > 0;
+          const volumePercentRaw =
+            se?.volumePercent === null || se?.volumePercent === undefined
+              ? 100
+              : Number(se.volumePercent);
+          const volumePercent = Number.isFinite(volumePercentRaw)
+            ? Math.max(0, Math.min(300, volumePercentRaw))
+            : 100;
 
-            return {
-              src,
-              delaySeconds,
-              trimStartSeconds,
-              durationSeconds,
-              hasKnownDuration,
-              volume: clamp03(volumePercent / 100),
-            };
-          })
-          .filter(Boolean) as Array<{
+          return {
+            src,
+            delaySeconds,
+            trimStartSeconds,
+            durationSeconds,
+            hasKnownDuration,
+            volume: clamp03(volumePercent / 100),
+          };
+        })
+        .filter(Boolean) as Array<{
           src: string;
           delaySeconds: number;
           trimStartSeconds: number;
@@ -289,28 +290,28 @@ export const buildTimeline = (params: {
 
     const alignedSoundEffects = wantsSoundEffectsAlignToSceneEnd
       ? (() => {
-          if (normalizedSoundEffects.some((se) => !se.hasKnownDuration)) {
-            return { enabled: false, items: normalizedSoundEffects };
-          }
+        if (normalizedSoundEffects.some((se) => !se.hasKnownDuration)) {
+          return { enabled: false, items: normalizedSoundEffects };
+        }
 
-          const stackEndSeconds = normalizedSoundEffects.reduce(
-            (max, se) => Math.max(max, se.delaySeconds + se.durationSeconds),
-            0,
-          );
+        const stackEndSeconds = normalizedSoundEffects.reduce(
+          (max, se) => Math.max(max, se.delaySeconds + se.durationSeconds),
+          0,
+        );
 
-          if (stackEndSeconds <= 0 || stackEndSeconds > sceneDurationSeconds) {
-            return { enabled: false, items: normalizedSoundEffects };
-          }
+        if (stackEndSeconds <= 0 || stackEndSeconds > sceneDurationSeconds) {
+          return { enabled: false, items: normalizedSoundEffects };
+        }
 
-          const shiftSeconds = sceneDurationSeconds - stackEndSeconds;
-          return {
-            enabled: true,
-            items: normalizedSoundEffects.map((se) => ({
-              ...se,
-              delaySeconds: se.delaySeconds + shiftSeconds,
-            })),
-          };
-        })()
+        const shiftSeconds = sceneDurationSeconds - stackEndSeconds;
+        return {
+          enabled: true,
+          items: normalizedSoundEffects.map((se) => ({
+            ...se,
+            delaySeconds: se.delaySeconds + shiftSeconds,
+          })),
+        };
+      })()
       : { enabled: false, items: normalizedSoundEffects };
 
     return {
@@ -332,47 +333,47 @@ export const buildTimeline = (params: {
       ...(subtitleWords.length > 0 ? { subtitleWords } : {}),
       ...(alignedSoundEffects.items.length > 0
         ? {
-            soundEffects: alignedSoundEffects.items.map((se) => ({
-              src: se.src,
-              delaySeconds: se.delaySeconds,
-              trimStartSeconds: se.trimStartSeconds,
-              durationSeconds: se.durationSeconds,
-              volume: se.volume,
-            })),
-            ...(alignedSoundEffects.enabled
-              ? { soundEffectsAlignToSceneEnd: true }
-              : {}),
-          }
+          soundEffects: alignedSoundEffects.items.map((se) => ({
+            src: se.src,
+            delaySeconds: se.delaySeconds,
+            trimStartSeconds: se.trimStartSeconds,
+            durationSeconds: se.durationSeconds,
+            volume: se.volume,
+          })),
+          ...(alignedSoundEffects.enabled
+            ? { soundEffectsAlignToSceneEnd: true }
+            : {}),
+        }
         : {}),
       ...(Array.isArray(s.transitionSoundEffects) &&
-      s.transitionSoundEffects.length > 0
+        s.transitionSoundEffects.length > 0
         ? {
-            transitionSoundEffects: s.transitionSoundEffects
-              .map((se) => {
-                const src = String(se?.src ?? '').trim();
-                if (!src) return null;
+          transitionSoundEffects: s.transitionSoundEffects
+            .map((se) => {
+              const src = String(se?.src ?? '').trim();
+              if (!src) return null;
 
-                const delaySecondsRaw = Number(se?.delaySeconds ?? 0);
-                const delaySeconds = Number.isFinite(delaySecondsRaw)
-                  ? Math.max(0, delaySecondsRaw)
-                  : 0;
+              const delaySecondsRaw = Number(se?.delaySeconds ?? 0);
+              const delaySeconds = Number.isFinite(delaySecondsRaw)
+                ? Math.max(0, delaySecondsRaw)
+                : 0;
 
-                const volumePercentRaw =
-                  se?.volumePercent === null || se?.volumePercent === undefined
-                    ? 100
-                    : Number(se.volumePercent);
-                const volumePercent = Number.isFinite(volumePercentRaw)
-                  ? Math.max(0, Math.min(300, volumePercentRaw))
-                  : 100;
+              const volumePercentRaw =
+                se?.volumePercent === null || se?.volumePercent === undefined
+                  ? 100
+                  : Number(se.volumePercent);
+              const volumePercent = Number.isFinite(volumePercentRaw)
+                ? Math.max(0, Math.min(300, volumePercentRaw))
+                : 100;
 
-                return {
-                  src,
-                  delaySeconds,
-                  volume: clamp03(volumePercent / 100),
-                };
-              })
-              .filter(Boolean),
-          }
+              return {
+                src,
+                delaySeconds,
+                volume: clamp03(volumePercent / 100),
+              };
+            })
+            .filter(Boolean),
+        }
         : {}),
       ...(s.visualEffect != null && (isImageScene || isTextScene || wantsSentenceVideo)
         ? { visualEffect: s.visualEffect }
@@ -429,7 +430,7 @@ export const buildTimeline = (params: {
   const durationInFrames =
     scenes.length > 0
       ? scenes[scenes.length - 1].startFrame +
-        scenes[scenes.length - 1].durationFrames
+      scenes[scenes.length - 1].durationFrames
       : Math.ceil(T * fps);
 
   const useRemoteAssets = params.useRemoteAssets === true;
@@ -483,7 +484,7 @@ export const buildTimeline = (params: {
       intervalSeconds: 150,
       durationSeconds:
         params.longFormSubscribeOverlayDurationSeconds &&
-        Number.isFinite(params.longFormSubscribeOverlayDurationSeconds)
+          Number.isFinite(params.longFormSubscribeOverlayDurationSeconds)
           ? Math.max(0.1, params.longFormSubscribeOverlayDurationSeconds)
           : 6.36,
       position: 'topLeft',
@@ -498,6 +499,7 @@ export const buildTimeline = (params: {
     durationInFrames,
     audioSrc: params.audioSrc,
     addSubtitles: params.addSubtitles,
+    addBackgroundSoundtrack: params.addBackgroundSoundtrack,
     assets: Object.keys(assets).length > 0 ? assets : undefined,
     scenes,
   };
